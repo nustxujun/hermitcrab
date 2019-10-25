@@ -72,6 +72,21 @@ void Renderer::resize(int width, int height)
 	}
 }
 
+void Renderer::onRender()
+{
+	commitCommands();
+
+	CHECK( mSwapChain->Present(1, 0) );
+
+	syncFrame();
+	resetCommands();
+}
+
+ComPtr<ID3D12Device> Renderer::getDevice()
+{
+	return mDevice;
+}
+
 void Renderer::uninitialize()
 {
 }
@@ -88,8 +103,18 @@ void Renderer::initCommands()
 		D3D12_COMMAND_QUEUE_DESC desc = {};
 		desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 		desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-		mDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(&mCommandQueue));
+		CHECK(mDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(&mCommandQueue)));
 	}
+
+	for (auto i = 0; i < NUM_BACK_BUFFERS; ++i)
+		CHECK(mDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mCommandAllocators[i])));
+
+	CHECK(mDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, mCommandAllocators[0].Get(), nullptr, IID_PPV_ARGS(&mCommandList)));
+	CHECK(mDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)));
+	mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+	
+	mFenceValue = 0;
+	mCurrentFrame = 0;
 }
 
 void Renderer::initDescriptorHeap()
@@ -102,6 +127,34 @@ void Renderer::initDescriptorHeap()
 	mDescriptorHeaps[DHT_RENDERTARGET] = create(NUM_MAX_RENDER_TARGET_VIEWS, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
 	mDescriptorHeaps[DHT_DEPTHSTENCIL] = create(NUM_MAX_DEPTH_STENCIL_VIEWS, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
 	mDescriptorHeaps[DHT_CBV_SRV_UAV] = create(NUM_MAX_CBV_SRV_UAVS, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
+}
+
+void Renderer::commitCommands()
+{
+	CHECK(mCommandList->Close());
+	ID3D12CommandList* ppCommandLists[] = { mCommandList.Get() };
+	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+}
+
+void Renderer::resetCommands()
+{
+	CHECK(mCommandAllocators[mCurrentFrame]->Reset());
+	mCommandList->Reset(mCommandAllocators[mCurrentFrame].Get(), nullptr);
+}
+
+void Renderer::syncFrame()
+{
+	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
+	auto fence = mFenceValue;
+	mFenceValue++;
+
+	CHECK(mCommandQueue->Signal(mFence.Get(), fence));
+	if (mFence->GetCompletedValue() < fence)
+	{
+		mFence->SetEventOnCompletion(fence, mFenceEvent);
+		WaitForSingleObjectEx(mFenceEvent, INFINITE,FALSE);
+	}
+
 }
 
 ComPtr<IDXGIFactory4> Renderer::getDXGIFactory()
@@ -137,6 +190,10 @@ ComPtr<IDXGIAdapter> Renderer::getAdapter()
 	Common::Assert(false, "fail to find adapter");
 }
 
+Renderer::DescriptorHeap::Ref Renderer::getDescriptorHeap(DescriptorHeapType type)
+{
+	return mDescriptorHeaps[type];
+}
 Renderer::DescriptorHeap::DescriptorHeap(UINT count, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags)
 {
 	auto device = Renderer::getSingleton()->getDevice();
@@ -175,4 +232,26 @@ void Renderer::DescriptorHeap::dealloc(UINT64 pos)
 	auto j = pos % stride;
 
 	mUsed[i] &= ~(1 << j);
+}
+
+ID3D12DescriptorHeap * Renderer::DescriptorHeap::get()
+{
+	return mHeap.Get();
+}
+
+Renderer::RenderTarget::RenderTarget(ComPtr<ID3D12Resource> res)
+{
+	auto device = Renderer::getSingleton()->getDevice();
+	auto heap = Renderer::getSingleton()->getDescriptorHeap(DHT_RENDERTARGET);
+
+	mPos = heap->alloc();
+	mHandle = heap->get()->GetCPUDescriptorHandleForHeapStart();
+	mHandle.ptr += mPos;
+	device->CreateRenderTargetView(res.Get(), nullptr, mHandle);
+}
+
+Renderer::RenderTarget::~RenderTarget()
+{
+	auto heap = Renderer::getSingleton()->getDescriptorHeap(DHT_RENDERTARGET);
+	heap->dealloc(mPos);
 }

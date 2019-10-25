@@ -9,9 +9,12 @@
 #include <memory>
 
 // windows
+#if defined(NO_UE4)
+#include <Windows.h>
+#else
 #include "Windows/MinWindows.h"
+#endif
 #include <wrl/client.h>
-
 
 // d3d
 #include <d3d12.h>

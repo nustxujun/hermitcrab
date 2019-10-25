@@ -9,7 +9,7 @@ class Renderer
 	static auto const NUM_MAX_DEPTH_STENCIL_VIEWS = 4 * 1024;
 	static auto const NUM_MAX_CBV_SRV_UAVS = 32 * 1024;
 
-	enum
+	enum DescriptorHeapType
 	{
 		DHT_BACKBUFFER,
 		DHT_RENDERTARGET,
@@ -58,6 +58,11 @@ public:
 	class RenderTarget:public Interface<RenderTarget>
 	{
 	public:
+		RenderTarget(ComPtr<ID3D12Resource> res);
+		~RenderTarget();
+	private:
+		UINT64 mPos;
+		D3D12_CPU_DESCRIPTOR_HANDLE mHandle;
 	};
 
 	class DescriptorHeap :public Interface<DescriptorHeap>
@@ -69,6 +74,7 @@ public:
 		UINT64 alloc();
 		void dealloc(UINT64 pos);
 
+		ID3D12DescriptorHeap* get();
 	private:
 		ComPtr<ID3D12DescriptorHeap> mHeap;
 		UINT mSize;
@@ -79,25 +85,39 @@ public:
 	~Renderer();
 	void initialize(HWND window);
 	void resize(int width, int height);
+	void onRender();
 
 	ComPtr<ID3D12Device> getDevice();
+
 private:
 	void uninitialize();
 	void initDevice();
 	void initCommands();
 	void initDescriptorHeap();
 
+	void commitCommands();
+	void resetCommands();
+	void syncFrame();
+
 	ComPtr<IDXGIFactory4> getDXGIFactory();
 	ComPtr<IDXGIAdapter> getAdapter();
+	DescriptorHeap::Ref getDescriptorHeap(DescriptorHeapType);
 private:
 	static Renderer::Ptr instance;
 
 	HWND mWindow;
 
 	ComPtr<ID3D12Device> mDevice;
-	ComPtr<ID3D12CommandQueue> mCommandQueue;
-	ComPtr<IDXGISwapChain> mSwapChain;
+	ComPtr<IDXGISwapChain3> mSwapChain;
 	std::array< RenderTarget::Ptr, NUM_BACK_BUFFERS> mBackbuffers;
+	ComPtr<ID3D12CommandQueue> mCommandQueue;
+	ComPtr<ID3D12GraphicsCommandList> mCommandList;
+	std::array<ComPtr<ID3D12CommandAllocator>, NUM_BACK_BUFFERS> mCommandAllocators;
+	UINT64 mFenceValue;
+	ComPtr<ID3D12Fence> mFence;
+	HANDLE mFenceEvent;
+	UINT mCurrentFrame;
+
 
 	std::array<DescriptorHeap::Ptr, DHT_MAX_NUM> mDescriptorHeaps;
 
