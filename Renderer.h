@@ -1,6 +1,12 @@
 #pragma once
 #include "Common.h"
 
+#if defined(D3D12ON7)
+#define IDXGIFACTORY IDXGIFactory1
+#else
+#define IDXGIFACTORY IDXGIFactory4
+#endif
+
 class Renderer
 {
 	static const auto FEATURE_LEVEL = D3D_FEATURE_LEVEL_11_0;
@@ -28,6 +34,10 @@ public:
 	class WeakPtr
 	{
 	public:
+		WeakPtr()
+		{
+
+		}
 		WeakPtr(std::weak_ptr<T> p):
 			mPointer(p)
 		{
@@ -81,6 +91,24 @@ public:
 		std::vector<int> mUsed;
 	};
 
+	class CommandAllocator : public Interface<CommandAllocator>
+	{
+	public:
+		CommandAllocator();
+		~CommandAllocator();
+		void reset();
+		void wait();
+		void signal(ComPtr<ID3D12CommandQueue> queue);
+		bool completed();
+		ID3D12CommandAllocator* get();
+
+	private:
+		ComPtr<ID3D12CommandAllocator> mAllocator;
+		ComPtr<ID3D12Fence> mFence;
+		HANDLE mFenceEvent;
+		UINT64 mFenceValue;
+	};
+
 	Renderer();
 	~Renderer();
 	void initialize(HWND window);
@@ -95,11 +123,12 @@ private:
 	void initCommands();
 	void initDescriptorHeap();
 
+	CommandAllocator::Ref allocCommandAllocator();
 	void commitCommands();
 	void resetCommands();
 	void syncFrame();
 
-	ComPtr<IDXGIFactory4> getDXGIFactory();
+	ComPtr<IDXGIFACTORY> getDXGIFactory();
 	ComPtr<IDXGIAdapter> getAdapter();
 	DescriptorHeap::Ref getDescriptorHeap(DescriptorHeapType);
 private:
@@ -112,12 +141,9 @@ private:
 	std::array< RenderTarget::Ptr, NUM_BACK_BUFFERS> mBackbuffers;
 	ComPtr<ID3D12CommandQueue> mCommandQueue;
 	ComPtr<ID3D12GraphicsCommandList> mCommandList;
-	std::array<ComPtr<ID3D12CommandAllocator>, NUM_BACK_BUFFERS> mCommandAllocators;
-	UINT64 mFenceValue;
-	ComPtr<ID3D12Fence> mFence;
-	HANDLE mFenceEvent;
+	std::vector<CommandAllocator::Ptr> mCommandAllocators;
 	UINT mCurrentFrame;
-
+	CommandAllocator::Ref mCurrentCommandAllocator;
 
 	std::array<DescriptorHeap::Ptr, DHT_MAX_NUM> mDescriptorHeaps;
 

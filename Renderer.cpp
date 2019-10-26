@@ -1,6 +1,12 @@
 #include "Renderer.h"
 
-Renderer::Ptr instance;
+#pragma comment(lib,"d3d12.lib")
+#pragma comment(lib,"dxgi.lib")
+#pragma comment(lib,"d3dcompiler.lib")
+ 
+
+
+Renderer::Ptr Renderer::instance;
 
 #define CHECK Common::checkResult
 
@@ -33,6 +39,7 @@ void Renderer::initialize(HWND window)
 {
 	mWindow = window;
 
+#if defined(_DEBUG)
 	{
 		ComPtr<ID3D12Debug> debugController;
 		if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
@@ -40,6 +47,7 @@ void Renderer::initialize(HWND window)
 			debugController->EnableDebugLayer();
 		}
 	}
+#endif
 
 	initDevice();
 	initCommands();
@@ -78,7 +86,6 @@ void Renderer::onRender()
 
 	CHECK( mSwapChain->Present(1, 0) );
 
-	syncFrame();
 	resetCommands();
 }
 
@@ -106,14 +113,9 @@ void Renderer::initCommands()
 		CHECK(mDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(&mCommandQueue)));
 	}
 
-	for (auto i = 0; i < NUM_BACK_BUFFERS; ++i)
-		CHECK(mDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mCommandAllocators[i])));
+	mCurrentCommandAllocator = allocCommandAllocator();
+	CHECK(mDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, mCurrentCommandAllocator->get(), nullptr, IID_PPV_ARGS(&mCommandList)));
 
-	CHECK(mDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, mCommandAllocators[0].Get(), nullptr, IID_PPV_ARGS(&mCommandList)));
-	CHECK(mDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)));
-	mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-	
-	mFenceValue = 0;
 	mCurrentFrame = 0;
 }
 
@@ -129,6 +131,21 @@ void Renderer::initDescriptorHeap()
 	mDescriptorHeaps[DHT_CBV_SRV_UAV] = create(NUM_MAX_CBV_SRV_UAVS, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
 }
 
+Renderer::CommandAllocator::Ref Renderer::allocCommandAllocator()
+{
+	for (auto& a : mCommandAllocators)
+	{
+		if (a->completed())
+		{
+			return a;
+		}
+	}
+
+	auto a = CommandAllocator::Ptr(new CommandAllocator());
+	mCommandAllocators.push_back(a);
+	return a;
+}
+
 void Renderer::commitCommands()
 {
 	CHECK(mCommandList->Close());
@@ -138,34 +155,32 @@ void Renderer::commitCommands()
 
 void Renderer::resetCommands()
 {
-	CHECK(mCommandAllocators[mCurrentFrame]->Reset());
-	mCommandList->Reset(mCommandAllocators[mCurrentFrame].Get(), nullptr);
+	mCurrentCommandAllocator->signal(mCommandQueue);
+	mCurrentCommandAllocator = allocCommandAllocator();
+
+	mCurrentCommandAllocator->reset();
+	mCommandList->Reset(mCurrentCommandAllocator->get(), nullptr);
+
+	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
 }
 
 void Renderer::syncFrame()
 {
-	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
-	auto fence = mFenceValue;
-	mFenceValue++;
-
-	CHECK(mCommandQueue->Signal(mFence.Get(), fence));
-	if (mFence->GetCompletedValue() < fence)
-	{
-		mFence->SetEventOnCompletion(fence, mFenceEvent);
-		WaitForSingleObjectEx(mFenceEvent, INFINITE,FALSE);
-	}
-
 }
 
-ComPtr<IDXGIFactory4> Renderer::getDXGIFactory()
+ComPtr<IDXGIFACTORY> Renderer::getDXGIFactory()
 {
 	UINT dxgiFactoryFlags = 0;
 #if defined(_DEBUG)
 	dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
 #endif
 
-	ComPtr<IDXGIFactory4> fac;
+	ComPtr<IDXGIFACTORY> fac;
+#if defined(D3D12ON7)
+	CHECK(CreateDXGIFactory1(IID_PPV_ARGS(&fac)));
+#else
 	CHECK(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&fac)));
+#endif
 	return fac;
 }
 
@@ -188,6 +203,7 @@ ComPtr<IDXGIAdapter> Renderer::getAdapter()
 	}
 
 	Common::Assert(false, "fail to find adapter");
+	return {};
 }
 
 Renderer::DescriptorHeap::Ref Renderer::getDescriptorHeap(DescriptorHeapType type)
@@ -209,10 +225,10 @@ Renderer::DescriptorHeap::DescriptorHeap(UINT count, D3D12_DESCRIPTOR_HEAP_TYPE 
 
 UINT64 Renderer::DescriptorHeap::alloc()
 {
-	auto stride = sizeof(int);
-	for (auto i = 0; i < mUsed.size(); ++i)
+	size_t stride = sizeof(int);
+	for (size_t i = 0; i < mUsed.size(); ++i)
 	{
-		for (auto j = 0; j < stride; ++j)
+		for (size_t j = 0; j < stride; ++j)
 		{
 			auto index = 1 << j;
 			if ((mUsed[i] & index) == 0)
@@ -223,13 +239,14 @@ UINT64 Renderer::DescriptorHeap::alloc()
 		}
 	}
 	Common::Assert(0, " cannot alloc from descriptor heap");
+	return {};
 }
 
 void Renderer::DescriptorHeap::dealloc(UINT64 pos)
 {
-	auto stride = sizeof(int);
-	auto i = pos / stride;
-	auto j = pos % stride;
+	UINT64 stride = sizeof(int);
+	UINT64 i = pos / stride;
+	UINT64 j = pos % stride;
 
 	mUsed[i] &= ~(1 << j);
 }
@@ -255,3 +272,49 @@ Renderer::RenderTarget::~RenderTarget()
 	auto heap = Renderer::getSingleton()->getDescriptorHeap(DHT_RENDERTARGET);
 	heap->dealloc(mPos);
 }
+
+Renderer::CommandAllocator::CommandAllocator()
+{
+	auto device = Renderer::getSingleton()->getDevice();
+	CHECK(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mAllocator)));
+	CHECK(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)));
+	mFenceValue = 0;
+	mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+}
+
+Renderer::CommandAllocator::~CommandAllocator()
+{
+	CloseHandle(mFenceEvent);
+}
+
+void Renderer::CommandAllocator::reset()
+{
+	wait();
+	CHECK(mAllocator->Reset());
+}
+
+void Renderer::CommandAllocator::wait()
+{
+	if (completed())
+		return;
+	CHECK(mFence->SetEventOnCompletion(mFenceValue, mFenceEvent));
+	WaitForSingleObjectEx(mFenceEvent, INFINITY, FALSE);
+}
+
+void Renderer::CommandAllocator::signal(ComPtr<ID3D12CommandQueue> queue)
+{
+	CHECK(queue->Signal(mFence.Get(), ++mFenceValue));
+}
+
+bool Renderer::CommandAllocator::completed()
+{
+	return mFence->GetCompletedValue() < mFenceValue;
+}
+
+ID3D12CommandAllocator * Renderer::CommandAllocator::get()
+{
+	return mAllocator.Get();
+}
+
+
