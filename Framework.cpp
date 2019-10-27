@@ -2,6 +2,8 @@
 
 Framework::Framework()
 {
+	CreateDirectoryA("cache/", NULL);
+
 	mRenderer = Renderer::create();
 	registerWindow();
 	createWindow();

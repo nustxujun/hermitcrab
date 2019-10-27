@@ -3,7 +3,8 @@
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"dxgi.lib")
 #pragma comment(lib,"d3dcompiler.lib")
- 
+#include <D3Dcompiler.h>
+
 
 
 Renderer::Ptr Renderer::instance;
@@ -92,6 +93,78 @@ void Renderer::onRender()
 ComPtr<ID3D12Device> Renderer::getDevice()
 {
 	return mDevice;
+}
+
+Renderer::Buffer Renderer::compileShader(const std::string & path, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros)
+{
+	struct _stat attrs;
+	if (_stat(path.c_str(), &attrs) != 0)
+	{
+		Common::Assert(0, "fail to open shader file");
+		return {};
+	}
+
+	auto time = attrs.st_mtime;
+
+	std::regex p(".+[/\\]([^/\\]+)$");
+	std::smatch match;
+	std::string filename = path;
+	if (std::regex_match(path, match, p))
+	{
+		filename = match[1];
+	}
+
+#if defined(_DEBUG)
+	// Enable better shader debugging with the graphics debugging tools.
+	UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#else
+	UINT compileFlags = 0;
+#endif
+
+
+	std::string cachefilename = "cache/" + filename;
+	std::fstream cachefile(cachefilename, std::ios::in | std::ios::binary);
+
+	if (cachefile)
+	{
+		__time64_t lasttime;
+		cachefile >> lasttime;
+
+		if (lasttime == time)
+		{
+			size_t pos = cachefile.tellg();
+			cachefile.seekg(std::ios::end);
+			size_t size = cachefile.tellg();
+			size = size - pos;
+			cachefile.seekg(pos);
+
+			auto buffer = createBuffer(size);
+			cachefile.read(buffer->data(), size);
+
+			return buffer;
+		}
+	}
+	
+
+	std::fstream file(path, std::ios::in | std::ios::binary);
+	file.seekg(std::ios::end);
+	size_t size = file.tellg();
+	file.seekg(std::ios::beg);
+	std::vector<char> data(size);
+	file.read(data.data(), size);
+	file.close();
+
+	ComPtr<ID3DBlob> blob;
+	ComPtr<ID3DBlob> err;
+	if (FAILED(D3DCompile(data.data(), size, path.c_str(), macros.data(), NULL, entry.c_str(), target.c_str(), compileFlags, 0, &blob, &err)))
+	{
+		Common::Assert(0, (const char*)err->GetBufferPointer());
+		return {};
+	}
+
+	auto result = createBuffer(blob->GetBufferSize());
+	memcpy(result->data(), blob->GetBufferPointer(), result->size());
+	return result;
 }
 
 void Renderer::uninitialize()

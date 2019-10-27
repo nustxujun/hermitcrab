@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <fstream>
+#include <regex>
 
 // windows
 #if defined(NO_UE4)

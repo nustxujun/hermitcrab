@@ -26,6 +26,9 @@ class Renderer
 	};
 public:
 	using Ptr = std::shared_ptr<Renderer>;
+	using Buffer = std::shared_ptr<std::vector<char>>;
+
+
 	static Renderer::Ptr create();
 	static void destory();
 	static Renderer::Ptr getSingleton();
@@ -116,8 +119,14 @@ public:
 	void onRender();
 
 	ComPtr<ID3D12Device> getDevice();
+	Buffer compileShader(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 
 private:
+	Buffer createBuffer(size_t size = 0)
+	{
+		return Buffer(new std::vector<char>(size));
+	}
+
 	void uninitialize();
 	void initDevice();
 	void initCommands();
