@@ -346,6 +346,16 @@ Renderer::RenderTarget::~RenderTarget()
 	heap->dealloc(mPos);
 }
 
+const D3D12_CPU_DESCRIPTOR_HANDLE& Renderer::RenderTarget::getHandle() const
+{
+	return mHandle;
+}
+
+Renderer::RenderTarget::operator const D3D12_CPU_DESCRIPTOR_HANDLE& () const
+{
+	return mHandle;
+}
+
 Renderer::CommandAllocator::CommandAllocator()
 {
 	auto device = Renderer::getSingleton()->getDevice();
@@ -390,4 +400,50 @@ ID3D12CommandAllocator * Renderer::CommandAllocator::get()
 	return mAllocator.Get();
 }
 
+void Renderer::Resource::create(size_t size, D3D12_HEAP_TYPE heaptype, DXGI_FORMAT format)
+{
+	
+	D3D12_RESOURCE_STATES resstate = D3D12_RESOURCE_STATE_COMMON;
+	if (heaptype == D3D12_HEAP_TYPE_READBACK)
+	{
+		resstate = D3D12_RESOURCE_STATE_COPY_DEST;
+	}
+	else if (heaptype == D3D12_HEAP_TYPE_UPLOAD)
+	{
+		resstate = D3D12_RESOURCE_STATE_GENERIC_READ;
+	}
+
+
+	D3D12_HEAP_PROPERTIES heapprop = {};
+	heapprop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	heapprop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+
+	D3D12_RESOURCE_DESC resdesc = {};
+	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	resdesc.Alignment = 0;
+	resdesc.Width = size;
+	resdesc.Height = 1;
+	resdesc.DepthOrArraySize = 1;
+	resdesc.MipLevels = 1;
+	resdesc.Format = format;
+	resdesc.SampleDesc.Count = 1;
+	resdesc.SampleDesc.Quality = 0;
+	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	auto device = Renderer::getSingleton()->getDevice();
+	device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, resstate, nullptr, IID_PPV_ARGS(&mResource));
+
+	mDesc = resdesc;
+}
+
+void Renderer::Resource::blit(void* data, size_t size)
+{
+	D3D12_RANGE readrange = { 0,0 };
+	char* dst = 0;
+	CHECK(mResource->Map(0, &readrange, (void**)&dst));
+	memcpy(dst, data, size);
+	D3D12_RANGE writerange = { 0, size };
+	mResource->Unmap(0, &writerange);
+}
 

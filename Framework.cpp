@@ -10,6 +10,7 @@ Framework::Framework()
 	mRenderer->initialize(mWindow);
 
 	resize(1600, 900);
+	update();
 }
 
 Framework::~Framework()

@@ -29,10 +29,6 @@ public:
 	using Buffer = std::shared_ptr<std::vector<char>>;
 
 
-	static Renderer::Ptr create();
-	static void destory();
-	static Renderer::Ptr getSingleton();
-
 	template<class T>
 	class WeakPtr
 	{
@@ -68,11 +64,27 @@ public:
 		using Ref = WeakPtr<T>;
 	};
 
+
+	class Resource: public Interface<Resource>
+	{
+	public:
+		virtual void create(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
+
+		void blit(void* data, size_t size);
+	private:
+		ComPtr<ID3D12Resource> mResource;
+		D3D12_RESOURCE_DESC mDesc;
+	};
+
+
 	class RenderTarget:public Interface<RenderTarget>
 	{
 	public:
 		RenderTarget(ComPtr<ID3D12Resource> res);
 		~RenderTarget();
+
+		const D3D12_CPU_DESCRIPTOR_HANDLE& getHandle()const;
+		operator const D3D12_CPU_DESCRIPTOR_HANDLE& ()const;
 	private:
 		UINT64 mPos;
 		D3D12_CPU_DESCRIPTOR_HANDLE mHandle;
@@ -111,6 +123,11 @@ public:
 		HANDLE mFenceEvent;
 		UINT64 mFenceValue;
 	};
+
+
+	static Renderer::Ptr create();
+	static void destory();
+	static Renderer::Ptr getSingleton();
 
 	Renderer();
 	~Renderer();
