@@ -68,14 +68,25 @@ public:
 	class Resource: public Interface<Resource>
 	{
 	public:
-		virtual void create(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
-
+		void create(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
+		void create(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate);
 		void blit(void* data, size_t size);
+
+		void setState(D3D12_RESOURCE_STATES state);
+
+		template<class T>
+		T& as() { return dynamic_cast<T>(*this); }
 	private:
 		ComPtr<ID3D12Resource> mResource;
 		D3D12_RESOURCE_DESC mDesc;
+		D3D12_RESOURCE_STATES mState;
 	};
 
+	class Texture : public Resource
+	{
+	public:
+		virtual void create(size_t width, size_t height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format);
+	};
 
 	class RenderTarget:public Interface<RenderTarget>
 	{
@@ -138,6 +149,11 @@ public:
 	ComPtr<ID3D12Device> getDevice();
 	Buffer compileShader(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 
+	void addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier);
+	void flushResourceBarrier();
+
+	Resource::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
+	Resource::Ref createTexture(const std::string& filename);
 private:
 	Buffer createBuffer(size_t size = 0)
 	{
@@ -172,5 +188,6 @@ private:
 	CommandAllocator::Ref mCurrentCommandAllocator;
 
 	std::array<DescriptorHeap::Ptr, DHT_MAX_NUM> mDescriptorHeaps;
-
+	std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
+	std::vector<Resource::Ptr> mResources;
 };

@@ -167,6 +167,32 @@ Renderer::Buffer Renderer::compileShader(const std::string & path, const std::st
 	return result;
 }
 
+void Renderer::addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier)
+{
+	mResourceBarriers.push_back(resbarrier);
+}
+
+void Renderer::flushResourceBarrier()
+{
+	mCommandList->ResourceBarrier(mResourceBarriers.size(), mResourceBarriers.data());
+	mResourceBarriers.clear();
+}
+
+Renderer::Resource::Ref Renderer::createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type)
+{
+	auto tex = Resource::Ptr(new Texture());
+	tex->as<Texture>().create(width, height, type, format);
+	
+	mResources.push_back(tex);
+
+	return tex;
+}
+
+Resource::Ref Renderer::createTexture(const std::string& filename)
+{
+	return Resource::Ref();
+}
+
 void Renderer::uninitialize()
 {
 }
@@ -402,22 +428,6 @@ ID3D12CommandAllocator * Renderer::CommandAllocator::get()
 
 void Renderer::Resource::create(size_t size, D3D12_HEAP_TYPE heaptype, DXGI_FORMAT format)
 {
-	
-	D3D12_RESOURCE_STATES resstate = D3D12_RESOURCE_STATE_COMMON;
-	if (heaptype == D3D12_HEAP_TYPE_READBACK)
-	{
-		resstate = D3D12_RESOURCE_STATE_COPY_DEST;
-	}
-	else if (heaptype == D3D12_HEAP_TYPE_UPLOAD)
-	{
-		resstate = D3D12_RESOURCE_STATE_GENERIC_READ;
-	}
-
-
-	D3D12_HEAP_PROPERTIES heapprop = {};
-	heapprop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-	heapprop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-
 	D3D12_RESOURCE_DESC resdesc = {};
 	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
 	resdesc.Alignment = 0;
@@ -431,11 +441,31 @@ void Renderer::Resource::create(size_t size, D3D12_HEAP_TYPE heaptype, DXGI_FORM
 	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 	resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
+	create(resdesc, heaptype, D3D12_RESOURCE_STATE_COMMON);
+}
+
+void Renderer::Resource::create(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate)
+{
+	mState = ressate;
+	if (ht == D3D12_HEAP_TYPE_READBACK)
+	{
+		mState = D3D12_RESOURCE_STATE_COPY_DEST;
+	}
+	else if (ht == D3D12_HEAP_TYPE_UPLOAD)
+	{
+		mState = D3D12_RESOURCE_STATE_GENERIC_READ;
+	}
+
+	D3D12_HEAP_PROPERTIES heapprop = {};
+	heapprop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	heapprop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+
 	auto device = Renderer::getSingleton()->getDevice();
-	device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, resstate, nullptr, IID_PPV_ARGS(&mResource));
+	device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, mState, nullptr, IID_PPV_ARGS(&mResource));
 
 	mDesc = resdesc;
 }
+
 
 void Renderer::Resource::blit(void* data, size_t size)
 {
@@ -447,3 +477,42 @@ void Renderer::Resource::blit(void* data, size_t size)
 	mResource->Unmap(0, &writerange);
 }
 
+void Renderer::Resource::setState(D3D12_RESOURCE_STATES state)
+{
+	if (state == mState)
+		return;
+
+	D3D12_RESOURCE_BARRIER barrier;
+	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+
+	barrier.Transition.pResource = mResource.Get();
+	barrier.Transition.StateBefore = mState;
+	barrier.Transition.StateAfter = state;
+	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+	mState = state;
+	Renderer::getSingleton()->addResourceBarrier(barrier);
+}
+
+Renderer::Texture::Texture()
+{
+}
+
+void Renderer::Texture::create(size_t width, size_t height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format)
+{
+	D3D12_RESOURCE_DESC resdesc = {};
+	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	resdesc.Alignment = 0;
+	resdesc.Width = width;
+	resdesc.Height = height;
+	resdesc.DepthOrArraySize = 1;
+	resdesc.MipLevels = 1;
+	resdesc.Format = format;
+	resdesc.SampleDesc.Count = 1;
+	resdesc.SampleDesc.Quality = 0;
+	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	Resource::create(resdesc, ht, D3D12_RESOURCE_STATE_COMMON);
+}
