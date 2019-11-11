@@ -62,12 +62,20 @@ public:
 	public:
 		using Ptr = std::shared_ptr<T>;
 		using Ref = WeakPtr<T>;
+
+		template<class ... Args>
+		Ptr static create(const Args& ... args)
+		{
+			auto ptr = Ptr(new T(args...));
+			return ptr;
+		}
 	};
 
 
 	class Resource: public Interface<Resource>
 	{
 	public:
+		virtual ~Resource(){};
 		void create(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
 		void create(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate);
 		void blit(void* data, size_t size);
@@ -76,13 +84,15 @@ public:
 
 		template<class T>
 		T& as() { return static_cast<T&>(*this); }
+
+		ID3D12Resource* get()const{return mResource.Get();}
 	private:
 		ComPtr<ID3D12Resource> mResource;
 		D3D12_RESOURCE_DESC mDesc;
 		D3D12_RESOURCE_STATES mState;
 	};
 
-	class Texture : public Resource
+	class Texture final: public Resource
 	{
 	public:
 		virtual void create(size_t width, size_t height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format);
@@ -117,6 +127,21 @@ public:
 		std::vector<int> mUsed;
 	};
 
+	class Fence : public Interface<Fence>
+	{
+	public :
+		Fence();
+		~Fence();
+		void wait();
+		void signal();
+		bool completed();
+
+		private:
+			ComPtr<ID3D12Fence> mFence;
+			HANDLE mFenceEvent;
+			UINT64 mFenceValue;
+	};
+
 	class CommandAllocator : public Interface<CommandAllocator>
 	{
 	public:
@@ -124,13 +149,13 @@ public:
 		~CommandAllocator();
 		void reset();
 		void wait();
-		void signal(ComPtr<ID3D12CommandQueue> queue);
+		void signal();
 		bool completed();
 		ID3D12CommandAllocator* get();
 
 	private:
 		ComPtr<ID3D12CommandAllocator> mAllocator;
-		ComPtr<ID3D12Fence> mFence;
+		Fence::Ref mFence;
 		HANDLE mFenceEvent;
 		UINT64 mFenceValue;
 	};
@@ -146,14 +171,16 @@ public:
 	void resize(int width, int height);
 	void onRender();
 
-	ComPtr<ID3D12Device> getDevice();
+	ID3D12Device* getDevice();
+	ID3D12CommandQueue* getCommandQueue();
 	Buffer compileShader(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 
 	void addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier);
 	void flushResourceBarrier();
 
+	Fence::Ref createFence();
+	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
 	Resource::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
-	Resource::Ref createTexture(const std::string& filename);
 private:
 	Buffer createBuffer(size_t size = 0)
 	{
@@ -190,4 +217,5 @@ private:
 	std::array<DescriptorHeap::Ptr, DHT_MAX_NUM> mDescriptorHeaps;
 	std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
 	std::vector<Resource::Ptr> mResources;
+	std::vector<Fence::Ptr> mFences;
 };

@@ -44,6 +44,7 @@ void Framework::update()
 		}
 		else
 		{
+			updateImpl();
 			mRenderer->onRender();
 		}
 	}
