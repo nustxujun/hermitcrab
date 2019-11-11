@@ -90,9 +90,14 @@ void Renderer::onRender()
 	resetCommands();
 }
 
-ComPtr<ID3D12Device> Renderer::getDevice()
+ID3D12Device* Renderer::getDevice()
 {
-	return mDevice;
+	return mDevice.Get();
+}
+
+ID3D12CommandQueue* Renderer::getCommandQueue()
+{
+	return mCommandQueue.Get();
 }
 
 Renderer::Buffer Renderer::compileShader(const std::string & path, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros)
@@ -178,6 +183,22 @@ void Renderer::flushResourceBarrier()
 	mResourceBarriers.clear();
 }
 
+Renderer::Fence::Ref Renderer::createFence()
+{
+	auto fence = Fence::create();
+	mFences.push_back(fence);
+	return fence;
+}
+
+Renderer::Resource::Ref Renderer::createResource(size_t size, D3D12_HEAP_TYPE type)
+{
+	auto res = Resource::Ptr(new Resource());
+	res->create(size, type);
+	mResources.push_back(res);
+
+	return res;
+}
+
 Renderer::Resource::Ref Renderer::createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type)
 {
 	auto tex = Resource::Ptr(new Texture());
@@ -188,10 +209,6 @@ Renderer::Resource::Ref Renderer::createTexture(int width, int height, DXGI_FORM
 	return tex;
 }
 
-Resource::Ref Renderer::createTexture(const std::string& filename)
-{
-	return Resource::Ref();
-}
 
 void Renderer::uninitialize()
 {
@@ -254,7 +271,7 @@ void Renderer::commitCommands()
 
 void Renderer::resetCommands()
 {
-	mCurrentCommandAllocator->signal(mCommandQueue);
+	mCurrentCommandAllocator->signal();
 	mCurrentCommandAllocator = allocCommandAllocator();
 
 	mCurrentCommandAllocator->reset();
@@ -384,12 +401,7 @@ Renderer::RenderTarget::operator const D3D12_CPU_DESCRIPTOR_HANDLE& () const
 
 Renderer::CommandAllocator::CommandAllocator()
 {
-	auto device = Renderer::getSingleton()->getDevice();
-	CHECK(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mAllocator)));
-	CHECK(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)));
-	mFenceValue = 0;
-	mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-
+	mFence = Renderer::getSingleton()->createFence();
 }
 
 Renderer::CommandAllocator::~CommandAllocator()
@@ -405,20 +417,17 @@ void Renderer::CommandAllocator::reset()
 
 void Renderer::CommandAllocator::wait()
 {
-	if (completed())
-		return;
-	CHECK(mFence->SetEventOnCompletion(mFenceValue, mFenceEvent));
-	WaitForSingleObjectEx(mFenceEvent, INFINITY, FALSE);
+	mFence->wait();
 }
 
-void Renderer::CommandAllocator::signal(ComPtr<ID3D12CommandQueue> queue)
+void Renderer::CommandAllocator::signal()
 {
-	CHECK(queue->Signal(mFence.Get(), ++mFenceValue));
+	mFence->signal();
 }
 
 bool Renderer::CommandAllocator::completed()
 {
-	return mFence->GetCompletedValue() < mFenceValue;
+	return mFence->completed();
 }
 
 ID3D12CommandAllocator * Renderer::CommandAllocator::get()
@@ -495,9 +504,6 @@ void Renderer::Resource::setState(D3D12_RESOURCE_STATES state)
 	Renderer::getSingleton()->addResourceBarrier(barrier);
 }
 
-Renderer::Texture::Texture()
-{
-}
 
 void Renderer::Texture::create(size_t width, size_t height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format)
 {
@@ -515,4 +521,35 @@ void Renderer::Texture::create(size_t width, size_t height, D3D12_HEAP_TYPE ht, 
 	resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
 	Resource::create(resdesc, ht, D3D12_RESOURCE_STATE_COMMON);
+}
+
+Renderer::Fence::Fence()
+{
+	auto device = Renderer::getSingleton()->getDevice();
+	CHECK(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)));
+	mFenceValue = 0;
+	mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+}
+
+Renderer::Fence::~Fence()
+{
+}
+
+void Renderer::Fence::wait()
+{
+	if (completed())
+		return;
+	CHECK(mFence->SetEventOnCompletion(mFenceValue, mFenceEvent));
+	WaitForSingleObjectEx(mFenceEvent, INFINITY, FALSE);
+}
+
+void Renderer::Fence::signal()
+{
+	auto queue = Renderer::getSingleton()->getCommandQueue();
+	CHECK(queue->Signal(mFence.Get(), ++mFenceValue));
+}
+
+bool Renderer::Fence::completed()
+{
+	return mFence->GetCompletedValue() < mFenceValue;
 }
