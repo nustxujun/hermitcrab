@@ -67,6 +67,9 @@ void Renderer::resize(int width, int height)
 		swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 		swapChainDesc.SampleDesc.Count = 1;
 
+#if defined(D3D12ON7)
+
+#else
 		auto factory = getDXGIFactory();
 		ComPtr<IDXGISwapChain1> swapChain;
 		CHECK(factory->CreateSwapChainForHwnd(
@@ -78,6 +81,8 @@ void Renderer::resize(int width, int height)
 			&swapChain));
 
 		swapChain.As(&mSwapChain);
+
+#endif
 	}
 }
 
@@ -188,7 +193,7 @@ Renderer::Resource::Ref Renderer::createTexture(int width, int height, DXGI_FORM
 	return tex;
 }
 
-Resource::Ref Renderer::createTexture(const std::string& filename)
+Renderer::Resource::Ref Renderer::createTexture(const std::string& filename)
 {
 	return Resource::Ref();
 }
@@ -495,9 +500,6 @@ void Renderer::Resource::setState(D3D12_RESOURCE_STATES state)
 	Renderer::getSingleton()->addResourceBarrier(barrier);
 }
 
-Renderer::Texture::Texture()
-{
-}
 
 void Renderer::Texture::create(size_t width, size_t height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format)
 {

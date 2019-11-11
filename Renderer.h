@@ -1,6 +1,6 @@
 #pragma once
 #include "Common.h"
-
+#define D3D12ON7
 #if defined(D3D12ON7)
 #define IDXGIFACTORY IDXGIFactory1
 #else
@@ -75,7 +75,7 @@ public:
 		void setState(D3D12_RESOURCE_STATES state);
 
 		template<class T>
-		T& as() { return dynamic_cast<T>(*this); }
+		T& as() { return static_cast<T&>(*this); }
 	private:
 		ComPtr<ID3D12Resource> mResource;
 		D3D12_RESOURCE_DESC mDesc;
