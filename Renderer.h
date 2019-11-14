@@ -1,6 +1,8 @@
 #pragma once
 #include "Common.h"
+
 #define D3D12ON7
+#include "D3D12Downlevel.h"
 #if defined(D3D12ON7)
 #define IDXGIFACTORY IDXGIFactory1
 #else
@@ -37,18 +39,40 @@ public:
 		{
 
 		}
-		WeakPtr(std::weak_ptr<T> p):
+
+		WeakPtr(std::shared_ptr<T>& p) :
 			mPointer(p)
 		{
 
 		}
 
-		operator bool()
+		WeakPtr(std::weak_ptr<T>& p):
+			mPointer(p)
+		{
+
+		}
+
+		operator bool() const
 		{
 			return !mPointer.expired();
 		}
 
-		std::shared_ptr<T> operator->()
+
+		bool operator==(const WeakPtr<T>& p)const
+		{
+			if (mPointer.expired() || p.mPointer.expired())
+				return false;
+			return mPointer.lock().get() == p.mPointer.lock().get();
+		}
+		
+		bool operator== (const std::shared_ptr<T>& p)const
+		{
+			if (mPointer.expired())
+				return false;
+			return mPointer.lock().get() == p.get();
+		}
+
+		std::shared_ptr<T> operator->()const
 		{
 			return mPointer.lock();
 		}
@@ -64,7 +88,7 @@ public:
 		using Ref = WeakPtr<T>;
 
 		template<class ... Args>
-		Ptr static create(const Args& ... args)
+		Ptr static create(Args& ... args)
 		{
 			auto ptr = Ptr(new T(args...));
 			return ptr;
@@ -75,7 +99,7 @@ public:
 	class Resource: public Interface<Resource>
 	{
 	public:
-		virtual ~Resource(){};
+		virtual ~Resource();
 		void create(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
 		void create(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate);
 		void blit(void* data, size_t size);
@@ -83,7 +107,7 @@ public:
 		void setState(D3D12_RESOURCE_STATES state);
 
 		template<class T>
-		T& as() { return static_cast<T&>(*this); }
+		T& to() { return static_cast<T&>(*this); }
 
 		ID3D12Resource* get()const{return mResource.Get();}
 	private:
@@ -95,20 +119,23 @@ public:
 	class Texture final: public Resource
 	{
 	public:
-		virtual void create(size_t width, size_t height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format);
+		virtual void create(size_t width, size_t height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
 	};
 
 	class RenderTarget:public Interface<RenderTarget>
 	{
 	public:
-		RenderTarget(ComPtr<ID3D12Resource> res);
+		RenderTarget(size_t width, size_t height, DXGI_FORMAT format);
 		~RenderTarget();
 
 		const D3D12_CPU_DESCRIPTOR_HANDLE& getHandle()const;
 		operator const D3D12_CPU_DESCRIPTOR_HANDLE& ()const;
+
+		Resource::Ref getResource()const;
 	private:
 		UINT64 mPos;
 		D3D12_CPU_DESCRIPTOR_HANDLE mHandle;
+		Resource::Ref mTexture;
 	};
 
 	class DescriptorHeap :public Interface<DescriptorHeap>
@@ -156,8 +183,6 @@ public:
 	private:
 		ComPtr<ID3D12CommandAllocator> mAllocator;
 		Fence::Ref mFence;
-		HANDLE mFenceEvent;
-		UINT64 mFenceValue;
 	};
 
 
@@ -180,7 +205,8 @@ public:
 
 	Fence::Ref createFence();
 	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
-	Resource::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
+	Resource::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+	void destroyResource(Resource::Ref res);
 private:
 	Buffer createBuffer(size_t size = 0)
 	{
@@ -200,6 +226,8 @@ private:
 	ComPtr<IDXGIFACTORY> getDXGIFactory();
 	ComPtr<IDXGIAdapter> getAdapter();
 	DescriptorHeap::Ref getDescriptorHeap(DescriptorHeapType);
+
+	void present();
 private:
 	static Renderer::Ptr instance;
 
@@ -207,13 +235,14 @@ private:
 
 	ComPtr<ID3D12Device> mDevice;
 	ComPtr<IDXGISwapChain3> mSwapChain;
-	std::array< RenderTarget::Ptr, NUM_BACK_BUFFERS> mBackbuffers;
 	ComPtr<ID3D12CommandQueue> mCommandQueue;
 	ComPtr<ID3D12GraphicsCommandList> mCommandList;
 	std::vector<CommandAllocator::Ptr> mCommandAllocators;
 	UINT mCurrentFrame;
 	CommandAllocator::Ref mCurrentCommandAllocator;
 
+
+	std::array< RenderTarget::Ptr, NUM_BACK_BUFFERS> mBackbuffers;
 	std::array<DescriptorHeap::Ptr, DHT_MAX_NUM> mDescriptorHeaps;
 	std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
 	std::vector<Resource::Ptr> mResources;

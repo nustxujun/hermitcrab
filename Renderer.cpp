@@ -7,6 +7,8 @@
 
 
 
+
+
 Renderer::Ptr Renderer::instance;
 
 #define CHECK Common::checkResult
@@ -19,6 +21,7 @@ Renderer::Ptr Renderer::create()
 
 void Renderer::destory()
 {
+	instance->uninitialize();
 	instance.reset();
 }
 
@@ -33,7 +36,6 @@ Renderer::Renderer()
 
 Renderer::~Renderer()
 {
-	uninitialize();
 }
 
 void Renderer::initialize(HWND window)
@@ -68,12 +70,17 @@ void Renderer::resize(int width, int height)
 		swapChainDesc.SampleDesc.Count = 1;
 
 #if defined(D3D12ON7)
+	
+	ComPtr<ID3D12DeviceDownlevel> deviceDownlevel;
+	CHECK(mDevice.As(&deviceDownlevel));
+
+	mBackbuffers[0] = RenderTarget::create(width, height,swapChainDesc.Format);
 
 #else
 		auto factory = getDXGIFactory();
 		ComPtr<IDXGISwapChain1> swapChain;
 		CHECK(factory->CreateSwapChainForHwnd(
-			mCommandQueue.Get() ,
+			mCommandQueue.Get(),
 			mWindow,
 			&swapChainDesc,
 			nullptr,
@@ -90,7 +97,7 @@ void Renderer::onRender()
 {
 	commitCommands();
 
-	CHECK( mSwapChain->Present(1, 0) );
+	present();
 
 	resetCommands();
 }
@@ -154,7 +161,7 @@ Renderer::Buffer Renderer::compileShader(const std::string & path, const std::st
 			return buffer;
 		}
 	}
-	
+
 
 	std::fstream file(path, std::ios::in | std::ios::binary);
 	file.seekg(std::ios::end);
@@ -204,19 +211,53 @@ Renderer::Resource::Ref Renderer::createResource(size_t size, D3D12_HEAP_TYPE ty
 	return res;
 }
 
-Renderer::Resource::Ref Renderer::createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type)
+Renderer::Resource::Ref Renderer::createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags)
 {
 	auto tex = Resource::Ptr(new Texture());
-	tex->as<Texture>().create(width, height, type, format);
-	
+	tex->to<Texture>().create(width, height, type, format, flags);
+
 	mResources.push_back(tex);
 
 	return tex;
 }
 
+void Renderer::destroyResource(Resource::Ref res)
+{
+	auto endi = mResources.end();
+	for (auto i = mResources.begin(); i != endi; ++i)
+	{
+		if (res == *i)
+		{
+			mResources.erase(i);
+			return;
+		}
+	}
+}
+
+
 
 void Renderer::uninitialize()
 {
+	flushResourceBarrier();
+
+	mBackbuffers.fill({});
+	mResources.clear();
+
+	mDescriptorHeaps.fill({});
+	
+	mResourceBarriers.clear();
+
+	mCommandAllocators.clear();
+	mCommandQueue.Reset();
+
+	mFences.clear();
+	mSwapChain.Reset();
+	auto device = mDevice.Detach();
+	auto count = device->Release();
+	if (count != 0)
+	{
+		MessageBox(NULL, TEXT("some objects were not released."), NULL, NULL);
+	}
 }
 
 void Renderer::initDevice()
@@ -269,9 +310,11 @@ Renderer::CommandAllocator::Ref Renderer::allocCommandAllocator()
 
 void Renderer::commitCommands()
 {
+#ifndef D3D12ON7
 	CHECK(mCommandList->Close());
 	ID3D12CommandList* ppCommandLists[] = { mCommandList.Get() };
 	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+#endif
 }
 
 void Renderer::resetCommands()
@@ -282,7 +325,9 @@ void Renderer::resetCommands()
 	mCurrentCommandAllocator->reset();
 	mCommandList->Reset(mCurrentCommandAllocator->get(), nullptr);
 
+#ifndef D3D12ON7
 	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
+#endif
 }
 
 void Renderer::syncFrame()
@@ -331,6 +376,23 @@ Renderer::DescriptorHeap::Ref Renderer::getDescriptorHeap(DescriptorHeapType typ
 {
 	return mDescriptorHeaps[type];
 }
+void Renderer::present()
+{
+#if defined(D3D12ON7)
+	ComPtr<ID3D12CommandQueueDownlevel> commandQueueDownlevel;
+
+	CHECK(mCommandQueue.As(&commandQueueDownlevel));
+	CHECK(commandQueueDownlevel->Present(
+		mCommandList.Get(),
+		mBackbuffers[0]->getResource()->get(),
+		mWindow,
+		D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK));
+#else
+	CHECK(mSwapChain->Present(1, 0));
+#endif
+
+
+}
 Renderer::DescriptorHeap::DescriptorHeap(UINT count, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags)
 {
 	auto device = Renderer::getSingleton()->getDevice();
@@ -340,8 +402,8 @@ Renderer::DescriptorHeap::DescriptorHeap(UINT count, D3D12_DESCRIPTOR_HEAP_TYPE 
 	desc.Flags = flags;
 	device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&mHeap));
 	mSize = device->GetDescriptorHandleIncrementSize(type);
-	
-	mUsed.resize(ALIGN(count, sizeof(int)),0);
+
+	mUsed.resize(ALIGN(count, sizeof(int)), 0);
 }
 
 UINT64 Renderer::DescriptorHeap::alloc()
@@ -377,21 +439,26 @@ ID3D12DescriptorHeap * Renderer::DescriptorHeap::get()
 	return mHeap.Get();
 }
 
-Renderer::RenderTarget::RenderTarget(ComPtr<ID3D12Resource> res)
+Renderer::RenderTarget::RenderTarget(size_t width, size_t height, DXGI_FORMAT format)
 {
-	auto device = Renderer::getSingleton()->getDevice();
-	auto heap = Renderer::getSingleton()->getDescriptorHeap(DHT_RENDERTARGET);
+	auto& renderer = Renderer::getSingleton();
+	auto device = renderer->getDevice();
+	mTexture = renderer->createTexture(width, height, format, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+	
 
+	auto heap = Renderer::getSingleton()->getDescriptorHeap(DHT_RENDERTARGET);
 	mPos = heap->alloc();
 	mHandle = heap->get()->GetCPUDescriptorHandleForHeapStart();
 	mHandle.ptr += mPos;
-	device->CreateRenderTargetView(res.Get(), nullptr, mHandle);
+	device->CreateRenderTargetView(mTexture->get(), nullptr, mHandle);
 }
 
 Renderer::RenderTarget::~RenderTarget()
 {
 	auto heap = Renderer::getSingleton()->getDescriptorHeap(DHT_RENDERTARGET);
 	heap->dealloc(mPos);
+
+	Renderer::getSingleton()->destroyResource(mTexture);
 }
 
 const D3D12_CPU_DESCRIPTOR_HANDLE& Renderer::RenderTarget::getHandle() const
@@ -404,14 +471,21 @@ Renderer::RenderTarget::operator const D3D12_CPU_DESCRIPTOR_HANDLE& () const
 	return mHandle;
 }
 
+Renderer::Resource::Ref Renderer::RenderTarget::getResource() const
+{
+	return mTexture;
+}
+
 Renderer::CommandAllocator::CommandAllocator()
 {
 	mFence = Renderer::getSingleton()->createFence();
+	auto device = Renderer::getSingleton()->getDevice();
+	CHECK(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mAllocator)));
+
 }
 
 Renderer::CommandAllocator::~CommandAllocator()
 {
-	CloseHandle(mFenceEvent);
 }
 
 void Renderer::CommandAllocator::reset()
@@ -438,6 +512,10 @@ bool Renderer::CommandAllocator::completed()
 ID3D12CommandAllocator * Renderer::CommandAllocator::get()
 {
 	return mAllocator.Get();
+}
+
+Renderer::Resource::~Resource()
+{
 }
 
 void Renderer::Resource::create(size_t size, D3D12_HEAP_TYPE heaptype, DXGI_FORMAT format)
@@ -473,9 +551,10 @@ void Renderer::Resource::create(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_T
 	D3D12_HEAP_PROPERTIES heapprop = {};
 	heapprop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 	heapprop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+	heapprop.Type = ht;
 
 	auto device = Renderer::getSingleton()->getDevice();
-	device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, mState, nullptr, IID_PPV_ARGS(&mResource));
+	CHECK(device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, mState, nullptr, IID_PPV_ARGS(&mResource)));
 
 	mDesc = resdesc;
 }
@@ -510,10 +589,10 @@ void Renderer::Resource::setState(D3D12_RESOURCE_STATES state)
 }
 
 
-void Renderer::Texture::create(size_t width, size_t height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format)
+void Renderer::Texture::create(size_t width, size_t height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags)
 {
 	D3D12_RESOURCE_DESC resdesc = {};
-	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 	resdesc.Alignment = 0;
 	resdesc.Width = width;
 	resdesc.Height = height;
@@ -522,8 +601,8 @@ void Renderer::Texture::create(size_t width, size_t height, D3D12_HEAP_TYPE ht, 
 	resdesc.Format = format;
 	resdesc.SampleDesc.Count = 1;
 	resdesc.SampleDesc.Quality = 0;
-	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	resdesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resdesc.Flags = flags;
 
 	Resource::create(resdesc, ht, D3D12_RESOURCE_STATE_COMMON);
 }
