@@ -1,9 +1,12 @@
 #pragma once
 #include "Common.h"
 
+#if WINVER < 0x0A00
 #define D3D12ON7
-#include "D3D12Downlevel.h"
+#endif
+
 #if defined(D3D12ON7)
+#include "D3D12Downlevel.h"
 #define IDXGIFACTORY IDXGIFactory1
 #else
 #define IDXGIFACTORY IDXGIFactory4

@@ -5,12 +5,13 @@
 #pragma comment(lib,"d3dcompiler.lib")
 #include <D3Dcompiler.h>
 
-
+#include <sstream>
 
 
 
 Renderer::Ptr Renderer::instance;
 
+//#define CHECK(hr) { if (hr == 0x887a0005) Common::checkResult(Renderer::getSingleton()->getDevice()->GetDeviceRemovedReason()); else Common::checkResult(hr);}
 #define CHECK Common::checkResult
 
 Renderer::Ptr Renderer::create()
@@ -191,6 +192,8 @@ void Renderer::addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier)
 
 void Renderer::flushResourceBarrier()
 {
+	if (mResourceBarriers.empty())
+		return;
 	mCommandList->ResourceBarrier(mResourceBarriers.size(), mResourceBarriers.data());
 	mResourceBarriers.clear();
 }
@@ -238,6 +241,7 @@ void Renderer::destroyResource(Resource::Ref res)
 
 void Renderer::uninitialize()
 {
+	commitCommands();
 	flushResourceBarrier();
 
 	mBackbuffers.fill({});
@@ -249,6 +253,7 @@ void Renderer::uninitialize()
 
 	mCommandAllocators.clear();
 	mCommandQueue.Reset();
+	mCommandList.Reset();
 
 	mFences.clear();
 	mSwapChain.Reset();
@@ -256,6 +261,12 @@ void Renderer::uninitialize()
 	auto count = device->Release();
 	if (count != 0)
 	{
+#ifndef D3D12ON7
+		ID3D12DebugDevice* dd;
+		device->QueryInterface(&dd);
+		dd->ReportLiveDeviceObjects(D3D12_RLDO_SUMMARY);
+		dd->Release();
+#endif
 		MessageBox(NULL, TEXT("some objects were not released."), NULL, NULL);
 	}
 }
@@ -303,6 +314,9 @@ Renderer::CommandAllocator::Ref Renderer::allocCommandAllocator()
 		}
 	}
 
+	if (mCommandAllocators.size() >= 16)
+		return mCommandAllocators[0];
+
 	auto a = CommandAllocator::Ptr(new CommandAllocator());
 	mCommandAllocators.push_back(a);
 	return a;
@@ -323,6 +337,7 @@ void Renderer::resetCommands()
 	mCurrentCommandAllocator = allocCommandAllocator();
 
 	mCurrentCommandAllocator->reset();
+
 	mCommandList->Reset(mCurrentCommandAllocator->get(), nullptr);
 
 #ifndef D3D12ON7
@@ -441,7 +456,7 @@ ID3D12DescriptorHeap * Renderer::DescriptorHeap::get()
 
 Renderer::RenderTarget::RenderTarget(size_t width, size_t height, DXGI_FORMAT format)
 {
-	auto& renderer = Renderer::getSingleton();
+	auto renderer = Renderer::getSingleton();
 	auto device = renderer->getDevice();
 	mTexture = renderer->createTexture(width, height, format, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
 	
@@ -476,16 +491,24 @@ Renderer::Resource::Ref Renderer::RenderTarget::getResource() const
 	return mTexture;
 }
 
+
 Renderer::CommandAllocator::CommandAllocator()
 {
 	mFence = Renderer::getSingleton()->createFence();
 	auto device = Renderer::getSingleton()->getDevice();
 	CHECK(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mAllocator)));
-
+	
+	static int i = 0;
+	std::wstringstream ss;
+	ss << i++;
+	auto str = ss.str();
+	mAllocator->SetName(L"aaa");
 }
 
 Renderer::CommandAllocator::~CommandAllocator()
 {
+	signal();
+	wait();
 }
 
 void Renderer::CommandAllocator::reset()
@@ -617,6 +640,7 @@ Renderer::Fence::Fence()
 
 Renderer::Fence::~Fence()
 {
+	mFence.Reset();
 }
 
 void Renderer::Fence::wait()
@@ -624,7 +648,11 @@ void Renderer::Fence::wait()
 	if (completed())
 		return;
 	CHECK(mFence->SetEventOnCompletion(mFenceValue, mFenceEvent));
-	WaitForSingleObjectEx(mFenceEvent, INFINITY, FALSE);
+	auto constexpr infinity = 0xffffffff; // same macros INFINITY in other headers
+	auto ret = WaitForSingleObject(mFenceEvent, infinity);
+
+	if (!completed())
+		abort();
 }
 
 void Renderer::Fence::signal()
@@ -635,5 +663,6 @@ void Renderer::Fence::signal()
 
 bool Renderer::Fence::completed()
 {
-	return mFence->GetCompletedValue() < mFenceValue;
+	auto value = mFence->GetCompletedValue();
+	return  value >= mFenceValue;
 }

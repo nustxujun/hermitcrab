@@ -11,7 +11,7 @@
 #include <regex>
 
 // windows
-#if defined(NO_UE4)
+#if defined(NO_UE4) || defined(_CONSOLE)
 #include <Windows.h>
 #else
 #include "Windows/MinWindows.h"
@@ -36,7 +36,9 @@ public :
 	static void checkResult(HRESULT hr)
 	{
 		if (hr == S_OK) return;
-		TCHAR msg[MAX_PATH] = { 0 };
+	
+	
+		TCHAR msg[1024] = { 0 };
 		FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, 0, hr, 0, msg, sizeof(msg), 0);
 		MessageBox(NULL, msg, NULL, MB_ICONERROR);
 		abort();

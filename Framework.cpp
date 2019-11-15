@@ -53,7 +53,7 @@ HWND Framework::createWindow()
 {
 	HINSTANCE instance = ::GetModuleHandle(NULL);
 
-	mWindow = CreateWindowA(mWindowClass.c_str(), "", WS_OVERLAPPEDWINDOW,
+	mWindow = CreateWindowW(mWindowClass.c_str(), L"", WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, 0, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, instance, nullptr);
 
 	ShowWindow(mWindow, true);
@@ -66,7 +66,7 @@ void Framework::registerWindow()
 {
 	HINSTANCE instance = ::GetModuleHandle(NULL);
 
-	WNDCLASSEXA wcex = { 0 };
+	WNDCLASSEXW wcex = { 0 };
 	wcex.cbSize = sizeof(WNDCLASSEX);
 
 	wcex.style = CS_HREDRAW | CS_VREDRAW;
@@ -81,7 +81,7 @@ void Framework::registerWindow()
 	wcex.lpszClassName = mWindowClass.c_str();
 	wcex.hIconSm = NULL;
 
-	RegisterClassExA(&wcex);
+	RegisterClassExW(&wcex);
 }
 
 LRESULT Framework::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)

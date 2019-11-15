@@ -19,6 +19,6 @@ private:
 	virtual void updateImpl() = 0;
 private:
 	HWND mWindow;
-	std::string mWindowClass = "window";
+	std::wstring mWindowClass = L"_frame_window";
 	Renderer::Ptr mRenderer;
 };
