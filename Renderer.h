@@ -206,27 +206,6 @@ public:
 		Fence::Ref mFence;
 	};
 
-	class CommandList final: public Interface<CommandList>
-	{
-	public:
-		CommandList(const CommandAllocator::Ref& alloc);
-		~CommandList();
-		ID3D12GraphicsCommandList* get();
-
-
-		void close();
-		void reset(const CommandAllocator::Ref& alloc);
-
-		void transitionTo(const Resource::Ref res, const D3D12_RESOURCE_STATES& state);
-		void addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier);
-		void flushResourceBarrier();
-
-		void clearRenderTarget(const RenderTarget::Ref& rt, const Color& color);
-	private:
-		ComPtr<ID3D12GraphicsCommandList> mCmdList;
-		std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
-	};
-
 	class PipelineState;
 	class Shader
 	{
@@ -288,18 +267,45 @@ public:
 		std::vector<D3D12_INPUT_ELEMENT_DESC> mLayout;
 	};
 
-	class PipelineState final : public Interface<CommandList>
+	class PipelineState final : public Interface<PipelineState>
 	{
 	public:
 		PipelineState(const RenderState& rs, const std::vector<Shader::Ptr>& shaders);
 		~PipelineState();
 
 		ID3D12PipelineState* get();
-
+		ID3D12RootSignature* getRootSignature();
 	private:
 		ComPtr<ID3D12PipelineState> mPipelineState;
 		ComPtr<ID3D12RootSignature> mRootSignature;
 	};
+
+
+
+	class CommandList final : public Interface<CommandList>
+	{
+	public:
+		CommandList(const CommandAllocator::Ref& alloc);
+		~CommandList();
+		ID3D12GraphicsCommandList* get();
+
+
+		void close();
+		void reset(const CommandAllocator::Ref& alloc);
+
+		void transitionTo(const Resource::Ref res, const D3D12_RESOURCE_STATES& state);
+		void addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier);
+		void flushResourceBarrier();
+
+		void clearRenderTarget(const RenderTarget::Ref& rt, const Color& color);
+
+		void setPipelineState(PipelineState::Ref ps);
+	private:
+		ComPtr<ID3D12GraphicsCommandList> mCmdList;
+		std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
+	};
+
+
 
 	static Renderer::Ptr create();
 	static void destory();

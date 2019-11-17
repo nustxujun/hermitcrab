@@ -160,8 +160,10 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string & path, const st
 #else
 	UINT compileFlags = 0;
 #endif
-
-	std::string cachefilename = "cache/" + filename;
+	std::hash<std::string> hash;
+	std::stringstream ss;
+	ss << std::hex << hash(path + entry + target);
+	std::string cachefilename = "cache/" + ss.str();
 	{
 		std::fstream cachefile(cachefilename, std::ios::in | std::ios::binary);
 
