@@ -4,9 +4,9 @@ Framework::Framework()
 {
 	CreateDirectoryA("cache/", NULL);
 
-	mRenderer = Renderer::create();
 	registerWindow();
 	createWindow();
+	mRenderer = Renderer::create();
 	mRenderer->initialize(mWindow);
 
 	resize(1600, 900);
@@ -19,16 +19,7 @@ Framework::~Framework()
 
 void Framework::resize(int width, int height)
 {
-	RECT win, client;
-	::GetClientRect(mWindow, &client);
-	::GetWindowRect(mWindow, &win);
-
-	auto w = win.right - win.left - client.right;
-	auto h = win.bottom - win.top - client.bottom;
-
-	::MoveWindow(mWindow, win.left, win.top, w + width, h + height, FALSE);
-
-	mRenderer->resize(width, height);
+	resize(mWindow, width, height);
 }
 
 void Framework::update()
@@ -94,6 +85,30 @@ LRESULT Framework::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 			PostMessage(hWnd, WM_CLOSE, 0, 0);
 		}
 		return 0;
+	case WM_SIZE:
+		if (wParam == SIZE_RESTORED)
+		{
+			auto w = LOWORD(lParam); 
+			auto h = HIWORD(lParam); 
+
+			resize(hWnd, w,h);
+		}
+		return 0 ;
 	}
 	return DefWindowProc(hWnd, message, wParam, lParam);
+}
+
+void Framework::resize(HWND hwnd, int width, int height)
+{
+	RECT win, client;
+	::GetClientRect(hwnd, &client);
+	::GetWindowRect(hwnd, &win);
+
+	auto w = win.right - win.left - client.right;
+	auto h = win.bottom - win.top - client.bottom;
+
+	::MoveWindow(hwnd, win.left, win.top, w + width, h + height, FALSE);
+	auto r = Renderer::getSingleton();
+	if (r)
+		Renderer::getSingleton()->resize(width, height);
 }

@@ -53,3 +53,8 @@ public :
 
 	}
 };
+
+using Vector3 = std::array<float, 3>;
+using Vector4 = std::array<float, 4>;
+using Color = std::array<float, 4>;
+using Matrix = std::array<std::array<float, 4>, 4>;

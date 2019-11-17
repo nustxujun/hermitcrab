@@ -15,7 +15,7 @@ private:
 	HWND createWindow();
 	void registerWindow();
 	static LRESULT CALLBACK process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-
+	static void resize(HWND hwnd, int width, int height);
 	virtual void updateImpl() = 0;
 private:
 	HWND mWindow;

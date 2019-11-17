@@ -1,9 +1,9 @@
 #pragma once
 #include "Common.h"
 
-#if WINVER < 0x0A00
+//#if WINVER < 0x0A00
 #define D3D12ON7
-#endif
+//#endif
 
 #if defined(D3D12ON7)
 #include "D3D12Downlevel.h"
@@ -79,6 +79,11 @@ public:
 		{
 			return mPointer.lock();
 		}
+
+	/*	T* get()const
+		{
+			return mPointer.lock()->get();
+		}*/
 	private:
 		std::weak_ptr<T> mPointer;
 	};
@@ -96,6 +101,10 @@ public:
 			auto ptr = Ptr(new T(args...));
 			return ptr;
 		}
+
+
+		template<class U>
+		U& to() { return static_cast<U&>(*this); }
 	};
 
 
@@ -107,10 +116,10 @@ public:
 		void create(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate);
 		void blit(void* data, size_t size);
 
-		void setState(D3D12_RESOURCE_STATES state);
+		const D3D12_RESOURCE_STATES& getState()const;
+		// transition by cmdlist
+		void setState(const D3D12_RESOURCE_STATES& s);
 
-		template<class T>
-		T& to() { return static_cast<T&>(*this); }
 
 		ID3D12Resource* get()const{return mResource.Get();}
 	private:
@@ -122,13 +131,13 @@ public:
 	class Texture final: public Resource
 	{
 	public:
-		virtual void create(size_t width, size_t height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
+		virtual void create(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
 	};
 
 	class RenderTarget:public Interface<RenderTarget>
 	{
 	public:
-		RenderTarget(size_t width, size_t height, DXGI_FORMAT format);
+		RenderTarget(UINT width, UINT height, DXGI_FORMAT format);
 		~RenderTarget();
 
 		const D3D12_CPU_DESCRIPTOR_HANDLE& getHandle()const;
@@ -136,7 +145,6 @@ public:
 
 		Resource::Ref getResource()const;
 	private:
-		UINT64 mPos;
 		D3D12_CPU_DESCRIPTOR_HANDLE mHandle;
 		Resource::Ref mTexture;
 	};
@@ -147,14 +155,24 @@ public:
 
 		DescriptorHeap(UINT count, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags);
 		
-		UINT64 alloc();
-		void dealloc(UINT64 pos);
+		D3D12_CPU_DESCRIPTOR_HANDLE allocCPUDescriptorHandle();
+		D3D12_GPU_DESCRIPTOR_HANDLE allocGPUDescriptorHandle();
+
+		void dealloc(D3D12_CPU_DESCRIPTOR_HANDLE handle);
+		void dealloc(D3D12_GPU_DESCRIPTOR_HANDLE pos);
+
 
 		ID3D12DescriptorHeap* get();
+		UINT getSize()const{return mSize;}
+
+	private:
+		UINT64 alloc();
+
 	private:
 		ComPtr<ID3D12DescriptorHeap> mHeap;
 		UINT mSize;
 		std::vector<int> mUsed;
+
 	};
 
 	class Fence : public Interface<Fence>
@@ -172,7 +190,7 @@ public:
 			UINT64 mFenceValue;
 	};
 
-	class CommandAllocator : public Interface<CommandAllocator>
+	class CommandAllocator final: public Interface<CommandAllocator>
 	{
 	public:
 		CommandAllocator();
@@ -188,6 +206,100 @@ public:
 		Fence::Ref mFence;
 	};
 
+	class CommandList final: public Interface<CommandList>
+	{
+	public:
+		CommandList(const CommandAllocator::Ref& alloc);
+		~CommandList();
+		ID3D12GraphicsCommandList* get();
+
+
+		void close();
+		void reset(const CommandAllocator::Ref& alloc);
+
+		void transitionTo(const Resource::Ref res, const D3D12_RESOURCE_STATES& state);
+		void addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier);
+		void flushResourceBarrier();
+
+		void clearRenderTarget(const RenderTarget::Ref& rt, const Color& color);
+	private:
+		ComPtr<ID3D12GraphicsCommandList> mCmdList;
+		std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
+	};
+
+	class PipelineState;
+	class Shader
+	{
+		friend class Renderer::PipelineState;
+	public:
+		using Ptr = std::shared_ptr<Shader>;
+		enum ShaderType {
+			ST_VERTEX,
+			ST_HULL,
+			ST_DOMAIN,
+			ST_GEOMETRY,
+			ST_PIXEL,
+
+			ST_COMPUTE,
+
+			ST_MAX_NUM
+		};
+	public:
+		Shader(const Buffer& data, ShaderType type);
+
+		void registerSRV(UINT num, UINT start, UINT space);
+		void registerUAV(UINT num, UINT start, UINT space);
+		void registerCBV(UINT num, UINT start, UINT space);
+		void registerSampler(UINT num, UINT start, UINT space);
+		void registerStaticSampler(D3D12_STATIC_SAMPLER_DESC);
+	private:
+		ShaderType mType;
+		Buffer mCodeBlob;
+
+		std::vector<D3D12_DESCRIPTOR_RANGE> mRanges;
+		std::vector< D3D12_STATIC_SAMPLER_DESC> mStaticSamplers;
+	};
+
+	class RenderState
+	{
+	public:
+		friend class Renderer::PipelineState;
+		static const RenderState Default;
+	public:
+		RenderState();
+		RenderState(std::function<void(RenderState& self)> initializer);
+
+		void setBlend(const D3D12_BLEND_DESC& bs);
+		void setRasterizer(const D3D12_RASTERIZER_DESC& rs);
+		void setDepthStencil(const D3D12_DEPTH_STENCIL_DESC& dss);
+		void setInputLayout(const std::vector< D3D12_INPUT_ELEMENT_DESC> layout);
+		void setPrimitiveType(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
+		void setRenderTargetFormat(const std::vector<DXGI_FORMAT>& fmts);
+		void setDepthStencilFormat(DXGI_FORMAT fmt);
+		void setSample(UINT count, UINT quality);
+	private:
+		D3D12_BLEND_DESC mBlend;
+		D3D12_RASTERIZER_DESC mRasterizer;
+		D3D12_DEPTH_STENCIL_DESC mDepthStencil;
+		D3D12_PRIMITIVE_TOPOLOGY_TYPE mPrimitiveType;
+		DXGI_FORMAT mDSFormat;
+		DXGI_SAMPLE_DESC mSample;
+		std::vector<DXGI_FORMAT> mRTFormats;
+		std::vector<D3D12_INPUT_ELEMENT_DESC> mLayout;
+	};
+
+	class PipelineState final : public Interface<CommandList>
+	{
+	public:
+		PipelineState(const RenderState& rs, const std::vector<Shader::Ptr>& shaders);
+		~PipelineState();
+
+		ID3D12PipelineState* get();
+
+	private:
+		ComPtr<ID3D12PipelineState> mPipelineState;
+		ComPtr<ID3D12RootSignature> mRootSignature;
+	};
 
 	static Renderer::Ptr create();
 	static void destory();
@@ -201,10 +313,9 @@ public:
 
 	ID3D12Device* getDevice();
 	ID3D12CommandQueue* getCommandQueue();
-	Buffer compileShader(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
-
-	void addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier);
-	void flushResourceBarrier();
+	CommandList::Ref getCommandList();
+	RenderTarget::Ref getBackBuffer();
+	Shader::Ptr compileShader(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 
 	Fence::Ref createFence();
 	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
@@ -239,7 +350,7 @@ private:
 	ComPtr<ID3D12Device> mDevice;
 	ComPtr<IDXGISwapChain3> mSwapChain;
 	ComPtr<ID3D12CommandQueue> mCommandQueue;
-	ComPtr<ID3D12GraphicsCommandList> mCommandList;
+	CommandList::Ptr mCommandList;
 	std::vector<CommandAllocator::Ptr> mCommandAllocators;
 	UINT mCurrentFrame;
 	CommandAllocator::Ref mCurrentCommandAllocator;
