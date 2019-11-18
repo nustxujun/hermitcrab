@@ -259,6 +259,11 @@ Renderer::Texture::Ref Renderer::createTexture(int width, int height, DXGI_FORMA
 	return tex;
 }
 
+Renderer::VertexBuffer::Ptr Renderer::createVertexBuffer(size_t size)
+{
+	return VertexBuffer::Ptr();
+}
+
 void Renderer::destroyResource(Resource::Ref res)
 {
 	Texture::Ref t;
@@ -446,7 +451,7 @@ void Renderer::present()
 	CHECK(mCommandQueue.As(&commandQueueDownlevel));
 	CHECK(commandQueueDownlevel->Present(
 		mCommandList->get(),
-		mBackbuffers[0]->getResource()->get(),
+		mBackbuffers[0]->getTexture()->get(),
 		mWindow,
 		D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK));
 #else
