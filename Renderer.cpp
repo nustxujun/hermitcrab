@@ -101,7 +101,7 @@ void Renderer::resize(int width, int height)
 	{
 		ComPtr<ID3D12Resource> buffer;
 		CHECK(mSwapChain->GetBuffer(i, IID_PPV_ARGS(&buffer)));
-		auto res = Resource::create(buffer, D3D12_RESOURCE_STATE_PRESENT);
+		auto res = Texture::create(buffer, D3D12_RESOURCE_STATE_PRESENT);
 		mResources.push_back(res);
 		mBackbuffers[i] = RenderTarget::create(res);
 	}
@@ -249,10 +249,10 @@ Renderer::Resource::Ref Renderer::createResource(size_t size, D3D12_HEAP_TYPE ty
 	return res;
 }
 
-Renderer::Resource::Ref Renderer::createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags)
+Renderer::Texture::Ref Renderer::createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags)
 {
-	auto tex = Resource::Ptr(new Texture());
-	tex->to<Texture>().init(width, height, type, format, flags);
+	auto tex = Texture::create();
+	tex->init(width, height, type, format, flags);
 
 	mResources.push_back(tex);
 
@@ -261,6 +261,8 @@ Renderer::Resource::Ref Renderer::createTexture(int width, int height, DXGI_FORM
 
 void Renderer::destroyResource(Resource::Ref res)
 {
+	Texture::Ref t;
+	Resource::Ref r(t);
 	auto endi = mResources.end();
 	for (auto i = mResources.begin(); i != endi; ++i)
 	{
@@ -272,21 +274,30 @@ void Renderer::destroyResource(Resource::Ref res)
 	}
 }
 
+Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs)
+{
+
+	auto pso = PipelineState::create(rs, shaders);
+	mPipelineStates.push_back(pso);
+	return pso;
+}
+
 
 
 void Renderer::uninitialize()
 {
-
-	mBackbuffers.fill({});
-	mResources.clear();
-
-	mDescriptorHeaps.fill({});
-	
-	mResourceBarriers.clear();
-
+	// clear all commands
 	mCommandAllocators.clear();
 	mCommandQueue.Reset();
 	mCommandList.reset();
+
+	//clear resources
+	mBackbuffers.fill({});
+	mResources.clear();
+	mPipelineStates.clear();
+	mDescriptorHeaps.fill({});
+	mResourceBarriers.clear();
+
 
 	mFences.clear();
 	mSwapChain.Reset();
@@ -378,7 +389,7 @@ void Renderer::resetCommands()
 	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
 #endif
 
-	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getResource(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
 }
 
 void Renderer::syncFrame()
@@ -519,7 +530,7 @@ ID3D12DescriptorHeap * Renderer::DescriptorHeap::get()
 	return mHeap.Get();
 }
 
-Renderer::RenderTarget::RenderTarget(const Resource::Ref& res):
+Renderer::RenderTarget::RenderTarget(const Texture::Ref& res):
 	mTexture(res)
 {
 	createView();
@@ -551,7 +562,7 @@ Renderer::RenderTarget::operator const D3D12_CPU_DESCRIPTOR_HANDLE& () const
 	return mHandle;
 }
 
-Renderer::Resource::Ref Renderer::RenderTarget::getResource() const
+Renderer::Texture::Ref Renderer::RenderTarget::getTexture() const
 {
 	return mTexture;
 }
@@ -750,7 +761,7 @@ Renderer::CommandList::~CommandList()
 {
 }
 
-void Renderer::CommandList::transitionTo(const Resource::Ref res, D3D12_RESOURCE_STATES  state)
+void Renderer::CommandList::transitionTo(Resource::Ref res, D3D12_RESOURCE_STATES  state)
 {
 	const auto& cur = res->getState();
 	if (state == cur)
@@ -789,6 +800,11 @@ void Renderer::CommandList::clearRenderTarget(const RenderTarget::Ref & rt, cons
 	mCmdList->ClearRenderTargetView(rt->getHandle(), color.data(),0, nullptr);
 }
 
+void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
+{
+	mCmdList->SetPipelineState(ps->get());
+}
+
 void Renderer::CommandList::close()
 {
 	CHECK(mCmdList->Close());
@@ -805,7 +821,7 @@ ID3D12GraphicsCommandList * Renderer::CommandList::get()
 }
 
 
-const Renderer::RenderState Default([](Renderer::RenderState& self) {
+const Renderer::RenderState Renderer::RenderState::Default([](Renderer::RenderState& self) {
 	{
 		D3D12_BLEND_DESC desc = {};
 		desc.RenderTarget[0] = {
@@ -839,9 +855,6 @@ const Renderer::RenderState Default([](Renderer::RenderState& self) {
 });
 
 
-Renderer::RenderState::RenderState()
-{
-}
 
 Renderer::RenderState::RenderState(std::function<void(RenderState&self)> initializer)
 {
@@ -895,17 +908,22 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 		default:
 			break;
 		}
-
-		params.push_back(rpt);
+		if (!s->mRanges.empty())
+			params.push_back(rpt);
 	}
 	rsd.NumParameters = (UINT)params.size();
-	rsd.pParameters = params.data();
-	rsd.pStaticSamplers = samplers.data();
+	if (rsd.NumParameters > 0)
+		rsd.pParameters = params.data();
+	rsd.NumStaticSamplers = (UINT)samplers.size();
+	if (rsd.NumStaticSamplers > 0)
+		rsd.pStaticSamplers = samplers.data();
 
 	ComPtr<ID3D10Blob> blob;
 	ComPtr<ID3D10Blob> err;
 	CHECK(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1,&blob,&err));
-	device->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(), IID_PPV_ARGS(&mRootSignature));
+	if (err)
+		Common::Assert(0,(const char*) err->GetBufferPointer());
+	CHECK(device->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(), IID_PPV_ARGS(&mRootSignature)));
 	
 
 	desc.pRootSignature = mRootSignature.Get();
@@ -919,7 +937,19 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	desc.NumRenderTargets = (UINT)rs.mRTFormats.size();
 	memcpy(desc.RTVFormats, rs.mRTFormats.data(),desc.NumRenderTargets * sizeof(DXGI_FORMAT));
 	desc.DSVFormat = rs.mDSFormat;
-	
+	desc.SampleDesc = rs.mSample;
 	
 	CHECK(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&mPipelineState)));
+}
+
+Renderer::PipelineState::~PipelineState()
+{
+}
+
+Renderer::VertexBuffer::VertexBuffer(UINT size, UINT stride)
+{
+	auto renderer = Renderer::getSingleton();
+	mResource = renderer->createResource(size, D3D12_HEAP_TYPE_UPLOAD);
+
+	mView = {mResource->get()->GetGPUVirtualAddress(), stride, size};
 }

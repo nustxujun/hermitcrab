@@ -40,20 +40,24 @@ public:
 	public:
 		WeakPtr()
 		{
-
 		}
 
-		WeakPtr(std::shared_ptr<T>& p) :
+		WeakPtr(const std::shared_ptr<T>& p) :
 			mPointer(p)
 		{
-
 		}
 
-		WeakPtr(std::weak_ptr<T>& p):
-			mPointer(p)
-		{
+		//WeakPtr(const std::weak_ptr<T>& p):
+		//	mPointer(p)
+		//{
+		//}
 
-		}
+		template<class U>
+		WeakPtr(const WeakPtr<U>& p):
+			mPointer(p.weak())
+		{}
+
+
 
 		operator bool() const
 		{
@@ -81,10 +85,10 @@ public:
 			return mPointer.lock();
 		}
 
-	/*	T* get()const
-		{
-			return mPointer.lock()->get();
-		}*/
+
+		std::weak_ptr<T> weak()const {
+			return mPointer;
+		}
 	private:
 		std::weak_ptr<T> mPointer;
 	};
@@ -113,6 +117,7 @@ public:
 	{
 	public:
 		Resource() = default;
+		virtual ~Resource() = default;
 		Resource(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);
 		virtual ~Resource();
 		void init(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
@@ -131,28 +136,55 @@ public:
 		D3D12_RESOURCE_STATES mState;
 	};
 
-	class Texture final: public Resource
+	class Texture final: public Resource , public Interface<Texture>
 	{
 	public:
+		using Ptr = Interface<Texture>::Ptr;
+		using Ref = Interface<Texture>::Ref;
+
+		template<class ... Args>
+		static Ptr create(Args ... args) {
+			return Ptr(new Texture(args ...));
+		}
+
+		Texture() = default;
+		Texture(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON):Resource(res, state){}
+
 		virtual void init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
+
+		D3D12_GPU_DESCRIPTOR_HANDLE getHandle();
+	private:
+		D3D12_GPU_DESCRIPTOR_HANDLE mHandle;
 	};
 
-	class RenderTarget:public Interface<RenderTarget>
+	class RenderTarget final:public Interface<RenderTarget>
 	{
 	public:
-		RenderTarget(const Resource::Ref& res);
+		RenderTarget(const Texture::Ref& res);
 		RenderTarget(UINT width, UINT height, DXGI_FORMAT format);
 		~RenderTarget();
 
 		const D3D12_CPU_DESCRIPTOR_HANDLE& getHandle()const;
 		operator const D3D12_CPU_DESCRIPTOR_HANDLE& ()const;
 
-		Resource::Ref getResource()const;
+		Texture::Ref getTexture()const;
 	private:
 		void createView();
 	private:
 		D3D12_CPU_DESCRIPTOR_HANDLE mHandle;
-		Resource::Ref mTexture;
+		Texture::Ref mTexture;
+	};
+
+	class VertexBuffer final :public Interface<VertexBuffer>
+	{
+	public:
+		VertexBuffer(UINT size, UINT stride);
+		const D3D12_VERTEX_BUFFER_VIEW& getView()const{return mView;}
+
+		Resource::Ref getResource()const{return mResource;}
+	private:
+		Resource::Ref mResource;
+		D3D12_VERTEX_BUFFER_VIEW mView;
 	};
 
 	class DescriptorHeap :public Interface<DescriptorHeap>
@@ -251,17 +283,16 @@ public:
 		friend class Renderer::PipelineState;
 		static const RenderState Default;
 	public:
-		RenderState();
 		RenderState(std::function<void(RenderState& self)> initializer);
 
-		void setBlend(const D3D12_BLEND_DESC& bs);
-		void setRasterizer(const D3D12_RASTERIZER_DESC& rs);
-		void setDepthStencil(const D3D12_DEPTH_STENCIL_DESC& dss);
-		void setInputLayout(const std::vector< D3D12_INPUT_ELEMENT_DESC> layout);
-		void setPrimitiveType(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
-		void setRenderTargetFormat(const std::vector<DXGI_FORMAT>& fmts);
-		void setDepthStencilFormat(DXGI_FORMAT fmt);
-		void setSample(UINT count, UINT quality);
+		void setBlend(const D3D12_BLEND_DESC& bs){mBlend = bs;};
+		void setRasterizer(const D3D12_RASTERIZER_DESC& rs){mRasterizer = rs;}
+		void setDepthStencil(const D3D12_DEPTH_STENCIL_DESC& dss){mDepthStencil = dss;};
+		void setInputLayout(const std::vector< D3D12_INPUT_ELEMENT_DESC> layout){mLayout = layout;};
+		void setPrimitiveType(D3D12_PRIMITIVE_TOPOLOGY_TYPE type) {mPrimitiveType = type;}
+		void setRenderTargetFormat(const std::vector<DXGI_FORMAT>& fmts){mRTFormats = fmts;}
+		void setDepthStencilFormat(DXGI_FORMAT fmt) {mDSFormat = fmt;}
+		void setSample(UINT count, UINT quality){mSample = {count, quality};}
 	private:
 		D3D12_BLEND_DESC mBlend;
 		D3D12_RASTERIZER_DESC mRasterizer;
@@ -279,8 +310,8 @@ public:
 		PipelineState(const RenderState& rs, const std::vector<Shader::Ptr>& shaders);
 		~PipelineState();
 
-		ID3D12PipelineState* get();
-		ID3D12RootSignature* getRootSignature();
+		ID3D12PipelineState* get(){return mPipelineState.Get();}
+		ID3D12RootSignature* getRootSignature(){return mRootSignature.Get();}
 	private:
 		ComPtr<ID3D12PipelineState> mPipelineState;
 		ComPtr<ID3D12RootSignature> mRootSignature;
@@ -299,7 +330,7 @@ public:
 		void close();
 		void reset(const CommandAllocator::Ref& alloc);
 
-		void transitionTo(const Resource::Ref res, D3D12_RESOURCE_STATES state);
+		void transitionTo( Resource::Ref res, D3D12_RESOURCE_STATES state);
 		void addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier);
 		void flushResourceBarrier();
 
@@ -331,9 +362,11 @@ public:
 
 	Fence::Ref createFence();
 	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
-	Resource::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
 	void destroyResource(Resource::Ref res);
+	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+	VertexBuffer::Ref createVertexBuffer();
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
+
 private:
 	Buffer createBuffer(size_t size = 0)
 	{
@@ -374,4 +407,5 @@ private:
 	std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
 	std::vector<Resource::Ptr> mResources;
 	std::vector<Fence::Ptr> mFences;
+	std::vector<PipelineState::Ptr> mPipelineStates;
 };
