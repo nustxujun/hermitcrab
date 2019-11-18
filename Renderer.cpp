@@ -806,7 +806,36 @@ ID3D12GraphicsCommandList * Renderer::CommandList::get()
 
 
 const Renderer::RenderState Default([](Renderer::RenderState& self) {
+	{
+		D3D12_BLEND_DESC desc = {};
+		desc.RenderTarget[0] = {
+			FALSE,FALSE,
+			D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
+			D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
+			D3D12_LOGIC_OP_NOOP,
+			D3D12_COLOR_WRITE_ENABLE_ALL,
+		};
+		self.setBlend(desc);
+	}
+	self.setDepthStencil({});
+	self.setDepthStencilFormat(DXGI_FORMAT_D24_UNORM_S8_UINT);
+	self.setPrimitiveType(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+	self.setRasterizer({
+		D3D12_FILL_MODE_SOLID,
+		D3D12_CULL_MODE_BACK,
+		FALSE,
+		D3D12_DEFAULT_DEPTH_BIAS,
+		D3D12_DEFAULT_DEPTH_BIAS_CLAMP,
+		D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS,
+		TRUE,
+		FALSE,
+		FALSE,
+		0,
+		D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF
+	});
 
+	self.setRenderTargetFormat({ DXGI_FORMAT_R8G8B8A8_UNORM });
+	self.setSample(1,0);
 });
 
 
