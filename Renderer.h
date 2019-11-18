@@ -15,7 +15,7 @@
 class Renderer
 {
 	static const auto FEATURE_LEVEL = D3D_FEATURE_LEVEL_11_0;
-	static auto const NUM_BACK_BUFFERS = 3;
+	static auto const NUM_BACK_BUFFERS = 2;
 	static auto const NUM_MAX_RENDER_TARGET_VIEWS = 8 * 1024;
 	static auto const NUM_MAX_DEPTH_STENCIL_VIEWS = 4 * 1024;
 	static auto const NUM_MAX_CBV_SRV_UAVS = 32 * 1024;
@@ -77,6 +77,7 @@ public:
 
 		std::shared_ptr<T> operator->()const
 		{
+			Common::Assert(!mPointer.expired(), "invalid pointer");
 			return mPointer.lock();
 		}
 
@@ -96,7 +97,7 @@ public:
 		using Ref = WeakPtr<T>;
 
 		template<class ... Args>
-		Ptr static create(Args& ... args)
+		Ptr static create(Args ... args)
 		{
 			auto ptr = Ptr(new T(args...));
 			return ptr;
@@ -111,9 +112,11 @@ public:
 	class Resource: public Interface<Resource>
 	{
 	public:
+		Resource() = default;
+		Resource(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);
 		virtual ~Resource();
-		void create(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
-		void create(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate);
+		void init(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
+		void init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate);
 		void blit(void* data, size_t size);
 
 		const D3D12_RESOURCE_STATES& getState()const;
@@ -131,12 +134,13 @@ public:
 	class Texture final: public Resource
 	{
 	public:
-		virtual void create(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
+		virtual void init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
 	};
 
 	class RenderTarget:public Interface<RenderTarget>
 	{
 	public:
+		RenderTarget(const Resource::Ref& res);
 		RenderTarget(UINT width, UINT height, DXGI_FORMAT format);
 		~RenderTarget();
 
@@ -144,6 +148,8 @@ public:
 		operator const D3D12_CPU_DESCRIPTOR_HANDLE& ()const;
 
 		Resource::Ref getResource()const;
+	private:
+		void createView();
 	private:
 		D3D12_CPU_DESCRIPTOR_HANDLE mHandle;
 		Resource::Ref mTexture;
@@ -293,7 +299,7 @@ public:
 		void close();
 		void reset(const CommandAllocator::Ref& alloc);
 
-		void transitionTo(const Resource::Ref res, const D3D12_RESOURCE_STATES& state);
+		void transitionTo(const Resource::Ref res, D3D12_RESOURCE_STATES state);
 		void addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier);
 		void flushResourceBarrier();
 
