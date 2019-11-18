@@ -1,9 +1,9 @@
 #pragma once
 #include "Common.h"
 
-//#if WINVER < 0x0A00
+#if _MSC_VER < 1920
 #define D3D12ON7
-//#endif
+#endif
 
 #if defined(D3D12ON7)
 #include "D3D12Downlevel.h"
@@ -163,14 +163,14 @@ public:
 
 
 		ID3D12DescriptorHeap* get();
-		UINT getSize()const{return mSize;}
+		SIZE_T getSize()const{return mSize;}
 
 	private:
-		UINT64 alloc();
+		SIZE_T alloc();
 
 	private:
 		ComPtr<ID3D12DescriptorHeap> mHeap;
-		UINT mSize;
+		SIZE_T mSize;
 		std::vector<int> mUsed;
 
 	};

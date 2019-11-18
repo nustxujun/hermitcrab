@@ -187,7 +187,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string & path, const st
 
 	std::fstream file(path, std::ios::in | std::ios::binary);
 	file.seekg(0,std::ios::end);
-	size_t size = file.tellg();
+	size_t size = (size_t)file.tellg();
 	file.seekg(0);
 	std::vector<char> data(size);
 	file.read(data.data(), size);
@@ -441,7 +441,7 @@ Renderer::DescriptorHeap::DescriptorHeap(UINT count, D3D12_DESCRIPTOR_HEAP_TYPE 
 
 }
 
-UINT64 Renderer::DescriptorHeap::alloc()
+SIZE_T Renderer::DescriptorHeap::alloc()
 {
 	size_t stride = sizeof(int);
 	for (size_t i = 0; i < mUsed.size(); ++i)
@@ -470,7 +470,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE Renderer::DescriptorHeap::allocCPUDescriptorHandle()
 D3D12_GPU_DESCRIPTOR_HANDLE Renderer::DescriptorHeap::allocGPUDescriptorHandle()
 {
 	auto start = mHeap->GetGPUDescriptorHandleForHeapStart();
-	start.ptr += alloc() * mSize;
+	start.ptr += UINT64(alloc() * mSize);
 	return start;
 }
 
@@ -478,9 +478,9 @@ void Renderer::DescriptorHeap::dealloc(D3D12_CPU_DESCRIPTOR_HANDLE handle)
 {
 	auto start = mHeap->GetCPUDescriptorHandleForHeapStart();
 	auto pos = handle.ptr - start.ptr;
-	UINT64 stride = sizeof(int);
-	UINT64 i = pos / stride;
-	UINT64 j = pos % stride;
+	int stride = sizeof(int);
+	int i = pos / stride;
+	int j = pos % stride;
 
 	mUsed[i] &= ~(1 << j);
 }
@@ -490,8 +490,8 @@ void Renderer::DescriptorHeap::dealloc(D3D12_GPU_DESCRIPTOR_HANDLE handle)
 	auto start = mHeap->GetGPUDescriptorHandleForHeapStart();
 	auto pos = handle.ptr - start.ptr;
 	UINT64 stride = sizeof(int);
-	UINT64 i = pos / stride;
-	UINT64 j = pos % stride;
+	int i = int(pos / stride);
+	int j = int(pos % stride);
 
 	mUsed[i] &= ~(1 << j);
 }
