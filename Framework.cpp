@@ -34,8 +34,9 @@ void Framework::update()
 		}
 		else
 		{
+			mRenderer->beginFrame();
 			updateImpl();
-			mRenderer->onRender();
+			mRenderer->endFrame();
 		}
 	}
 }

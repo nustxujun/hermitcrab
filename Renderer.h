@@ -121,7 +121,7 @@ public:
 		Resource(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);
 		void init(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
 		void init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate);
-		void blit(void* data, size_t size);
+		void blit(const void* data, size_t size);
 
 		const D3D12_RESOURCE_STATES& getState()const;
 		// transition by cmdlist
@@ -129,6 +129,7 @@ public:
 
 
 		ID3D12Resource* get()const{return mResource.Get();}
+		const D3D12_RESOURCE_DESC& getDesc()const{return mDesc;}
 	private:
 		ComPtr<ID3D12Resource> mResource;
 		D3D12_RESOURCE_DESC mDesc;
@@ -177,10 +178,11 @@ public:
 	class VertexBuffer final :public Interface<VertexBuffer>
 	{
 	public:
-		VertexBuffer(UINT size, UINT stride);
+		VertexBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type);
 		const D3D12_VERTEX_BUFFER_VIEW& getView()const{return mView;}
 
 		Resource::Ref getResource()const{return mResource;}
+		void blit(const void* buffer, size_t size);
 	private:
 		Resource::Ref mResource;
 		D3D12_VERTEX_BUFFER_VIEW mView;
@@ -240,7 +242,7 @@ public:
 
 	private:
 		ComPtr<ID3D12CommandAllocator> mAllocator;
-		Fence::Ref mFence;
+		Fence::Ptr mFence;
 	};
 
 	class PipelineState;
@@ -332,10 +334,18 @@ public:
 		void transitionTo( Resource::Ref res, D3D12_RESOURCE_STATES state);
 		void addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier);
 		void flushResourceBarrier();
+		void copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size );
 
 		void clearRenderTarget(const RenderTarget::Ref& rt, const Color& color);
 
+		void setViewport(const D3D12_VIEWPORT& vp);
+		void setScissorRect(const D3D12_RECT& rect);
+		void setRenderTarget(const RenderTarget::Ref& rt);
 		void setPipelineState(PipelineState::Ref ps);
+		void setVertexBuffer(const std::vector<VertexBuffer::Ptr>& vertices);
+		void setVertexBuffer(const VertexBuffer::Ptr& vertices);
+		void setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		void drawInstanced(UINT vertexCount, UINT instanceCount = 1, UINT startVertex = 0, UINT startInstance = 0);
 	private:
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
 		std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
@@ -351,19 +361,23 @@ public:
 	~Renderer();
 	void initialize(HWND window);
 	void resize(int width, int height);
-	void onRender();
+	void beginFrame();
+	void endFrame();
 
 	ID3D12Device* getDevice();
 	ID3D12CommandQueue* getCommandQueue();
 	CommandList::Ref getCommandList();
 	RenderTarget::Ref getBackBuffer();
-	Shader::Ptr compileShader(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
+	void flushCommandQueue();
+	void updateBuffer(Resource::Ref res, const void* buffer, size_t size);
+	void updateTexture(Resource::Ref res);
 
-	Fence::Ref createFence();
+	Shader::Ptr compileShader(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
+	Fence::Ptr createFence();
 	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
 	void destroyResource(Resource::Ref res);
 	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
-	VertexBuffer::Ptr createVertexBuffer(size_t size);
+	VertexBuffer::Ptr createVertexBuffer(size_t size,size_t stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
 
 private:
@@ -395,7 +409,10 @@ private:
 	ComPtr<ID3D12Device> mDevice;
 	ComPtr<IDXGISwapChain3> mSwapChain;
 	ComPtr<ID3D12CommandQueue> mCommandQueue;
+	Fence::Ptr mQueueFence;
 	CommandList::Ptr mCommandList;
+	CommandList::Ptr mResourceCommandList;
+
 	std::vector<CommandAllocator::Ptr> mCommandAllocators;
 	UINT mCurrentFrame;
 	CommandAllocator::Ref mCurrentCommandAllocator;
@@ -405,6 +422,5 @@ private:
 	std::array<DescriptorHeap::Ptr, DHT_MAX_NUM> mDescriptorHeaps;
 	std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
 	std::vector<Resource::Ptr> mResources;
-	std::vector<Fence::Ptr> mFences;
 	std::vector<PipelineState::Ptr> mPipelineStates;
 };
