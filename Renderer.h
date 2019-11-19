@@ -14,7 +14,7 @@
 
 class Renderer
 {
-	static const auto FEATURE_LEVEL = D3D_FEATURE_LEVEL_11_0;
+	static const auto FEATURE_LEVEL = D3D_FEATURE_LEVEL_12_0;
 	static auto const NUM_BACK_BUFFERS = 2;
 	static auto const NUM_MAX_RENDER_TARGET_VIEWS = 8 * 1024;
 	static auto const NUM_MAX_DEPTH_STENCIL_VIEWS = 4 * 1024;
@@ -52,12 +52,27 @@ public:
 		//{
 		//}
 
+		WeakPtr(WeakPtr&& p) :
+			mPointer(std::move(p.mPointer))
+		{
+		}
+
+		WeakPtr(const WeakPtr& p) :
+			mPointer(p.mPointer)
+		{
+		}
+		
+
 		template<class U>
 		WeakPtr(const WeakPtr<U>& p):
 			mPointer(p.weak())
-		{}
+		{
+		}
 
-
+		void operator=(const WeakPtr& p) 
+		{
+			mPointer = p.mPointer;
+		}
 
 		operator bool() const
 		{
@@ -373,8 +388,9 @@ public:
 	CommandList::Ref getCommandList();
 	RenderTarget::Ref getBackBuffer();
 	void flushCommandQueue();
-	void updateBuffer(Resource::Ref res, const void* buffer, size_t size);
-	void updateTexture(Resource::Ref res,const void* buffer, size_t numRows, size_t rowSize);
+	void updateResource(Resource::Ref res, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref )>& copy);
+	//void updateBuffer(Resource::Ref res, const void* buffer, size_t size);
+	//void updateTexture(Resource::Ref res,const void* buffer, size_t numRows, size_t rowSize);
 
 	Shader::Ptr compileShader(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 	Fence::Ptr createFence();
@@ -382,7 +398,7 @@ public:
 	void destroyResource(Resource::Ref res);
 	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
 	Texture::Ref createTexture(const std::string& filename);
-	VertexBuffer::Ptr createVertexBuffer(size_t size,size_t stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
+	VertexBuffer::Ptr createVertexBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
 
 private:

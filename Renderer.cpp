@@ -7,10 +7,12 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#include "D3DHelper.h"
 
 #include <sstream>
 
-
+#undef min
+#undef max
 
 Renderer::Ptr Renderer::instance;
 
@@ -46,7 +48,7 @@ void Renderer::initialize(HWND window)
 {
 	mWindow = window;
 
-#if defined(_DEBUG)
+#if defined(_DEBUG) && !defined (D3D12ON7)
 	{
 		ComPtr<ID3D12Debug> debugController;
 		if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
@@ -155,12 +157,32 @@ void Renderer::flushCommandQueue()
 	mQueueFence->wait();
 }
 
-void Renderer::updateBuffer(Resource::Ref res, const void* buffer, size_t size)
+void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref)>& copy)
 {
 	auto src = Resource::create();
 	const auto& desc = res->getDesc();
-	src->init(desc.Width, D3D12_HEAP_TYPE_UPLOAD);
-	src->blit(buffer, size);
+
+	if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
+	{
+		src->init(desc, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
+		src->blit(buffer, std::min(size, desc.Width));
+	}
+	else if (desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D)
+	{
+		auto rowSize = desc.Width * D3DHelper::sizeof_DXGI_FORMAT(desc.Format);
+		Common::Assert(size == rowSize * desc.Height, "size is not matched");
+		src->init(size, D3D12_HEAP_TYPE_UPLOAD);
+		char* data = src->map(0);
+		for (size_t i = 0; i < desc.Height; ++i)
+		{
+			memcpy(data, buffer, rowSize);
+			data += rowSize;
+			buffer = (const char*)buffer + rowSize;
+		}
+		src->unmap(0);
+	}
+	else
+		Common::Assert(0,"unsupported resource.");
 
 	auto allocator = allocCommandAllocator();
 	allocator->reset();
@@ -168,8 +190,7 @@ void Renderer::updateBuffer(Resource::Ref res, const void* buffer, size_t size)
 
 	auto state = res->getState();
 	mResourceCommandList->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST);
-	mResourceCommandList->copyBuffer(res,0, src,0, desc.Width);
-
+	copy(mResourceCommandList, src);
 	mResourceCommandList->close();
 
 	ID3D12CommandList* ppCommandLists[] = { mResourceCommandList->get() };
@@ -179,36 +200,61 @@ void Renderer::updateBuffer(Resource::Ref res, const void* buffer, size_t size)
 	allocator->wait();
 }
 
-void Renderer::updateTexture(Resource::Ref res, const void* buffer, size_t numRows, size_t rowSize)
-{
-	auto src = Resource::create();
-	const auto& desc = res->getDesc();
-	src->init(desc,D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_COMMON);
-	char* data = src->map(0);
-	for (size_t i = 0; i < numRows; ++i)
-	{
-		memcpy(data, buffer, rowSize);
-		data += rowSize;
-		buffer = (const char*)buffer + rowSize;
-	}
-	src->unmap(0);
 
-
-	auto allocator = allocCommandAllocator();
-	allocator->reset();
-	mResourceCommandList->reset(allocator);
-
-	mResourceCommandList->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST);
-	mResourceCommandList->copyTexture(res, 0,{0,0,0}, src,0, nullptr);
-
-	mResourceCommandList->close();
-
-	ID3D12CommandList* ppCommandLists[] = { mResourceCommandList->get() };
-	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-
-	allocator->signal();
-	allocator->wait();
-}
+//void Renderer::updateBuffer(Resource::Ref res, const void* buffer, size_t size)
+//{
+//	auto src = Resource::create();
+//	const auto& desc = res->getDesc();
+//	src->init(desc.Width, D3D12_HEAP_TYPE_UPLOAD);
+//	src->blit(buffer, size);
+//
+//	auto allocator = allocCommandAllocator();
+//	allocator->reset();
+//	mResourceCommandList->reset(allocator);
+//
+//	auto state = res->getState();
+//	mResourceCommandList->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST);
+//	mResourceCommandList->copyBuffer(res,0, src,0, desc.Width);
+//
+//	mResourceCommandList->close();
+//
+//	ID3D12CommandList* ppCommandLists[] = { mResourceCommandList->get() };
+//	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+//
+//	allocator->signal();
+//	allocator->wait();
+//}
+//
+//void Renderer::updateTexture(Resource::Ref res, const void* buffer, size_t numRows, size_t rowSize)
+//{
+//	auto src = Resource::create();
+//	const auto& desc = res->getDesc();
+//	src->init(desc,D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_COMMON);
+//	char* data = src->map(0);
+//	for (size_t i = 0; i < numRows; ++i)
+//	{
+//		memcpy(data, buffer, rowSize);
+//		data += rowSize;
+//		buffer = (const char*)buffer + rowSize;
+//	}
+//	src->unmap(0);
+//
+//
+//	auto allocator = allocCommandAllocator();
+//	allocator->reset();
+//	mResourceCommandList->reset(allocator);
+//
+//	mResourceCommandList->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST);
+//	mResourceCommandList->copyTexture(res, 0,{0,0,0}, src,0, nullptr);
+//
+//	mResourceCommandList->close();
+//
+//	ID3D12CommandList* ppCommandLists[] = { mResourceCommandList->get() };
+//	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+//
+//	allocator->signal();
+//	allocator->wait();
+//}
 
 Renderer::Shader::Ptr Renderer::compileShader(const std::string & path, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros)
 {
@@ -336,34 +382,38 @@ Renderer::Texture::Ref Renderer::createTexture(const std::string& filename)
 	DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM;
 
 	void* data = 0;
-	int width, height, nrComponents, rowSize;
+	int width, height, nrComponents;
 
 	if (stbi_is_hdr(filename.c_str()))
 	{
 		format = DXGI_FORMAT_R32G32B32A32_FLOAT;
 		data = stbi_loadf(filename.c_str(), &width, &height, &nrComponents, 4);
-		rowSize = width * 16;
 	}
 	else
 	{
 		data = stbi_load(filename.c_str(), &width, &height, &nrComponents, 4);
-		rowSize = width * 4;
 	}
 	Common::Assert(data != nullptr,"cannot create texture");
 	
 	auto tex = createTexture(width, height, format);
-	updateTexture(tex, data, height, rowSize);
+	updateResource(tex, data, width * height * D3DHelper::sizeof_DXGI_FORMAT(format), [dst = tex](auto cmdlist, auto src){
+		cmdlist->copyTexture(dst,0,{0,0,0},src,0,nullptr);
+	});
 	stbi_image_free(data);
 
 	mTextureMap[filename] = tex;
 	return tex;
 }
 
-Renderer::VertexBuffer::Ptr Renderer::createVertexBuffer(size_t size, size_t stride, D3D12_HEAP_TYPE type, const void* buffer, size_t count)
+Renderer::VertexBuffer::Ptr Renderer::createVertexBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* buffer, size_t count)
 {
 	auto vert = VertexBuffer::create(size, stride, type);
 	if (buffer)
-		updateBuffer(vert->getResource(), buffer,size);
+		updateResource(vert->getResource(), buffer, size, [dst = vert->getResource(), size](CommandList::Ref cmdlist, Resource::Ref src){
+			
+			cmdlist->copyBuffer(dst,0,src,0, size);
+		});
+		//updateBuffer(vert->getResource(), buffer,size);/
 
 	return vert;
 }
@@ -803,9 +853,9 @@ void Renderer::Resource::blit(const void* data, size_t size)
 
 char* Renderer::Resource::map(UINT sub)
 {
-	char** buffer = nullptr;
-	mResource->Map(sub,NULL,(void**)buffer);
-	return *buffer;
+	char* buffer = nullptr;
+	CHECK(mResource->Map(sub,NULL,(void**)&buffer));
+	return buffer;
 }
 
 void Renderer::Resource::unmap(UINT sub)
