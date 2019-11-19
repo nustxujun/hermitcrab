@@ -2,7 +2,7 @@
 //
 
 #include <iostream>
-#include "Engine/Framework.h"
+#include "Framework.h"
 
 int main()
 {
@@ -38,9 +38,8 @@ int main()
 				};
 
 				vertices = renderer->createVertexBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
-				//vertices->blit(triangleVertices, sizeof(triangleVertices));
-				auto cmdlist = renderer->getCommandList();
 
+				renderer->createTexture("test.jpg");
 
 			}
 
@@ -72,6 +71,8 @@ int main()
 		frame.init();
 		frame.update();
 	}
+
+	_CrtDumpMemoryLeaks();
 	return 0;
 }
 

@@ -122,6 +122,9 @@ public:
 		void init(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
 		void init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate);
 		void blit(const void* data, size_t size);
+		char* map(UINT sub);
+		void unmap(UINT sub);
+		
 
 		const D3D12_RESOURCE_STATES& getState()const;
 		// transition by cmdlist
@@ -335,6 +338,7 @@ public:
 		void addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier);
 		void flushResourceBarrier();
 		void copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size );
+		void copyTexture(Resource::Ref dst, UINT dstSub, const std::array<UINT, 3>& dstStart, Resource::Ref src, UINT srcSub, const std::pair<std::array<UINT,3>, std::array<UINT, 3>>* srcBox );
 
 		void clearRenderTarget(const RenderTarget::Ref& rt, const Color& color);
 
@@ -370,13 +374,14 @@ public:
 	RenderTarget::Ref getBackBuffer();
 	void flushCommandQueue();
 	void updateBuffer(Resource::Ref res, const void* buffer, size_t size);
-	void updateTexture(Resource::Ref res);
+	void updateTexture(Resource::Ref res,const void* buffer, size_t numRows, size_t rowSize);
 
 	Shader::Ptr compileShader(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 	Fence::Ptr createFence();
 	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
 	void destroyResource(Resource::Ref res);
 	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+	Texture::Ref createTexture(const std::string& filename);
 	VertexBuffer::Ptr createVertexBuffer(size_t size,size_t stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
 
@@ -422,5 +427,6 @@ private:
 	std::array<DescriptorHeap::Ptr, DHT_MAX_NUM> mDescriptorHeaps;
 	std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
 	std::vector<Resource::Ptr> mResources;
+	std::unordered_map<std::string, Texture::Ref> mTextureMap;
 	std::vector<PipelineState::Ptr> mPipelineStates;
 };

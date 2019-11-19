@@ -5,6 +5,9 @@
 #pragma comment(lib,"d3dcompiler.lib")
 #include <D3Dcompiler.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #include <sstream>
 
 
@@ -176,6 +179,37 @@ void Renderer::updateBuffer(Resource::Ref res, const void* buffer, size_t size)
 	allocator->wait();
 }
 
+void Renderer::updateTexture(Resource::Ref res, const void* buffer, size_t numRows, size_t rowSize)
+{
+	auto src = Resource::create();
+	const auto& desc = res->getDesc();
+	src->init(desc,D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_COMMON);
+	char* data = src->map(0);
+	for (size_t i = 0; i < numRows; ++i)
+	{
+		memcpy(data, buffer, rowSize);
+		data += rowSize;
+		buffer = (const char*)buffer + rowSize;
+	}
+	src->unmap(0);
+
+
+	auto allocator = allocCommandAllocator();
+	allocator->reset();
+	mResourceCommandList->reset(allocator);
+
+	mResourceCommandList->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST);
+	mResourceCommandList->copyTexture(res, 0,{0,0,0}, src,0, nullptr);
+
+	mResourceCommandList->close();
+
+	ID3D12CommandList* ppCommandLists[] = { mResourceCommandList->get() };
+	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+	allocator->signal();
+	allocator->wait();
+}
+
 Renderer::Shader::Ptr Renderer::compileShader(const std::string & path, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros)
 {
 	Shader::ShaderType type = Shader::ST_MAX_NUM;
@@ -290,7 +324,38 @@ Renderer::Texture::Ref Renderer::createTexture(int width, int height, DXGI_FORMA
 	tex->init(width, height, type, format, flags);
 
 	mResources.push_back(tex);
+	return tex;
+}
 
+Renderer::Texture::Ref Renderer::createTexture(const std::string& filename)
+{
+	auto ret = mTextureMap.find(filename);
+	if (ret != mTextureMap.end())
+		return ret->second;
+
+	DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+	void* data = 0;
+	int width, height, nrComponents, rowSize;
+
+	if (stbi_is_hdr(filename.c_str()))
+	{
+		format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+		data = stbi_loadf(filename.c_str(), &width, &height, &nrComponents, 4);
+		rowSize = width * 16;
+	}
+	else
+	{
+		data = stbi_load(filename.c_str(), &width, &height, &nrComponents, 4);
+		rowSize = width * 4;
+	}
+	Common::Assert(data != nullptr,"cannot create texture");
+	
+	auto tex = createTexture(width, height, format);
+	updateTexture(tex, data, height, rowSize);
+	stbi_image_free(data);
+
+	mTextureMap[filename] = tex;
 	return tex;
 }
 
@@ -336,6 +401,8 @@ void Renderer::uninitialize()
 	mCommandAllocators.clear();
 	mCommandQueue.Reset();
 	mCommandList.reset();
+	mResourceCommandList.reset();
+	mQueueFence.reset();
 
 	//clear resources
 	mBackbuffers.fill({});
@@ -734,6 +801,18 @@ void Renderer::Resource::blit(const void* data, size_t size)
 	mResource->Unmap(0, &writerange);
 }
 
+char* Renderer::Resource::map(UINT sub)
+{
+	char** buffer = nullptr;
+	mResource->Map(sub,NULL,(void**)buffer);
+	return *buffer;
+}
+
+void Renderer::Resource::unmap(UINT sub)
+{
+	mResource->Unmap(sub,nullptr);
+}
+
 const D3D12_RESOURCE_STATES & Renderer::Resource::getState() const
 {
 	return mState;
@@ -847,6 +926,14 @@ void Renderer::CommandList::flushResourceBarrier()
 void Renderer::CommandList::copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size)
 {
 	mCmdList->CopyBufferRegion(dst->get(), dstStart, src->get(), srcStart, size);
+}
+
+void Renderer::CommandList::copyTexture(Resource::Ref dst, UINT dstSub, const std::array<UINT, 3>& dstStart, Resource::Ref src, UINT srcSub, const std::pair<std::array<UINT, 3>, std::array<UINT, 3>>* srcBox)
+{
+	D3D12_TEXTURE_COPY_LOCATION dstlocal = {dst->get(),D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX , dstSub};
+	D3D12_TEXTURE_COPY_LOCATION srclocal = { src->get(),D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX , srcSub };
+	
+	mCmdList->CopyTextureRegion(&dstlocal, dstStart[0], dstStart[1], dstStart[2],&srclocal,(const D3D12_BOX*)srcBox);
 }
 
 void Renderer::CommandList::clearRenderTarget(const RenderTarget::Ref & rt, const Color & color)
