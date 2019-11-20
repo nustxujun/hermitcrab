@@ -52,7 +52,7 @@ public:
 		//{
 		//}
 
-		WeakPtr(WeakPtr&& p) :
+		WeakPtr(WeakPtr&& p) noexcept :
 			mPointer(std::move(p.mPointer))
 		{
 		}
@@ -134,9 +134,9 @@ public:
 		Resource() = default;
 		virtual ~Resource();
 		Resource(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);
-		void init(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
+		void init(UINT64 size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
 		void init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate);
-		void blit(const void* data, size_t size);
+		void blit(const void* data, UINT64 size);
 		char* map(UINT sub);
 		void unmap(UINT sub);
 		

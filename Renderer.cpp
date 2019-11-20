@@ -169,14 +169,18 @@ void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size
 	}
 	else if (desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D)
 	{
-		auto rowSize = desc.Width * D3DHelper::sizeof_DXGI_FORMAT(desc.Format);
-		Common::Assert(size == rowSize * desc.Height, "size is not matched");
-		src->init(size, D3D12_HEAP_TYPE_UPLOAD);
+		UINT64 requiredSize = 0;
+		UINT64 rowSize = 0;
+		D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
+		Renderer::getSingleton()->getDevice()->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, nullptr, &rowSize, &requiredSize);
+		src->init(requiredSize, D3D12_HEAP_TYPE_UPLOAD);
+
+
 		char* data = src->map(0);
 		for (size_t i = 0; i < desc.Height; ++i)
 		{
-			memcpy(data, buffer, rowSize);
-			data += rowSize;
+			memcpy(data, buffer, (size_t)rowSize);
+			data += footprint.Footprint.RowPitch;
 			buffer = (const char*)buffer + rowSize;
 		}
 		src->unmap(0);
@@ -799,7 +803,7 @@ Renderer::Resource::~Resource()
 {
 }
 
-void Renderer::Resource::init(size_t size, D3D12_HEAP_TYPE heaptype, DXGI_FORMAT format)
+void Renderer::Resource::init(UINT64 size, D3D12_HEAP_TYPE heaptype, DXGI_FORMAT format)
 {
 	D3D12_RESOURCE_DESC resdesc = {};
 	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
@@ -841,13 +845,13 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 }
 
 
-void Renderer::Resource::blit(const void* data, size_t size)
+void Renderer::Resource::blit(const void* data, UINT64 size)
 {
 	D3D12_RANGE readrange = { 0,0 };
 	char* dst = 0;
 	CHECK(mResource->Map(0, &readrange, (void**)&dst));
-	memcpy(dst, data, size);
-	D3D12_RANGE writerange = { 0, size };
+	memcpy(dst, data, (size_t)size);
+	D3D12_RANGE writerange = { 0, (SIZE_T)size };
 	mResource->Unmap(0, &writerange);
 }
 
@@ -981,7 +985,15 @@ void Renderer::CommandList::copyBuffer(Resource::Ref dst, UINT dstStart, Resourc
 void Renderer::CommandList::copyTexture(Resource::Ref dst, UINT dstSub, const std::array<UINT, 3>& dstStart, Resource::Ref src, UINT srcSub, const std::pair<std::array<UINT, 3>, std::array<UINT, 3>>* srcBox)
 {
 	D3D12_TEXTURE_COPY_LOCATION dstlocal = {dst->get(),D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX , dstSub};
-	D3D12_TEXTURE_COPY_LOCATION srclocal = { src->get(),D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX , srcSub };
+	D3D12_TEXTURE_COPY_LOCATION srclocal = {src->get(), D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT , {}};
+	const auto& srcDesc = src->getDesc();
+	const auto& dstDesc = dst->getDesc();
+
+	UINT numRow = 0;
+	UINT64 rowSize = 0;
+	UINT64 totalSize = 0;
+	Renderer::getSingleton()->getDevice()->GetCopyableFootprints(&dstDesc,dstSub,1,0, &srclocal.PlacedFootprint,&numRow,&rowSize,&totalSize);
+
 	
 	mCmdList->CopyTextureRegion(&dstlocal, dstStart[0], dstStart[1], dstStart[2],&srclocal,(const D3D12_BOX*)srcBox);
 }
