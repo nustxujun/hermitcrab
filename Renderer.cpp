@@ -204,62 +204,6 @@ void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size
 	allocator->wait();
 }
 
-
-//void Renderer::updateBuffer(Resource::Ref res, const void* buffer, size_t size)
-//{
-//	auto src = Resource::create();
-//	const auto& desc = res->getDesc();
-//	src->init(desc.Width, D3D12_HEAP_TYPE_UPLOAD);
-//	src->blit(buffer, size);
-//
-//	auto allocator = allocCommandAllocator();
-//	allocator->reset();
-//	mResourceCommandList->reset(allocator);
-//
-//	auto state = res->getState();
-//	mResourceCommandList->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST);
-//	mResourceCommandList->copyBuffer(res,0, src,0, desc.Width);
-//
-//	mResourceCommandList->close();
-//
-//	ID3D12CommandList* ppCommandLists[] = { mResourceCommandList->get() };
-//	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-//
-//	allocator->signal();
-//	allocator->wait();
-//}
-//
-//void Renderer::updateTexture(Resource::Ref res, const void* buffer, size_t numRows, size_t rowSize)
-//{
-//	auto src = Resource::create();
-//	const auto& desc = res->getDesc();
-//	src->init(desc,D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_COMMON);
-//	char* data = src->map(0);
-//	for (size_t i = 0; i < numRows; ++i)
-//	{
-//		memcpy(data, buffer, rowSize);
-//		data += rowSize;
-//		buffer = (const char*)buffer + rowSize;
-//	}
-//	src->unmap(0);
-//
-//
-//	auto allocator = allocCommandAllocator();
-//	allocator->reset();
-//	mResourceCommandList->reset(allocator);
-//
-//	mResourceCommandList->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST);
-//	mResourceCommandList->copyTexture(res, 0,{0,0,0}, src,0, nullptr);
-//
-//	mResourceCommandList->close();
-//
-//	ID3D12CommandList* ppCommandLists[] = { mResourceCommandList->get() };
-//	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-//
-//	allocator->signal();
-//	allocator->wait();
-//}
-
 Renderer::Shader::Ptr Renderer::compileShader(const std::string & path, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros)
 {
 	Shader::ShaderType type = Shader::ST_MAX_NUM;
@@ -1108,6 +1052,17 @@ Renderer::RenderState::RenderState(std::function<void(RenderState&self)> initial
 Renderer::Shader::Shader(const Buffer& data, ShaderType type):
 	mCodeBlob(data), mType(type)
 {
+}
+
+void Renderer::Shader::registerSRV(UINT num, UINT start, UINT space)
+{
+	mRanges.push_back({
+		D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+		num,
+		start,
+		space, 
+		D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
+	});
 }
 
 Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector<Shader::Ptr>& shaders)

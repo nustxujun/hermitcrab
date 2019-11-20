@@ -17,10 +17,10 @@ int main()
 			{
 				auto renderer = Renderer::getSingleton();
 
-				auto vs = renderer->compileShader("Engine/shaders/shaders.hlsl", "VSMain", "vs_5_0");
-				auto ps = renderer->compileShader("Engine/shaders/shaders.hlsl", "PSMain", "ps_5_0");
+				auto vs = renderer->compileShader("../Engine/shaders/shaders.hlsl", "VSMain", "vs_5_0");
+				auto ps = renderer->compileShader("../Engine/shaders/shaders.hlsl", "PSMain", "ps_5_0");
 				std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
-
+				ps->registerSRV(1,0,0);
 
 				Renderer::RenderState rs = Renderer::RenderState::Default;
 				rs.setInputLayout({
@@ -39,7 +39,7 @@ int main()
 
 				vertices = renderer->createVertexBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
 
-				renderer->createTexture("test.jpg");
+				renderer->createTexture("test.png");
 
 			}
 
@@ -52,11 +52,13 @@ int main()
 				cmdlist->transitionTo(bb->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
 				cmdlist->clearRenderTarget(bb, { 0.5,0.5,0.5,1 });
 				cmdlist->setRenderTarget(bb);
+
+				auto desc = bb->getTexture()->getDesc();
 				cmdlist->setViewport({
-					0.0f, 0.0f, 1600.0f, 900.0f, 0.0f, 1.0f
+					0.0f, 0.0f,(float) desc.Width,(float)desc.Height, 0.0f, 1.0f
 					});
 
-				cmdlist->setScissorRect({ 0,0, 1600, 900 });
+				cmdlist->setScissorRect({ 0,0, (LONG)desc.Width, (LONG)desc.Height });
 
 				cmdlist->setPipelineState(pso);
 				cmdlist->setPrimitiveType();

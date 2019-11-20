@@ -87,7 +87,7 @@ LRESULT Framework::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 		}
 		return 0;
 	case WM_SIZE:
-		if (wParam == SIZE_RESTORED)
+		if (wParam == SIZE_RESTORED || wParam == SIZE_MINIMIZED || wParam == SIZE_MAXIMIZED)
 		{
 			auto w = LOWORD(lParam); 
 			auto h = HIWORD(lParam); 
@@ -108,7 +108,10 @@ void Framework::resize(HWND hwnd, int width, int height)
 	auto w = win.right - win.left - client.right;
 	auto h = win.bottom - win.top - client.bottom;
 
+	width = max(1, width);
+	height = max(1,height);
 	::MoveWindow(hwnd, win.left, win.top, w + width, h + height, FALSE);
+
 	auto r = Renderer::getSingleton();
 	if (r)
 		Renderer::getSingleton()->resize(width, height);
