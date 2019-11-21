@@ -17,8 +17,8 @@ int main()
 			{
 				auto renderer = Renderer::getSingleton();
 
-				auto vs = renderer->compileShader("../Engine/shaders/shaders.hlsl", "VSMain", "vs_5_0");
-				auto ps = renderer->compileShader("../Engine/shaders/shaders.hlsl", "PSMain", "ps_5_0");
+				auto vs = renderer->compileShader(L"../Engine/shaders/shaders.hlsl", L"VSMain", L"vs_5_0");
+				auto ps = renderer->compileShader(L"../Engine/shaders/shaders.hlsl", L"PSMain", L"ps_5_0");
 				std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
 				ps->registerSRV(1,0,0);
 
@@ -39,7 +39,7 @@ int main()
 
 				vertices = renderer->createVertexBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
 
-				renderer->createTexture("test.png");
+				renderer->createTexture(L"test.png");
 
 			}
 

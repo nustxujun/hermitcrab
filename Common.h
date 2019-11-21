@@ -45,14 +45,30 @@ public :
 		abort();
 	}
 
-	static void Assert(bool v, const std::string& what)
+	static void Assert(bool v, const std::wstring& what)
 	{
 		if (v)
 			return;
-		MessageBoxA(0, what.c_str(), 0, MB_ICONERROR);
+		MessageBoxW(0, what.c_str(), 0, MB_ICONERROR);
 		abort();
 
 	}
+
+
+	static std::string convert(const std::wstring& str)
+	{
+		std::wstring_convert<std::codecvt<wchar_t, char, std::mbstate_t>>
+			converter(new std::codecvt<wchar_t, char, std::mbstate_t>("CHS"));
+		return converter.to_bytes(str);
+	}
+
+	static std::wstring convert(const std::string& str)
+	{
+		std::wstring_convert<std::codecvt<wchar_t, char, std::mbstate_t>>
+			converter(new std::codecvt<wchar_t, char, std::mbstate_t>("CHS"));
+		return converter.from_bytes(str);
+	}
+
 };
 
 using Vector3 = std::array<float, 3>;
@@ -60,3 +76,5 @@ using Vector4 = std::array<float, 4>;
 using Color = std::array<float, 4>;
 using Matrix = std::array<Vector4, 4>;
 
+#define U2M Common::convert
+#define M2U Common::convert

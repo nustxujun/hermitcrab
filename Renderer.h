@@ -96,7 +96,7 @@ public:
 
 		std::shared_ptr<T> operator->()const
 		{
-			Common::Assert(!mPointer.expired(), "invalid pointer");
+			Common::Assert(!mPointer.expired(), L"invalid pointer");
 			return mPointer.lock();
 		}
 
@@ -392,12 +392,12 @@ public:
 	//void updateBuffer(Resource::Ref res, const void* buffer, size_t size);
 	//void updateTexture(Resource::Ref res,const void* buffer, size_t numRows, size_t rowSize);
 
-	Shader::Ptr compileShader(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
+	Shader::Ptr compileShader(const std::wstring& path, const std::wstring& entry, const std::wstring& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 	Fence::Ptr createFence();
 	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
 	void destroyResource(Resource::Ref res);
 	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
-	Texture::Ref createTexture(const std::string& filename);
+	Texture::Ref createTexture(const std::wstring& filename);
 	VertexBuffer::Ptr createVertexBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
 
@@ -443,6 +443,6 @@ private:
 	std::array<DescriptorHeap::Ptr, DHT_MAX_NUM> mDescriptorHeaps;
 	std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
 	std::vector<Resource::Ptr> mResources;
-	std::unordered_map<std::string, Texture::Ref> mTextureMap;
+	std::unordered_map<std::wstring, Texture::Ref> mTextureMap;
 	std::vector<PipelineState::Ptr> mPipelineStates;
 };

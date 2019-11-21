@@ -186,7 +186,7 @@ void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size
 		src->unmap(0);
 	}
 	else
-		Common::Assert(0,"unsupported resource.");
+		Common::Assert(0,L"unsupported resource.");
 
 	auto allocator = allocCommandAllocator();
 	allocator->reset();
@@ -204,7 +204,7 @@ void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size
 	allocator->wait();
 }
 
-Renderer::Shader::Ptr Renderer::compileShader(const std::string & path, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros)
+Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & path, const std::wstring & entry, const std::wstring & target, const std::vector<D3D_SHADER_MACRO>& macros)
 {
 	Shader::ShaderType type = Shader::ST_MAX_NUM;
 	switch (target[0])
@@ -213,23 +213,23 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string & path, const st
 	case 'p': type = Shader::ST_PIXEL; break;
 	case 'c': type = Shader::ST_COMPUTE; break;
 	default:
-		Common::Assert(false, "unsupported!");
+		Common::Assert(false, L"unsupported!");
 		break;
 	}
 
 	struct _stat attrs;
-	if (_stat(path.c_str(), &attrs) != 0)
+	if (_stat(U2M(path).c_str(), &attrs) != 0)
 	{
 		auto err = errno;
-		Common::Assert(0, "fail to open shader file");
+		Common::Assert(0, L"fail to open shader file");
 		return {};
 	}
 
 	auto time = attrs.st_mtime;
 
-	std::regex p(std::string("^.+[/\\\\](.+\\..+)$"));
-	std::smatch match;
-	std::string filename = path;
+	std::wregex p(std::wstring(L"^.+[/\\\\](.+\\..+)$"));
+	std::wsmatch match;
+	std::wstring filename = path;
 	if (std::regex_match(path, match, p))
 	{
 		filename = match[1];
@@ -241,10 +241,10 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string & path, const st
 #else
 	UINT compileFlags = 0;
 #endif
-	std::hash<std::string> hash;
-	std::stringstream ss;
+	std::hash<std::wstring> hash;
+	std::wstringstream ss;
 	ss << std::hex << hash(path + entry + target);
-	std::string cachefilename = "cache/" + ss.str();
+	std::wstring cachefilename = L"cache/" + ss.str();
 	{
 		std::fstream cachefile(cachefilename, std::ios::in | std::ios::binary);
 
@@ -276,9 +276,12 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string & path, const st
 
 	ComPtr<ID3DBlob> blob;
 	ComPtr<ID3DBlob> err;
-	if (FAILED(D3DCompile(data.data(), size, path.c_str(), macros.data(), NULL, entry.c_str(), target.c_str(), compileFlags, 0, &blob, &err)))
+
+
+
+	if (FAILED(D3DCompile(data.data(), size, U2M(path).c_str(), macros.data(), NULL, U2M(entry).c_str(), U2M(target).c_str(), compileFlags, 0, &blob, &err)))
 	{
-		Common::Assert(0, (const char*)err->GetBufferPointer());
+		Common::Assert(0, (const wchar_t*)err->GetBufferPointer());
 		return {};
 	}
 
@@ -321,7 +324,7 @@ Renderer::Texture::Ref Renderer::createTexture(int width, int height, DXGI_FORMA
 	return tex;
 }
 
-Renderer::Texture::Ref Renderer::createTexture(const std::string& filename)
+Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 {
 	auto ret = mTextureMap.find(filename);
 	if (ret != mTextureMap.end())
@@ -332,16 +335,17 @@ Renderer::Texture::Ref Renderer::createTexture(const std::string& filename)
 	void* data = 0;
 	int width, height, nrComponents;
 
-	if (stbi_is_hdr(filename.c_str()))
+	std::string fn = U2M(filename);
+	if (stbi_is_hdr(fn.c_str()))
 	{
 		format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-		data = stbi_loadf(filename.c_str(), &width, &height, &nrComponents, 4);
+		data = stbi_loadf(fn.c_str(), &width, &height, &nrComponents, 4);
 	}
 	else
 	{
-		data = stbi_load(filename.c_str(), &width, &height, &nrComponents, 4);
+		data = stbi_load(fn.c_str(), &width, &height, &nrComponents, 4);
 	}
-	Common::Assert(data != nullptr,"cannot create texture");
+	Common::Assert(data != nullptr,L"cannot create texture");
 	
 	auto tex = createTexture(width, height, format);
 	updateResource(tex, data, width * height * D3DHelper::sizeof_DXGI_FORMAT(format), [dst = tex](auto cmdlist, auto src){
@@ -350,6 +354,7 @@ Renderer::Texture::Ref Renderer::createTexture(const std::string& filename)
 	stbi_image_free(data);
 
 	mTextureMap[filename] = tex;
+	tex->get()->SetName(filename.c_str());
 	return tex;
 }
 
@@ -544,7 +549,7 @@ ComPtr<IDXGIAdapter> Renderer::getAdapter()
 		}
 	}
 
-	Common::Assert(false, "fail to find adapter");
+	Common::Assert(false, L"fail to find adapter");
 	return {};
 }
 
@@ -598,7 +603,7 @@ SIZE_T Renderer::DescriptorHeap::alloc()
 			}
 		}
 	}
-	Common::Assert(0, " cannot alloc from descriptor heap");
+	Common::Assert(0, L" cannot alloc from descriptor heap");
 	return {};
 }
 
@@ -1121,7 +1126,7 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	ComPtr<ID3D10Blob> err;
 	CHECK(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1,&blob,&err));
 	if (err)
-		Common::Assert(0,(const char*) err->GetBufferPointer());
+		Common::Assert(0,(const wchar_t*) err->GetBufferPointer());
 	CHECK(device->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(), IID_PPV_ARGS(&mRootSignature)));
 	
 
