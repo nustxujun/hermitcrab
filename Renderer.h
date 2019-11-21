@@ -127,6 +127,33 @@ public:
 		U& to() { return static_cast<U&>(*this); }
 	};
 
+	class DescriptorHandle
+	{
+	public:
+		D3D12_CPU_DESCRIPTOR_HANDLE cpu;
+		D3D12_GPU_DESCRIPTOR_HANDLE gpu;
+		UINT64 pos;
+
+		DescriptorHandle() = default;
+		DescriptorHandle(UINT64 alloc, D3D12_CPU_DESCRIPTOR_HANDLE c, D3D12_GPU_DESCRIPTOR_HANDLE g):
+			cpu(c),gpu(g), pos(alloc)
+		{
+		}
+
+
+		operator const D3D12_CPU_DESCRIPTOR_HANDLE& ()const
+		{
+			return cpu;
+		}
+
+		operator const D3D12_GPU_DESCRIPTOR_HANDLE& ()const
+		{
+			return gpu;
+		}
+
+	private:
+
+	};
 
 	class Resource: public Interface<Resource>
 	{
@@ -170,9 +197,11 @@ public:
 
 		virtual void init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
 
-		D3D12_GPU_DESCRIPTOR_HANDLE getHandle();
+		const DescriptorHandle& getHandle();
 	private:
-		D3D12_GPU_DESCRIPTOR_HANDLE mHandle;
+		void createView();
+	private:
+		DescriptorHandle mHandle;
 	};
 
 	class RenderTarget final:public Interface<RenderTarget>
@@ -182,14 +211,14 @@ public:
 		RenderTarget(UINT width, UINT height, DXGI_FORMAT format);
 		~RenderTarget();
 
-		const D3D12_CPU_DESCRIPTOR_HANDLE& getHandle()const;
-		operator const D3D12_CPU_DESCRIPTOR_HANDLE& ()const;
+		const DescriptorHandle& getHandle()const;
+		operator const DescriptorHandle& ()const;
 
 		Texture::Ref getTexture()const;
 	private:
 		void createView();
 	private:
-		D3D12_CPU_DESCRIPTOR_HANDLE mHandle;
+		DescriptorHandle mHandle;
 		Texture::Ref mTexture;
 	};
 
@@ -212,19 +241,17 @@ public:
 
 		DescriptorHeap(UINT count, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags);
 		
-		D3D12_CPU_DESCRIPTOR_HANDLE allocCPUDescriptorHandle();
-		D3D12_GPU_DESCRIPTOR_HANDLE allocGPUDescriptorHandle();
+		DescriptorHandle alloc();
+		void dealloc(DescriptorHandle& handle);
 
-		void dealloc(D3D12_CPU_DESCRIPTOR_HANDLE handle);
-		void dealloc(D3D12_GPU_DESCRIPTOR_HANDLE pos);
 
 
 		ID3D12DescriptorHeap* get();
 		SIZE_T getSize()const{return mSize;}
 
 	private:
-		SIZE_T alloc();
-
+		void dealloc(UINT64 pos);
+		UINT64 allocHeap();
 	private:
 		ComPtr<ID3D12DescriptorHeap> mHeap;
 		SIZE_T mSize;
@@ -287,7 +314,7 @@ public:
 		void registerUAV(UINT num, UINT start, UINT space);
 		void registerCBV(UINT num, UINT start, UINT space);
 		void registerSampler(UINT num, UINT start, UINT space);
-		void registerStaticSampler(D3D12_STATIC_SAMPLER_DESC);
+		void registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc);
 	private:
 		ShaderType mType;
 		Buffer mCodeBlob;
@@ -364,6 +391,7 @@ public:
 		void setVertexBuffer(const std::vector<VertexBuffer::Ptr>& vertices);
 		void setVertexBuffer(const VertexBuffer::Ptr& vertices);
 		void setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		void setTexture(UINT slot, Texture::Ref tex );
 		void drawInstanced(UINT vertexCount, UINT instanceCount = 1, UINT startVertex = 0, UINT startInstance = 0);
 	private:
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
