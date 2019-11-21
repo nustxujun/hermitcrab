@@ -53,7 +53,7 @@ int main()
 
 				vertices = renderer->createVertexBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
 
-				renderer->createTexture(L"test.png");
+				tex = renderer->createTexture(L"test.png");
 
 			}
 
@@ -64,7 +64,7 @@ int main()
 				auto cmdlist = renderer->getCommandList();
 				cmdlist->setPipelineState(pso);
 
-				//cmdlist->setTexture(0, tex);
+				cmdlist->setTexture(0, tex);
 
 				cmdlist->transitionTo(bb->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
 				cmdlist->clearRenderTarget(bb, { 0.5,0.5,0.5,1 });
