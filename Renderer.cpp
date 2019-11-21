@@ -122,6 +122,8 @@ void Renderer::beginFrame()
 {
 	resetCommands();
 
+	auto heap = mDescriptorHeaps[DHT_CBV_SRV_UAV]->get();
+	mCommandList->get()->SetDescriptorHeaps(1, &heap);
 }
 
 void Renderer::endFrame()
@@ -583,7 +585,7 @@ Renderer::DescriptorHeap::DescriptorHeap(UINT count, D3D12_DESCRIPTOR_HEAP_TYPE 
 
 }
 
-SIZE_T Renderer::DescriptorHeap::alloc()
+UINT64 Renderer::DescriptorHeap::allocHeap()
 {
 	size_t stride = sizeof(int);
 	for (size_t i = 0; i < mUsed.size(); ++i)
@@ -602,42 +604,32 @@ SIZE_T Renderer::DescriptorHeap::alloc()
 	return {};
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE Renderer::DescriptorHeap::allocCPUDescriptorHandle()
+Renderer::DescriptorHandle Renderer::DescriptorHeap::alloc()
 {
-	auto start = mHeap->GetCPUDescriptorHandleForHeapStart();
-	start.ptr += alloc() * mSize;
-	return start;
+	auto pos = allocHeap();
+	auto c = mHeap->GetCPUDescriptorHandleForHeapStart();
+	auto g= mHeap->GetGPUDescriptorHandleForHeapStart();
+	c.ptr += (SIZE_T)(pos * mSize);
+	g.ptr += pos * mSize;
+	return {pos, c,g};
 }
 
-D3D12_GPU_DESCRIPTOR_HANDLE Renderer::DescriptorHeap::allocGPUDescriptorHandle()
+void Renderer::DescriptorHeap::dealloc(DescriptorHandle& handle)
 {
-	auto start = mHeap->GetGPUDescriptorHandleForHeapStart();
-	start.ptr += UINT64(alloc() * mSize);
-	return start;
+	dealloc(handle.pos);
+	handle = {0,{0},{0}};
 }
 
-void Renderer::DescriptorHeap::dealloc(D3D12_CPU_DESCRIPTOR_HANDLE handle)
-{
-	//auto start = mHeap->GetCPUDescriptorHandleForHeapStart();
-	//auto pos = (handle.ptr - start.ptr) / mSize;
-	//int stride = sizeof(int);
-	//int i = pos / stride;
-	//int j = pos % stride;
 
-	//mUsed[i] &= ~(1 << j);
-}
-
-void Renderer::DescriptorHeap::dealloc(D3D12_GPU_DESCRIPTOR_HANDLE handle)
+void Renderer::DescriptorHeap::dealloc(UINT64 pos)
 {
-	auto start = mHeap->GetGPUDescriptorHandleForHeapStart();
-	auto pos = (handle.ptr - start.ptr) / mSize;
-	UINT64 stride = sizeof(int);
+	pos = pos / mSize;
+	int stride = sizeof(int);
 	int i = int(pos / stride);
-	int j = int(pos % stride);
+	int j = pos % stride;
 
 	mUsed[i] &= ~(1 << j);
 }
-
 
 ID3D12DescriptorHeap * Renderer::DescriptorHeap::get()
 {
@@ -666,12 +658,12 @@ Renderer::RenderTarget::~RenderTarget()
 	Renderer::getSingleton()->destroyResource(mTexture);
 }
 
-const D3D12_CPU_DESCRIPTOR_HANDLE& Renderer::RenderTarget::getHandle() const
+const Renderer::DescriptorHandle& Renderer::RenderTarget::getHandle() const
 {
 	return mHandle;
 }
 
-Renderer::RenderTarget::operator const D3D12_CPU_DESCRIPTOR_HANDLE& () const
+Renderer::RenderTarget::operator const Renderer::DescriptorHandle& () const
 {
 	return mHandle;
 }
@@ -686,7 +678,7 @@ void Renderer::RenderTarget::createView()
 	auto renderer = Renderer::getSingleton();
 	auto device = renderer->getDevice();
 	auto heap = renderer->getDescriptorHeap(DHT_RENDERTARGET);
-	mHandle = heap->allocCPUDescriptorHandle();
+	mHandle = heap->alloc();
 	auto res = mTexture->get();
 	device->CreateRenderTargetView(res, nullptr, mHandle);
 }
@@ -702,7 +694,6 @@ Renderer::CommandAllocator::CommandAllocator()
 	std::wstringstream ss;
 	ss << i++;
 	auto str = ss.str();
-	mAllocator->SetName(L"aaa");
 }
 
 Renderer::CommandAllocator::~CommandAllocator()
@@ -837,6 +828,28 @@ void Renderer::Texture::init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_F
 	resdesc.Flags = flags;
 
 	Resource::init(resdesc, ht, D3D12_RESOURCE_STATE_COMMON);
+
+
+
+	createView();
+}
+
+const Renderer::DescriptorHandle& Renderer::Texture::getHandle()
+{
+	return mHandle;
+}
+
+void Renderer::Texture::createView()
+{
+	mHandle = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
+
+	auto desc = getDesc();
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format = desc.Format;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MipLevels = desc.MipLevels;
+	Renderer::getSingleton()->getDevice()->CreateShaderResourceView(get(), &srvDesc,mHandle.cpu);
 }
 
 Renderer::Fence::Fence()
@@ -959,7 +972,7 @@ void Renderer::CommandList::setScissorRect(const D3D12_RECT& rect)
 
 void Renderer::CommandList::setRenderTarget(const RenderTarget::Ref& rt)
 {
-	mCmdList->OMSetRenderTargets(1, &rt->getHandle(),FALSE, NULL);
+	mCmdList->OMSetRenderTargets(1, &rt->getHandle().cpu,FALSE, NULL);
 }
 
 void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
@@ -986,6 +999,11 @@ void Renderer::CommandList::setVertexBuffer(const VertexBuffer::Ptr& vertices)
 void Renderer::CommandList::setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type)
 {
 	mCmdList->IASetPrimitiveTopology(type);
+}
+
+void Renderer::CommandList::setTexture(UINT slot, Texture::Ref tex)
+{
+	mCmdList->SetGraphicsRootDescriptorTable(slot, tex->getHandle().gpu);
 }
 
 void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, UINT startVertex, UINT startInstance)
@@ -1063,6 +1081,11 @@ void Renderer::Shader::registerSRV(UINT num, UINT start, UINT space)
 		space, 
 		D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
 	});
+}
+
+void Renderer::Shader::registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc)
+{
+	mStaticSamplers.push_back(desc);
 }
 
 Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector<Shader::Ptr>& shaders)
