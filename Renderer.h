@@ -33,6 +33,17 @@ public:
 	using Ptr = std::shared_ptr<Renderer>;
 	using Buffer = std::shared_ptr<std::vector<char>>;
 
+	enum ViewType
+	{
+		VT_UNKNOWN,
+
+		VT_RENDERTARGET,
+		VT_DEPTHSTENCIL,
+		VT_UNORDEREDACCESS,
+	};
+public:
+
+
 
 	template<class T>
 	class WeakPtr
@@ -104,6 +115,10 @@ public:
 		std::weak_ptr<T> weak()const {
 			return mPointer;
 		}
+
+		std::shared_ptr<T> shared() const{
+			return mPointer.lock();
+		}
 	private:
 		std::weak_ptr<T> mPointer;
 	};
@@ -158,7 +173,13 @@ public:
 	class Resource: public Interface<Resource>
 	{
 	public:
-		Resource() = default;
+		enum ResourceType
+		{
+			RT_PERMANENT,
+			RT_TRANSIENT,
+		};
+
+		Resource(ResourceType type = RT_PERMANENT);
 		virtual ~Resource();
 		Resource(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);
 		void init(UINT64 size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
@@ -175,10 +196,15 @@ public:
 
 		ID3D12Resource* get()const{return mResource.Get();}
 		const D3D12_RESOURCE_DESC& getDesc()const{return mDesc;}
+		ResourceType getType()const{return mType;}
+		static size_t hash(const D3D12_RESOURCE_DESC& desc);
+		size_t hash();
 	private:
 		ComPtr<ID3D12Resource> mResource;
 		D3D12_RESOURCE_DESC mDesc;
 		D3D12_RESOURCE_STATES mState;
+		ResourceType mType = RT_PERMANENT;
+		size_t mHashValue = 0;
 	};
 
 	class Texture final: public Resource , public Interface<Texture>
@@ -192,7 +218,7 @@ public:
 			return Ptr(new Texture(args ...));
 		}
 
-		Texture() = default;
+		using Resource::Resource;
 		Texture(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON):Resource(res, state){}
 
 		virtual void init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
@@ -204,22 +230,28 @@ public:
 		DescriptorHandle mHandle;
 	};
 
-	class RenderTarget final:public Interface<RenderTarget>
+	class ResourceView final:public Interface<ResourceView>
 	{
 	public:
-		RenderTarget(const Texture::Ref& res);
-		RenderTarget(UINT width, UINT height, DXGI_FORMAT format);
-		~RenderTarget();
+
+
+		ResourceView(ViewType type, const Texture::Ref& res);
+		ResourceView(ViewType type, UINT width, UINT height, DXGI_FORMAT format, Resource::ResourceType rt = Resource::RT_PERMANENT);
+		~ResourceView();
 
 		const DescriptorHandle& getHandle()const;
 		operator const DescriptorHandle& ()const;
 
-		Texture::Ref getTexture()const;
+		const Texture::Ref& getTexture()const;
+		ViewType getType()const{return mType;};
+
 	private:
 		void createView();
+		DescriptorHeapType matchDescriptorHeapType()const;
 	private:
 		DescriptorHandle mHandle;
 		Texture::Ref mTexture;
+		ViewType mType = VT_UNKNOWN;
 	};
 
 	class VertexBuffer final :public Interface<VertexBuffer>
@@ -382,11 +414,12 @@ public:
 		void copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size );
 		void copyTexture(Resource::Ref dst, UINT dstSub, const std::array<UINT, 3>& dstStart, Resource::Ref src, UINT srcSub, const std::pair<std::array<UINT,3>, std::array<UINT, 3>>* srcBox );
 
-		void clearRenderTarget(const RenderTarget::Ref& rt, const Color& color);
-
+		void discardResource(const ResourceView::Ref& rt);
+		void clearRenderTarget(const ResourceView::Ref& rt, const Color& color);
+		
 		void setViewport(const D3D12_VIEWPORT& vp);
 		void setScissorRect(const D3D12_RECT& rect);
-		void setRenderTarget(const RenderTarget::Ref& rt);
+		void setRenderTarget(const ResourceView::Ref& rt);
 		void setPipelineState(PipelineState::Ref ps);
 		void setVertexBuffer(const std::vector<VertexBuffer::Ptr>& vertices);
 		void setVertexBuffer(const VertexBuffer::Ptr& vertices);
@@ -414,7 +447,7 @@ public:
 	ID3D12Device* getDevice();
 	ID3D12CommandQueue* getCommandQueue();
 	CommandList::Ref getCommandList();
-	RenderTarget::Ref getBackBuffer();
+	ResourceView::Ref getBackBuffer();
 	void flushCommandQueue();
 	void updateResource(Resource::Ref res, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref )>& copy);
 	//void updateBuffer(Resource::Ref res, const void* buffer, size_t size);
@@ -422,13 +455,14 @@ public:
 
 	Shader::Ptr compileShader(const std::wstring& path, const std::wstring& entry, const std::wstring& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 	Fence::Ptr createFence();
-	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
+	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, Resource::ResourceType restype = Resource::RT_PERMANENT);
 	void destroyResource(Resource::Ref res);
-	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERMANENT);
 	Texture::Ref createTexture(const std::wstring& filename);
 	VertexBuffer::Ptr createVertexBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
-
+	ResourceView::Ptr createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERMANENT);
+	
 private:
 	Buffer createBuffer(size_t size = 0)
 	{
@@ -448,6 +482,8 @@ private:
 	ComPtr<IDXGIFACTORY> getDXGIFactory();
 	ComPtr<IDXGIAdapter> getAdapter();
 	DescriptorHeap::Ref getDescriptorHeap(DescriptorHeapType);
+	Resource::Ref findTransient(const D3D12_RESOURCE_DESC& desc);
+	void addResource(Resource::Ptr res);
 
 	void present();
 private:
@@ -467,10 +503,12 @@ private:
 	CommandAllocator::Ref mCurrentCommandAllocator;
 
 
-	std::array< RenderTarget::Ptr, NUM_BACK_BUFFERS> mBackbuffers;
+	std::array< ResourceView::Ptr, NUM_BACK_BUFFERS> mBackbuffers;
 	std::array<DescriptorHeap::Ptr, DHT_MAX_NUM> mDescriptorHeaps;
 	std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
 	std::vector<Resource::Ptr> mResources;
+	std::unordered_map<size_t, std::vector<Resource::Ref>> mTransients;
+
 	std::unordered_map<std::wstring, Texture::Ref> mTextureMap;
 	std::vector<PipelineState::Ptr> mPipelineStates;
 };

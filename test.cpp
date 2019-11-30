@@ -3,7 +3,7 @@
 
 #include <iostream>
 #include "Framework.h"
-
+#include "Pipeline.h"
 int main()
 {
 	{
@@ -11,6 +11,7 @@ int main()
 		class Frame : public Framework
 		{
 		public:
+			ForwardPipeline pipeline;
 			Renderer::PipelineState::Ref pso;
 			Renderer::VertexBuffer::Ptr vertices;
 			Renderer::Texture::Ref tex;
@@ -81,7 +82,9 @@ int main()
 				cmdlist->setVertexBuffer(vertices);
 				cmdlist->drawInstanced(3);
 
-				cmdlist->transitionTo(bb->getTexture(), D3D12_RESOURCE_STATE_PRESENT);
+
+				pipeline.update();
+
 			}
 		} frame;
 

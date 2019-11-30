@@ -81,7 +81,7 @@ void Renderer::resize(int width, int height)
 	ComPtr<ID3D12DeviceDownlevel> deviceDownlevel;
 	CHECK(mDevice.As(&deviceDownlevel));
 
-	mBackbuffers[0] = RenderTarget::create(width, height,swapChainDesc.Format);
+	mBackbuffers[0] = ResourceView::create(VT_RENDERTARGET, width, height,swapChainDesc.Format);
 
 #else
 	if (mSwapChain)
@@ -109,8 +109,8 @@ void Renderer::resize(int width, int height)
 		ComPtr<ID3D12Resource> buffer;
 		CHECK(mSwapChain->GetBuffer(i, IID_PPV_ARGS(&buffer)));
 		auto res = Texture::create(buffer, D3D12_RESOURCE_STATE_PRESENT);
-		mResources.push_back(res);
-		mBackbuffers[i] = RenderTarget::create(res);
+		addResource(res);
+		mBackbuffers[i] = ResourceView::create(ResourceView::VT_RENDERTARGET, res);
 	}
 
 	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
@@ -148,7 +148,7 @@ Renderer::CommandList::Ref Renderer::getCommandList()
 	return mCommandList;
 }
 
-Renderer::RenderTarget::Ref Renderer::getBackBuffer()
+Renderer::ResourceView::Ref Renderer::getBackBuffer()
 {
 	return mBackbuffers[mCurrentFrame];
 }
@@ -308,21 +308,62 @@ Renderer::Fence::Ptr Renderer::createFence()
 	return fence;
 }
 
-Renderer::Resource::Ref Renderer::createResource(size_t size, D3D12_HEAP_TYPE type)
+Renderer::Resource::Ref Renderer::createResource(size_t size, D3D12_HEAP_TYPE type, Resource::ResourceType restype )
 {
-	auto res = Resource::Ptr(new Resource());
-	res->init(size, type);
-	mResources.push_back(res);
+
+	D3D12_RESOURCE_DESC resdesc = {};
+	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	resdesc.Alignment = 0;
+	resdesc.Width = size;
+	resdesc.Height = 1;
+	resdesc.DepthOrArraySize = 1;
+	resdesc.MipLevels = 1;
+	resdesc.Format = DXGI_FORMAT_UNKNOWN;
+	resdesc.SampleDesc.Count = 1;
+	resdesc.SampleDesc.Quality = 0;
+	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	if (restype == Resource::RT_TRANSIENT)
+	{
+		auto res = findTransient(resdesc);
+		if (res)
+			return res;
+	}
+	
+	auto res = Resource::create(restype);
+	res->init(resdesc, type, D3D12_RESOURCE_STATE_COMMON);
+	addResource(res);
 
 	return res;
 }
 
-Renderer::Texture::Ref Renderer::createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags)
+Renderer::Texture::Ref Renderer::createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags, Resource::ResourceType restype)
 {
-	auto tex = Texture::create();
+	D3D12_RESOURCE_DESC resdesc = {};
+	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	resdesc.Alignment = 0;
+	resdesc.Width = width;
+	resdesc.Height = height;
+	resdesc.DepthOrArraySize = 1;
+	resdesc.MipLevels = 1;
+	resdesc.Format = format;
+	resdesc.SampleDesc.Count = 1;
+	resdesc.SampleDesc.Quality = 0;
+	resdesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resdesc.Flags = flags;
+
+	if (restype == Resource::RT_TRANSIENT)
+	{
+		auto res = findTransient(resdesc);
+		if (res)
+			return std::static_pointer_cast<Texture>(res.shared());
+	}
+
+	auto tex = Texture::create(restype);
 	tex->init(width, height, type, format, flags);
 
-	mResources.push_back(tex);
+	addResource(tex);
 	return tex;
 }
 
@@ -375,25 +416,44 @@ Renderer::VertexBuffer::Ptr Renderer::createVertexBuffer(UINT size, UINT stride,
 
 void Renderer::destroyResource(Resource::Ref res)
 {
-	Texture::Ref t;
-	Resource::Ref r(t);
-	auto endi = mResources.end();
-	for (auto i = mResources.begin(); i != endi; ++i)
+	
+	if (res->getType() == Resource::RT_TRANSIENT)
 	{
-		if (res == *i)
+		mTransients[res->hash()].push_back(res);
+	}
+	else
+	{
+		auto endi = mResources.end();
+		for (auto i = mResources.begin(); i != endi; ++i)
 		{
-			mResources.erase(i);
-			return;
+			if (res == *i)
+			{
+				mResources.erase(i);
+				return;
+			}
 		}
 	}
 }
 
 Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs)
 {
-
 	auto pso = PipelineState::create(rs, shaders);
 	mPipelineStates.push_back(pso);
 	return pso;
+}
+
+Renderer::ResourceView::Ptr Renderer::createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt)
+{
+	auto desc = mBackbuffers[0]->getTexture()->getDesc();
+	if (width == 0 || height == 0)
+	{
+		width = (int)desc.Width;
+		height = (int)desc.Height;
+	}
+	if (format == DXGI_FORMAT_UNKNOWN)
+		format = desc.Format;
+	auto view = ResourceView::create(vt,width, height, format, rt);
+	return view;
 }
 
 
@@ -559,6 +619,21 @@ Renderer::DescriptorHeap::Ref Renderer::getDescriptorHeap(DescriptorHeapType typ
 {
 	return mDescriptorHeaps[type];
 }
+Renderer::Resource::Ref Renderer::findTransient(const D3D12_RESOURCE_DESC& desc)
+{
+	auto hash = Resource::hash(desc);
+	auto ret = mTransients.find(hash);
+	if (ret == mTransients.end() || ret->second.empty())
+		return {};
+	auto& list = ret->second;
+	auto res = list.back();
+	list.pop_back();
+	return res;
+}
+void Renderer::addResource(Resource::Ptr res)
+{
+	mResources.push_back(res);
+}
 void Renderer::present()
 {
 #if defined(D3D12ON7)
@@ -641,51 +716,81 @@ ID3D12DescriptorHeap * Renderer::DescriptorHeap::get()
 	return mHeap.Get();
 }
 
-Renderer::RenderTarget::RenderTarget(const Texture::Ref& res):
-	mTexture(res)
+Renderer::ResourceView::ResourceView(ViewType type, const Texture::Ref& res):
+	mTexture(res), mType(type)
 {
 	createView();
 }
 
-Renderer::RenderTarget::RenderTarget(UINT width, UINT height, DXGI_FORMAT format)
+Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXGI_FORMAT format, Resource::ResourceType rt):
+	mType(type)
 {
 	auto renderer = Renderer::getSingleton();
-	mTexture = renderer->createTexture(width, height, format, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+	mTexture = renderer->createTexture(width, height, format, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,rt);
 	
 	createView();
 }
 
-Renderer::RenderTarget::~RenderTarget()
+Renderer::ResourceView::~ResourceView()
 {
-	auto heap = Renderer::getSingleton()->getDescriptorHeap(DHT_RENDERTARGET);
+	auto heap = Renderer::getSingleton()->getDescriptorHeap(matchDescriptorHeapType());
 	heap->dealloc(mHandle);
 
 	Renderer::getSingleton()->destroyResource(mTexture);
 }
 
-const Renderer::DescriptorHandle& Renderer::RenderTarget::getHandle() const
+const Renderer::DescriptorHandle& Renderer::ResourceView::getHandle() const
 {
 	return mHandle;
 }
 
-Renderer::RenderTarget::operator const Renderer::DescriptorHandle& () const
+Renderer::ResourceView::operator const Renderer::DescriptorHandle& () const
 {
 	return mHandle;
 }
 
-Renderer::Texture::Ref Renderer::RenderTarget::getTexture() const
+const Renderer::Texture::Ref& Renderer::ResourceView::getTexture() const
 {
 	return mTexture;
 }
 
-void Renderer::RenderTarget::createView()
+void Renderer::ResourceView::createView()
 {
 	auto renderer = Renderer::getSingleton();
 	auto device = renderer->getDevice();
-	auto heap = renderer->getDescriptorHeap(DHT_RENDERTARGET);
+	auto heap = renderer->getDescriptorHeap(matchDescriptorHeapType());
 	mHandle = heap->alloc();
 	auto res = mTexture->get();
-	device->CreateRenderTargetView(res, nullptr, mHandle);
+
+	switch (mType)
+	{
+	case Renderer::VT_RENDERTARGET:
+		device->CreateRenderTargetView(res, nullptr, mHandle);
+		break;
+	case Renderer::VT_DEPTHSTENCIL:
+		device->CreateDepthStencilView(res, nullptr, mHandle);
+		break;
+	case Renderer::VT_UNORDEREDACCESS:
+		//device->CreateUnorderedAccessView(res, nullptr, mHandle);
+	default:
+		Common::Assert(false, L"unsupported");
+	}
+}
+
+Renderer::DescriptorHeapType Renderer::ResourceView::matchDescriptorHeapType() const
+{
+	switch (mType)
+	{
+	case Renderer::VT_RENDERTARGET: 
+		return DHT_RENDERTARGET;
+	case Renderer::VT_DEPTHSTENCIL:
+		return DHT_DEPTHSTENCIL;
+	case Renderer::VT_UNORDEREDACCESS:
+		return DHT_CBV_SRV_UAV;
+	default:
+		Common::Assert(false,L"unsupported");
+		return DHT_MAX_NUM;
+	}
 }
 
 
@@ -737,6 +842,11 @@ Renderer::Resource::Resource(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES s
 	mResource(res), mState(state)
 {
 	mDesc = res->GetDesc();
+}
+
+Renderer::Resource::Resource(ResourceType type):
+	mType (type)
+{
 }
 
 Renderer::Resource::~Resource()
@@ -815,6 +925,42 @@ const D3D12_RESOURCE_STATES & Renderer::Resource::getState() const
 void Renderer::Resource::setState(const D3D12_RESOURCE_STATES & s) 
 {
 	mState = s;
+}
+
+size_t Renderer::Resource::hash(const D3D12_RESOURCE_DESC & desc)
+{
+	struct DescHash
+	{
+		size_t operator()(const D3D12_RESOURCE_DESC& desc)
+		{
+			size_t value = 0;
+			auto hash = [](auto v)
+			{
+				return std::hash<decltype(v)>{}(v);
+			};
+
+			value = hash(desc.Dimension);
+			value ^= hash(desc.Alignment) << 1;
+			value ^= hash(desc.Width) << 1;
+			value ^= hash(desc.Height) << 1;
+			value ^= hash(desc.DepthOrArraySize) << 1;
+			value ^= hash(desc.MipLevels) << 1;
+			value ^= hash(desc.Format) << 1;
+			value ^= hash(desc.SampleDesc.Count) << 1;
+			value ^= hash(desc.SampleDesc.Quality) << 1;
+			value ^= hash(desc.Layout) << 1;
+			value ^= hash(desc.Flags) << 1;
+
+			return value;
+		}
+	};
+	return DescHash{}(desc);
+}
+
+size_t Renderer::Resource::hash()
+{
+	mHashValue = mHashValue? mHashValue: hash(mDesc);
+	return mHashValue;
 }
 
 void Renderer::Texture::init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags)
@@ -960,7 +1106,12 @@ void Renderer::CommandList::copyTexture(Resource::Ref dst, UINT dstSub, const st
 	mCmdList->CopyTextureRegion(&dstlocal, dstStart[0], dstStart[1], dstStart[2],&srclocal,(const D3D12_BOX*)srcBox);
 }
 
-void Renderer::CommandList::clearRenderTarget(const RenderTarget::Ref & rt, const Color & color)
+void Renderer::CommandList::discardResource(const ResourceView::Ref & rt)
+{
+	mCmdList->DiscardResource(rt->getTexture()->get(),nullptr);
+}
+
+void Renderer::CommandList::clearRenderTarget(const ResourceView::Ref & rt, const Color & color)
 {
 	mCmdList->ClearRenderTargetView(rt->getHandle(), color.data(),0, nullptr);
 }
@@ -975,7 +1126,7 @@ void Renderer::CommandList::setScissorRect(const D3D12_RECT& rect)
 	mCmdList->RSSetScissorRects(1, &rect);
 }
 
-void Renderer::CommandList::setRenderTarget(const RenderTarget::Ref& rt)
+void Renderer::CommandList::setRenderTarget(const ResourceView::Ref& rt)
 {
 	mCmdList->OMSetRenderTargets(1, &rt->getHandle().cpu,FALSE, NULL);
 }
@@ -992,7 +1143,7 @@ void Renderer::CommandList::setVertexBuffer(const std::vector<VertexBuffer::Ptr>
 	for (auto& v: vertices)
 		views.push_back(v->getView());
 	if (!views.empty())
-		mCmdList->IASetVertexBuffers(0,views.size(), views.data());
+		mCmdList->IASetVertexBuffers(0,(UINT)views.size(), views.data());
 }
 
 void Renderer::CommandList::setVertexBuffer(const VertexBuffer::Ptr& vertices)

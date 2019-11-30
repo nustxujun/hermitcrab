@@ -10,6 +10,8 @@
 #include <fstream>
 #include <regex>
 #include <unordered_map>
+#include <map>
+#include <set>
 
 // windows
 #if defined(NO_UE4) || defined(_CONSOLE)
@@ -68,8 +70,55 @@ public :
 			converter(new std::codecvt<wchar_t, char, std::mbstate_t>("CHS"));
 		return converter.from_bytes(str);
 	}
-
 };
+
+template<class T>
+class UpValue
+{
+public:
+	UpValue()
+	{
+		mValue = std::shared_ptr<T>(new T);
+	};
+
+	//template<class ... Args>
+	//UpValue(Args&& ... args)
+	//{
+	//	mValue = std::shared_ptr<T>(new T(std::forward<Args>(args)...));
+	//}
+
+	UpValue(UpValue&& uv) :
+		mValue(uv.mValue)
+	{
+	}
+	UpValue(const UpValue& uv) :
+		mValue(uv.mValue)
+	{
+	}
+
+	void operator=(const T& v)
+	{
+		*mValue	= v;
+	}
+
+	T* operator->()
+	{
+		return mValue.get();
+	}
+
+	operator T&()
+	{
+		return *mValue.get();
+	}
+
+	T& get()
+	{
+		return *mValue.get();
+	}
+private:
+	std::shared_ptr<T> mValue;
+};
+
 
 using Vector3 = std::array<float, 3>;
 using Vector4 = std::array<float, 4>;
