@@ -110,7 +110,10 @@ void Renderer::resize(int width, int height)
 		CHECK(mSwapChain->GetBuffer(i, IID_PPV_ARGS(&buffer)));
 		auto res = Texture::create(buffer, D3D12_RESOURCE_STATE_PRESENT);
 		addResource(res);
-		mBackbuffers[i] = ResourceView::create(ResourceView::VT_RENDERTARGET, res);
+		std::wstringstream ss;
+		ss << L"BackBuffer" << i;
+		res->setName(ss.str());
+		mBackbuffers[i] = ResourceView::create(VT_RENDERTARGET, res);
 	}
 
 	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
@@ -397,7 +400,7 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	stbi_image_free(data);
 
 	mTextureMap[filename] = tex;
-	tex->get()->SetName(filename.c_str());
+	tex->setName(filename);
 	return tex;
 }
 
@@ -496,6 +499,28 @@ void Renderer::initDevice()
 {
 	auto adapter = getAdapter();
 	CHECK(D3D12CreateDevice(adapter.Get(), FEATURE_LEVEL, IID_PPV_ARGS(&mDevice)));
+
+#if defined(_DEBUG)
+	ComPtr<ID3D12InfoQueue> infoQueue;
+	CHECK(mDevice.As(&infoQueue));
+	
+	D3D12_MESSAGE_SEVERITY severities[] = {
+		D3D12_MESSAGE_SEVERITY_INFO,
+	};
+	D3D12_MESSAGE_ID DenyIds[] = {
+		D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE, 
+		//D3D12_MESSAGE_ID_MAP_INVALID_NULLRANGE,                         // This warning occurs when using capture frame while graphics debugging.
+		//D3D12_MESSAGE_ID_UNMAP_INVALID_NULLRANGE,                       // This warning occurs when using capture frame while graphics debugging.
+	};
+
+	D3D12_INFO_QUEUE_FILTER filter = {};
+	filter.DenyList.NumSeverities = _countof(severities);
+	filter.DenyList.pSeverityList = severities;
+	filter.DenyList.NumIDs = _countof(DenyIds);
+	filter.DenyList.pIDList = DenyIds;
+
+	CHECK(infoQueue->PushStorageFilter(&filter));
+#endif
 }
 
 void Renderer::initCommands()
@@ -726,8 +751,27 @@ Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXG
 	mType(type)
 {
 	auto renderer = Renderer::getSingleton();
+
+
 	mTexture = renderer->createTexture(width, height, format, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,rt);
 	
+
+	if (rt == Resource::RT_PERSISTENT)
+	{		
+		static size_t seqid = 0;
+		std::wstringstream ss;
+		switch (type)
+		{
+		case VT_RENDERTARGET: ss << L"RenderTarget"; break;
+		case VT_DEPTHSTENCIL: ss << L"DepthStencil"; break;
+		case VT_UNORDEREDACCESS: ss << L"UnorderedAccess"; break;
+		}
+
+		ss << seqid++;
+		mTexture->setName(ss.str().c_str());
+	}
+
+
 	createView();
 }
 
@@ -889,6 +933,7 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 	heapprop.Type = ht;
 
 	auto device = Renderer::getSingleton()->getDevice();
+
 	CHECK(device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, mState, nullptr, IID_PPV_ARGS(&mResource)));
 
 	mDesc = resdesc;
@@ -922,10 +967,15 @@ const D3D12_RESOURCE_STATES & Renderer::Resource::getState() const
 	return mState;
 }
 
-void Renderer::Resource::setState(const D3D12_RESOURCE_STATES & s) 
+void Renderer::Resource::setName(const std::wstring& name)
 {
-	mState = s;
+	mResource->SetName(name.c_str());
 }
+
+//void Renderer::Resource::setState(const D3D12_RESOURCE_STATES & s) 
+//{
+//	mState = s;
+//}
 
 size_t Renderer::Resource::hash(const D3D12_RESOURCE_DESC & desc)
 {
@@ -978,7 +1028,15 @@ void Renderer::Texture::init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_F
 	resdesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	resdesc.Flags = flags;
 
-	Resource::init(resdesc, ht, D3D12_RESOURCE_STATE_COMMON);
+	D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
+	if (flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
+		state |= D3D12_RESOURCE_STATE_RENDER_TARGET;
+	else if (flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
+		state |= D3D12_RESOURCE_STATE_DEPTH_WRITE | D3D12_RESOURCE_STATE_DEPTH_READ;
+	else if (flags & D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+		state |= D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+
+	Resource::init(resdesc, ht, state);
 
 
 
@@ -1066,10 +1124,9 @@ void Renderer::CommandList::transitionTo(Resource::Ref res, D3D12_RESOURCE_STATE
 	barrier.Transition.StateAfter = state;
 	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 
-	res->setState(state);
+	res->mState = state;
 	addResourceBarrier(barrier);
 	flushResourceBarrier();
-
 }
 
 void Renderer::CommandList::addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier)

@@ -170,16 +170,18 @@ public:
 
 	};
 
+	class CommandList;
 	class Resource: public Interface<Resource>
 	{
+		friend class Renderer::CommandList;
 	public:
 		enum ResourceType
 		{
-			RT_PERMANENT,
+			RT_PERSISTENT,
 			RT_TRANSIENT,
 		};
 
-		Resource(ResourceType type = RT_PERMANENT);
+		Resource(ResourceType type = RT_PERSISTENT);
 		virtual ~Resource();
 		Resource(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);
 		void init(UINT64 size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
@@ -191,8 +193,8 @@ public:
 
 		const D3D12_RESOURCE_STATES& getState()const;
 		// transition by cmdlist
-		void setState(const D3D12_RESOURCE_STATES& s);
-
+		//void setState(const D3D12_RESOURCE_STATES& s);
+		void setName(const std::wstring& name);
 
 		ID3D12Resource* get()const{return mResource.Get();}
 		const D3D12_RESOURCE_DESC& getDesc()const{return mDesc;}
@@ -203,8 +205,9 @@ public:
 		ComPtr<ID3D12Resource> mResource;
 		D3D12_RESOURCE_DESC mDesc;
 		D3D12_RESOURCE_STATES mState;
-		ResourceType mType = RT_PERMANENT;
+		ResourceType mType = RT_PERSISTENT;
 		size_t mHashValue = 0;
+		std::wstring mName;
 	};
 
 	class Texture final: public Resource , public Interface<Texture>
@@ -236,7 +239,7 @@ public:
 
 
 		ResourceView(ViewType type, const Texture::Ref& res);
-		ResourceView(ViewType type, UINT width, UINT height, DXGI_FORMAT format, Resource::ResourceType rt = Resource::RT_PERMANENT);
+		ResourceView(ViewType type, UINT width, UINT height, DXGI_FORMAT format, Resource::ResourceType rt = Resource::RT_PERSISTENT);
 		~ResourceView();
 
 		const DescriptorHandle& getHandle()const;
@@ -455,13 +458,13 @@ public:
 
 	Shader::Ptr compileShader(const std::wstring& path, const std::wstring& entry, const std::wstring& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 	Fence::Ptr createFence();
-	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, Resource::ResourceType restype = Resource::RT_PERMANENT);
+	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	void destroyResource(Resource::Ref res);
-	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERMANENT);
+	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	Texture::Ref createTexture(const std::wstring& filename);
 	VertexBuffer::Ptr createVertexBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
-	ResourceView::Ptr createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERMANENT);
+	ResourceView::Ptr createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERSISTENT);
 	
 private:
 	Buffer createBuffer(size_t size = 0)

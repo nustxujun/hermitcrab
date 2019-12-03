@@ -48,6 +48,7 @@ void ResourceHandle::prepare()
 {
 	Common::Assert(mRefCount != 0,L"invalied resource");
 
+	//if (!mView)
 	mView = Renderer::getSingleton()->createResourceView(mWidth, mHeight,mFormat,mType, Renderer::Resource::RT_TRANSIENT);
 }
 
@@ -201,7 +202,7 @@ void RenderGraph::RenderPass::prepareResources()
 	auto cmdlist = Renderer::getSingleton()->getCommandList();
 	for (size_t i = 0; i < mRenderTargets.size(); ++i)
 	{
-		auto& rt = mRenderTargets[i];
+		auto rt = mRenderTargets[i];
 		rt->prepare();
 		switch (mInitialTypes[i])
 		{
@@ -297,6 +298,7 @@ void RenderGraph::LambdaRenderPass::execute()
 RenderGraph::BeginPass::BeginPass()
 {
 	mRenderTarget = ResourceHandle::create(Renderer::VT_RENDERTARGET,0,0,DXGI_FORMAT_UNKNOWN);
+	mRenderTarget->setClearColor({0,0,0,0});
 }
 
 void RenderGraph::BeginPass::compile(const Inputs& inputs)

@@ -27,7 +27,15 @@ RenderGraph::LambdaRenderPass Pipeline::present()
 			auto cmdlist = renderer->getCommandList();
 			auto bb = renderer->getBackBuffer();
 			auto src = res.get()->getView()->getTexture();
-			cmdlist->copyTexture(bb->getTexture(),0,{0,0,0},src,0,nullptr);
+			//cmdlist->copyTexture(bb->getTexture(),0,{0,0,0},src,0,nullptr);
+			cmdlist->transitionTo(bb->getTexture(), D3D12_RESOURCE_STATE_COPY_DEST);
+			//cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_RENDER_TARGET);
+			cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_COPY_SOURCE);
+			cmdlist->get()->CopyResource(bb->getTexture()->get(), src->get());
+			cmdlist->transitionTo(bb->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+			cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+
 		});
 }
 
