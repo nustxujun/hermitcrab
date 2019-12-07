@@ -200,16 +200,23 @@ void RenderGraph::RenderPass::addOutput(RenderPass * p)
 void RenderGraph::RenderPass::prepareResources()
 {
 	auto cmdlist = Renderer::getSingleton()->getCommandList();
+	std::vector<Renderer::ResourceView::Ref> rtvs;
 	for (size_t i = 0; i < mRenderTargets.size(); ++i)
 	{
 		auto rt = mRenderTargets[i];
 		rt->prepare();
 		switch (mInitialTypes[i])
 		{
-		case IT_CLEAR: cmdlist->clearRenderTarget(rt->getView(), rt->getClearColor()); break;
+		case IT_CLEAR: 
+			cmdlist->clearRenderTarget(rt->getView(), rt->getClearColor()); 
+			break;
 		case IT_DISCARD:cmdlist->discardResource(rt->getView()); break;
 		}
+
+		rtvs.push_back(rt->getView());
 	}
+
+	cmdlist->setRenderTargets(rtvs);
 
 }
 

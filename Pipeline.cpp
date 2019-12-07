@@ -1,6 +1,6 @@
 #include "Pipeline.h"
 #include "Renderer.h"
-
+#include "RenderContext.h"
 
 
 
@@ -39,6 +39,15 @@ RenderGraph::LambdaRenderPass Pipeline::present()
 		});
 }
 
+RenderGraph::LambdaRenderPass Pipeline::drawScene(Camera::Ptr cam, UINT flags , UINT mask)
+{
+	return RenderGraph::LambdaRenderPass({},[](auto* pass, const auto& inputs) {
+		pass->write(inputs[0]->getRenderTarget());
+		},[=](){
+			RenderContext::getSingleton()->renderScene(cam,flags, mask);
+		} );
+}
+
 
 void ForwardPipeline::update()
 {
@@ -47,7 +56,8 @@ void ForwardPipeline::update()
 
 	auto clearPass = clearDepth({ 0.5,0.5,0.5,1 });
 	auto presentPass = present();
-	graph.begin()>> presentPass;
+	auto drawScenePass = drawScene(RenderContext::getSingleton()->getMainCamera());
+	graph.begin()>> drawScenePass >> gui()>> presentPass;
 
 
 	graph.setup();

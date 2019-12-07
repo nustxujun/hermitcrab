@@ -31,7 +31,7 @@ class Renderer
 	};
 public:
 	using Ptr = std::shared_ptr<Renderer>;
-	using Buffer = std::shared_ptr<std::vector<char>>;
+	using MemoryData = std::shared_ptr<std::vector<char>>;
 
 	enum ViewType
 	{
@@ -201,6 +201,7 @@ public:
 		ResourceType getType()const{return mType;}
 		static size_t hash(const D3D12_RESOURCE_DESC& desc);
 		size_t hash();
+		UINT64 getSize()const{return mDesc.Width;}
 	private:
 		ComPtr<ID3D12Resource> mResource;
 		D3D12_RESOURCE_DESC mDesc;
@@ -257,17 +258,22 @@ public:
 		ViewType mType = VT_UNKNOWN;
 	};
 
-	class VertexBuffer final :public Interface<VertexBuffer>
+
+	class Buffer
 	{
 	public:
-		VertexBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type);
-		const D3D12_VERTEX_BUFFER_VIEW& getView()const{return mView;}
+		using Ptr = std::shared_ptr<Buffer>;
+
+		Buffer(UINT size, UINT stride, D3D12_HEAP_TYPE type);
 
 		Resource::Ref getResource()const{return mResource;}
 		void blit(const void* buffer, size_t size);
+		UINT getSize()const{ return (UINT)mResource->getSize();}
+		UINT getStride()const{return  mStride;}
+		D3D12_GPU_VIRTUAL_ADDRESS getVirtualAddress()const{return mResource->get()->GetGPUVirtualAddress();}
 	private:
 		Resource::Ref mResource;
-		D3D12_VERTEX_BUFFER_VIEW mView;
+		UINT mStride;
 	};
 
 	class DescriptorHeap :public Interface<DescriptorHeap>
@@ -343,17 +349,19 @@ public:
 			ST_MAX_NUM
 		};
 	public:
-		Shader(const Buffer& data, ShaderType type);
+		Shader(const MemoryData& data, ShaderType type);
 
 		void registerSRV(UINT num, UINT start, UINT space);
 		void registerUAV(UINT num, UINT start, UINT space);
+		void register32BitConstant(UINT num, UINT start, UINT space);
 		void registerCBV(UINT num, UINT start, UINT space);
 		void registerSampler(UINT num, UINT start, UINT space);
 		void registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc);
 	private:
 		ShaderType mType;
-		Buffer mCodeBlob;
+		MemoryData mCodeBlob;
 
+		std::vector<D3D12_ROOT_CONSTANTS> m32BitConstants;
 		std::vector<D3D12_DESCRIPTOR_RANGE> mRanges;
 		std::vector< D3D12_STATIC_SAMPLER_DESC> mStaticSamplers;
 	};
@@ -419,16 +427,23 @@ public:
 
 		void discardResource(const ResourceView::Ref& rt);
 		void clearRenderTarget(const ResourceView::Ref& rt, const Color& color);
-		
+		void clearDepth(const ResourceView::Ref& rt, float depth);
+		void clearStencil(const ResourceView::Ref& rt, UINT8  stencil);
+		void clearDepthStencil(const ResourceView::Ref& rt, float depth, UINT8 stencil);
+
 		void setViewport(const D3D12_VIEWPORT& vp);
 		void setScissorRect(const D3D12_RECT& rect);
-		void setRenderTarget(const ResourceView::Ref& rt);
+		void setRenderTarget(const ResourceView::Ref& rt, const ResourceView::Ref& ds = {});
+		void setRenderTargets(const std::vector<ResourceView::Ref>& rts, const ResourceView::Ref& ds = {});
 		void setPipelineState(PipelineState::Ref ps);
-		void setVertexBuffer(const std::vector<VertexBuffer::Ptr>& vertices);
-		void setVertexBuffer(const VertexBuffer::Ptr& vertices);
+		void setVertexBuffer(const std::vector<Buffer::Ptr>& vertices);
+		void setVertexBuffer(const Buffer::Ptr& vertices);
+		void setIndexBuffer(const Buffer::Ptr& indices);
 		void setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		void setTexture(UINT slot, Texture::Ref tex );
+		void set32BitConstants(UINT slot, UINT num, const void* data, UINT offset);
 		void drawInstanced(UINT vertexCount, UINT instanceCount = 1, UINT startVertex = 0, UINT startInstance = 0);
+		void drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount, UINT startIndex = 0, INT startVertex = 0, UINT startInstance = 0);
 	private:
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
 		std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
@@ -447,6 +462,7 @@ public:
 	void beginFrame();
 	void endFrame();
 
+	HWND getWindow()const;
 	ID3D12Device* getDevice();
 	ID3D12CommandQueue* getCommandQueue();
 	CommandList::Ref getCommandList();
@@ -462,20 +478,22 @@ public:
 	void destroyResource(Resource::Ref res);
 	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	Texture::Ref createTexture(const std::wstring& filename);
-	VertexBuffer::Ptr createVertexBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
+	Buffer::Ptr createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
 	ResourceView::Ptr createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERSISTENT);
 	
 private:
-	Buffer createBuffer(size_t size = 0)
+	MemoryData createBuffer(size_t size = 0)
 	{
-		return Buffer(new std::vector<char>(size));
+		return MemoryData(new std::vector<char>(size));
 	}
 
 	void uninitialize();
 	void initDevice();
 	void initCommands();
 	void initDescriptorHeap();
+
+	std::wstring findFile(const std::wstring& filename);
 
 	CommandAllocator::Ref allocCommandAllocator();
 	void commitCommands();
@@ -493,6 +511,7 @@ private:
 	static Renderer::Ptr instance;
 
 	HWND mWindow;
+	std::vector<std::wstring> mFileSearchPaths;
 
 	ComPtr<ID3D12Device> mDevice;
 	ComPtr<IDXGISwapChain3> mSwapChain;

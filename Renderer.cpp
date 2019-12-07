@@ -38,6 +38,11 @@ Renderer::Ptr Renderer::getSingleton()
 
 Renderer::Renderer()
 {
+	mFileSearchPaths = {
+		L"",
+		L"../Engine/",
+		L"Engine/",
+	};
 }
 
 Renderer::~Renderer()
@@ -136,6 +141,11 @@ void Renderer::endFrame()
 	present();
 }
 
+HWND Renderer::getWindow() const
+{
+	return mWindow;
+}
+
 ID3D12Device* Renderer::getDevice()
 {
 	return mDevice.Get();
@@ -209,7 +219,7 @@ void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size
 	allocator->wait();
 }
 
-Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & path, const std::wstring & entry, const std::wstring & target, const std::vector<D3D_SHADER_MACRO>& macros)
+Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & absfilepath, const std::wstring & entry, const std::wstring & target, const std::vector<D3D_SHADER_MACRO>& macros)
 {
 	Shader::ShaderType type = Shader::ST_MAX_NUM;
 	switch (target[0])
@@ -222,6 +232,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & path, const s
 		break;
 	}
 
+	auto path = findFile(absfilepath);
 	struct _stat attrs;
 	if (_stat(U2M(path).c_str(), &attrs) != 0)
 	{
@@ -286,7 +297,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & path, const s
 
 	if (FAILED(D3DCompile(data.data(), size, U2M(path).c_str(), macros.data(), NULL, U2M(entry).c_str(), U2M(target).c_str(), compileFlags, 0, &blob, &err)))
 	{
-		Common::Assert(0, (const wchar_t*)err->GetBufferPointer());
+		Common::Assert(0, M2U((const char*)err->GetBufferPointer()));
 		return {};
 	}
 
@@ -381,7 +392,7 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	void* data = 0;
 	int width, height, nrComponents;
 
-	std::string fn = U2M(filename);
+	std::string fn = U2M(findFile(filename));
 	if (stbi_is_hdr(fn.c_str()))
 	{
 		format = DXGI_FORMAT_R32G32B32A32_FLOAT;
@@ -404,9 +415,9 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	return tex;
 }
 
-Renderer::VertexBuffer::Ptr Renderer::createVertexBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* buffer, size_t count)
+Renderer::Buffer::Ptr Renderer::createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* buffer, size_t count)
 {
-	auto vert = VertexBuffer::create(size, stride, type);
+	auto vert = Buffer::Ptr(new Buffer(size, stride, type));
 	if (buffer)
 		updateResource(vert->getResource(), buffer, size, [dst = vert->getResource(), size](CommandList::Ref cmdlist, Resource::Ref src){
 			
@@ -502,24 +513,25 @@ void Renderer::initDevice()
 
 #if defined(_DEBUG)
 	ComPtr<ID3D12InfoQueue> infoQueue;
-	CHECK(mDevice.As(&infoQueue));
-	
-	D3D12_MESSAGE_SEVERITY severities[] = {
-		D3D12_MESSAGE_SEVERITY_INFO,
-	};
-	D3D12_MESSAGE_ID DenyIds[] = {
-		D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE, 
-		//D3D12_MESSAGE_ID_MAP_INVALID_NULLRANGE,                         // This warning occurs when using capture frame while graphics debugging.
-		//D3D12_MESSAGE_ID_UNMAP_INVALID_NULLRANGE,                       // This warning occurs when using capture frame while graphics debugging.
-	};
+	if (SUCCEEDED(mDevice.As(&infoQueue)))
+	{
+		D3D12_MESSAGE_SEVERITY severities[] = {
+			D3D12_MESSAGE_SEVERITY_INFO,
+		};
+		D3D12_MESSAGE_ID DenyIds[] = {
+			D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE, 
+			//D3D12_MESSAGE_ID_MAP_INVALID_NULLRANGE,                         // This warning occurs when using capture frame while graphics debugging.
+			//D3D12_MESSAGE_ID_UNMAP_INVALID_NULLRANGE,                       // This warning occurs when using capture frame while graphics debugging.
+		};
 
-	D3D12_INFO_QUEUE_FILTER filter = {};
-	filter.DenyList.NumSeverities = _countof(severities);
-	filter.DenyList.pSeverityList = severities;
-	filter.DenyList.NumIDs = _countof(DenyIds);
-	filter.DenyList.pIDList = DenyIds;
+		D3D12_INFO_QUEUE_FILTER filter = {};
+		filter.DenyList.NumSeverities = _countof(severities);
+		filter.DenyList.pSeverityList = severities;
+		filter.DenyList.NumIDs = _countof(DenyIds);
+		filter.DenyList.pIDList = DenyIds;
 
-	CHECK(infoQueue->PushStorageFilter(&filter));
+		CHECK(infoQueue->PushStorageFilter(&filter));
+	}
 #endif
 }
 
@@ -551,6 +563,21 @@ void Renderer::initDescriptorHeap()
 	mDescriptorHeaps[DHT_RENDERTARGET] = create(NUM_MAX_RENDER_TARGET_VIEWS, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
 	mDescriptorHeaps[DHT_DEPTHSTENCIL] = create(NUM_MAX_DEPTH_STENCIL_VIEWS, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
 	mDescriptorHeaps[DHT_CBV_SRV_UAV] = create(NUM_MAX_CBV_SRV_UAVS, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
+}
+
+std::wstring Renderer::findFile(const std::wstring & filename)
+{
+	for (auto& p : mFileSearchPaths)
+	{
+		auto path = p + filename;
+		struct _stat attrs;
+		if (_stat(U2M(path).c_str(), &attrs) == 0)
+		{
+			return path;
+		}
+	}
+
+	return {};
 }
 
 Renderer::CommandAllocator::Ref Renderer::allocCommandAllocator()
@@ -1173,6 +1200,21 @@ void Renderer::CommandList::clearRenderTarget(const ResourceView::Ref & rt, cons
 	mCmdList->ClearRenderTargetView(rt->getHandle(), color.data(),0, nullptr);
 }
 
+void Renderer::CommandList::clearDepth(const ResourceView::Ref& rt, float depth)
+{
+	mCmdList->ClearDepthStencilView(rt->getHandle(), D3D12_CLEAR_FLAG_DEPTH,depth, 0,0, 0);
+}
+
+void Renderer::CommandList::clearStencil(const ResourceView::Ref & rt, UINT8 stencil)
+{
+	mCmdList->ClearDepthStencilView(rt->getHandle(), D3D12_CLEAR_FLAG_STENCIL, 1.0f, stencil, 0, 0);
+}
+
+void Renderer::CommandList::clearDepthStencil(const ResourceView::Ref & rt, float depth, UINT8 stencil)
+{
+	mCmdList->ClearDepthStencilView(rt->getHandle(), D3D12_CLEAR_FLAG_STENCIL, depth, stencil, 0, 0);
+}
+
 void Renderer::CommandList::setViewport(const D3D12_VIEWPORT& vp)
 {
 	mCmdList->RSSetViewports(1, &vp);
@@ -1183,9 +1225,26 @@ void Renderer::CommandList::setScissorRect(const D3D12_RECT& rect)
 	mCmdList->RSSetScissorRects(1, &rect);
 }
 
-void Renderer::CommandList::setRenderTarget(const ResourceView::Ref& rt)
+void Renderer::CommandList::setRenderTarget(const ResourceView::Ref& rt, const ResourceView::Ref& ds)
 {
-	mCmdList->OMSetRenderTargets(1, &rt->getHandle().cpu,FALSE, NULL);
+	const D3D12_CPU_DESCRIPTOR_HANDLE* dshandle = 0;
+	if (ds)
+		dshandle = & (ds->getHandle().cpu);
+	mCmdList->OMSetRenderTargets(1, &rt->getHandle().cpu,FALSE, dshandle);
+}
+
+void Renderer::CommandList::setRenderTargets(const std::vector<ResourceView::Ref>& rts, const ResourceView::Ref & ds)
+{
+	const D3D12_CPU_DESCRIPTOR_HANDLE* dshandle = 0;
+	if (ds)
+		dshandle = &(ds->getHandle().cpu);
+
+	std::vector< D3D12_CPU_DESCRIPTOR_HANDLE> rtvs = {};
+	for (auto& rt: rts)
+		rtvs.push_back(rt->getHandle().cpu);
+
+	mCmdList->OMSetRenderTargets((UINT)rtvs.size(), rtvs.data(), FALSE, dshandle);
+
 }
 
 void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
@@ -1194,19 +1253,25 @@ void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
 	mCmdList->SetGraphicsRootSignature(ps->getRootSignature());
 }
 
-void Renderer::CommandList::setVertexBuffer(const std::vector<VertexBuffer::Ptr>& vertices)
+void Renderer::CommandList::setVertexBuffer(const std::vector<Buffer::Ptr>& vertices)
 {
 	std::vector<D3D12_VERTEX_BUFFER_VIEW> views;
 	for (auto& v: vertices)
-		views.push_back(v->getView());
+		views.push_back({v->getVirtualAddress(), v->getSize(), v->getStride()});
 	if (!views.empty())
 		mCmdList->IASetVertexBuffers(0,(UINT)views.size(), views.data());
 }
 
-void Renderer::CommandList::setVertexBuffer(const VertexBuffer::Ptr& vertices)
+void Renderer::CommandList::setVertexBuffer(const Buffer::Ptr& vertices)
 {
-	mCmdList->IASetVertexBuffers(0, 1, &vertices->getView());
+	D3D12_VERTEX_BUFFER_VIEW view = {vertices->getVirtualAddress(), vertices->getSize(), vertices->getStride()};
+	mCmdList->IASetVertexBuffers(0, 1, &view);
+}
 
+void Renderer::CommandList::setIndexBuffer(const Buffer::Ptr & indices)
+{
+	D3D12_INDEX_BUFFER_VIEW view = {indices->getVirtualAddress(), indices->getSize(), indices->getStride() == 2? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT };
+	mCmdList->IASetIndexBuffer(&view);
 }
 
 void Renderer::CommandList::setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type)
@@ -1219,9 +1284,19 @@ void Renderer::CommandList::setTexture(UINT slot, Texture::Ref tex)
 	mCmdList->SetGraphicsRootDescriptorTable(slot, tex->getHandle().gpu);
 }
 
+void Renderer::CommandList::set32BitConstants(UINT slot, UINT num, const void * data, UINT offset)
+{
+	mCmdList->SetGraphicsRoot32BitConstants(slot, num,data,offset);
+}
+
 void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, UINT startVertex, UINT startInstance)
 {
 	mCmdList->DrawInstanced(vertexCount, instanceCount, startVertex, startInstance);
+}
+
+void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount, UINT startIndex, INT startVertex, UINT startInstance)
+{
+	mCmdList->DrawIndexedInstanced(indexCountPerInstance, instanceCount, startIndex,startVertex,startInstance);
 }
 
 void Renderer::CommandList::close()
@@ -1280,7 +1355,7 @@ Renderer::RenderState::RenderState(std::function<void(RenderState&self)> initial
 	initializer(*this);
 }
 
-Renderer::Shader::Shader(const Buffer& data, ShaderType type):
+Renderer::Shader::Shader(const MemoryData& data, ShaderType type):
 	mCodeBlob(data), mType(type)
 {
 }
@@ -1294,6 +1369,11 @@ void Renderer::Shader::registerSRV(UINT num, UINT start, UINT space)
 		space, 
 		D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
 	});
+}
+
+void Renderer::Shader::register32BitConstant(UINT num, UINT start, UINT space)
+{
+	m32BitConstants.push_back({start, space, num});
 }
 
 void Renderer::Shader::registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc)
@@ -1314,37 +1394,50 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	{
 		samplers.insert(samplers.end(), s->mStaticSamplers.begin(), s->mStaticSamplers.end());
 
-		D3D12_ROOT_PARAMETER rpt = {};
-		rpt.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rpt.DescriptorTable = {UINT(s->mRanges.size()), s->mRanges.data()};
-		switch (s->mType)
 		{
-		case Shader::ST_VERTEX: {
-			rsd.Flags |= D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT; 
-			desc.VS = {s->mCodeBlob->data(), (UINT)s->mCodeBlob->size()}; 
-			rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-			break;}
-		case Shader::ST_HULL:{
-			desc.HS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size()}; 
-			rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_HULL;
-			break;}
-		case Shader::ST_DOMAIN:{
-			desc.DS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size() }; 
-			rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_DOMAIN;
-			break;}
-		case Shader::ST_GEOMETRY: {
-			desc.GS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size() }; 
-			rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_GEOMETRY;
-			break; }
-		case Shader::ST_PIXEL: {
-			desc.PS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size() }; 
-			rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-			break; }
-		default:
-			break;
+			D3D12_ROOT_PARAMETER rpt = {};
+			rpt.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+			rpt.DescriptorTable = {UINT(s->mRanges.size()), s->mRanges.data()};
+			switch (s->mType)
+			{
+			case Shader::ST_VERTEX: {
+				rsd.Flags |= D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT; 
+				desc.VS = {s->mCodeBlob->data(), (UINT)s->mCodeBlob->size()}; 
+				rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+				break;}
+			case Shader::ST_HULL:{
+				desc.HS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size()}; 
+				rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_HULL;
+				break;}
+			case Shader::ST_DOMAIN:{
+				desc.DS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size() }; 
+				rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_DOMAIN;
+				break;}
+			case Shader::ST_GEOMETRY: {
+				desc.GS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size() }; 
+				rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_GEOMETRY;
+				break; }
+			case Shader::ST_PIXEL: {
+				desc.PS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size() }; 
+				rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+				break; }
+			default:
+				break;
+			}
+			if (!s->mRanges.empty())
+				params.push_back(rpt);
 		}
-		if (!s->mRanges.empty())
-			params.push_back(rpt);
+
+		if (!s->m32BitConstants.empty())
+		{
+			for (auto& c : s->m32BitConstants)
+			{
+				D3D12_ROOT_PARAMETER rpt = {};
+				rpt.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+				rpt.Constants = c;
+				params.push_back(rpt);
+			}
+		}
 	}
 	rsd.NumParameters = (UINT)params.size();
 	if (rsd.NumParameters > 0)
@@ -1381,15 +1474,16 @@ Renderer::PipelineState::~PipelineState()
 {
 }
 
-Renderer::VertexBuffer::VertexBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type)
+Renderer::Buffer::Buffer(UINT size, UINT stride, D3D12_HEAP_TYPE type)
 {
 	auto renderer = Renderer::getSingleton();
 	mResource = renderer->createResource(size, type);
+	mStride = stride;
 
-	mView = {mResource->get()->GetGPUVirtualAddress(),  size, stride};
 }
 
-void Renderer::VertexBuffer::blit(const void* buffer, size_t size)
+void Renderer::Buffer::blit(const void* buffer, size_t size)
 {
 	mResource->blit(buffer,size);
 }
+

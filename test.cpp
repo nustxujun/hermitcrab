@@ -4,23 +4,24 @@
 #include <iostream>
 #include "Framework.h"
 #include "Pipeline.h"
+#include "RenderContext.h"
 int main()
 {
 	{
 
-		class Frame : public Framework
+		class Frame : public Framework, public RenderContext
 		{
 		public:
 			ForwardPipeline pipeline;
 			Renderer::PipelineState::Ref pso;
-			Renderer::VertexBuffer::Ptr vertices;
+			Renderer::Buffer::Ptr vertices;
 			Renderer::Texture::Ref tex;
 			void init()
 			{
 				auto renderer = Renderer::getSingleton();
 
-				auto vs = renderer->compileShader(L"Engine/shaders/shaders.hlsl", L"VSMain", L"vs_5_0");
-				auto ps = renderer->compileShader(L"Engine/shaders/shaders.hlsl", L"PSMain", L"ps_5_0");
+				auto vs = renderer->compileShader(L"shaders/shaders.hlsl", L"VSMain", L"vs_5_0");
+				auto ps = renderer->compileShader(L"shaders/shaders.hlsl", L"PSMain", L"ps_5_0");
 				std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
 				ps->registerSRV(1,0,0);
 				ps->registerStaticSampler({
@@ -52,13 +53,22 @@ int main()
 					{ { -0.25f, -0.25f , 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
 				};
 
-				vertices = renderer->createVertexBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
+				vertices = renderer->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
 
-				tex = renderer->createTexture(L"test.jpg");
+				tex = renderer->createTexture(L"test.png");
 
 			}
 
+			void renderScreen()
+			{
+			}
+
 			void updateImpl()
+			{
+				pipeline.update();
+			}
+
+			void renderScene(Camera::Ptr cam, UINT, UINT)
 			{
 				auto renderer = Renderer::getSingleton();
 				auto bb = renderer->getBackBuffer();
@@ -67,9 +77,6 @@ int main()
 
 				cmdlist->setTexture(0, tex);
 
-				cmdlist->transitionTo(bb->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
-				cmdlist->clearRenderTarget(bb, { 0.5,0.5,0.5,1 });
-				cmdlist->setRenderTarget(bb);
 
 				auto desc = bb->getTexture()->getDesc();
 				cmdlist->setViewport({
@@ -81,9 +88,6 @@ int main()
 				cmdlist->setPrimitiveType();
 				cmdlist->setVertexBuffer(vertices);
 				cmdlist->drawInstanced(3);
-
-
-				pipeline.update();
 
 			}
 		} frame;
