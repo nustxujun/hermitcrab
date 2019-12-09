@@ -310,5 +310,5 @@ RenderGraph::BeginPass::BeginPass()
 
 void RenderGraph::BeginPass::compile(const Inputs& inputs)
 {
-	write(mRenderTarget);
+	write(mRenderTarget, IT_CLEAR);
 }

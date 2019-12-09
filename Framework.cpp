@@ -1,5 +1,7 @@
 #include "Framework.h"
 
+std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> Framework::processor;
+
 Framework::Framework()
 {
 	CreateDirectoryA("cache/", NULL);
@@ -39,6 +41,11 @@ void Framework::update()
 			mRenderer->endFrame();
 		}
 	}
+}
+
+void Framework::setProcessor(const std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)>& f)
+{
+	processor = f;
 }
 
 HWND Framework::createWindow()
@@ -96,6 +103,9 @@ LRESULT Framework::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 		}
 		return 0 ;
 	}
+
+	if (processor)
+		return processor(hWnd, message, wParam, lParam);
 	return DefWindowProc(hWnd, message, wParam, lParam);
 }
 

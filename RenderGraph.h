@@ -83,7 +83,7 @@ public:
 		virtual RenderPass& operator >> (RenderPass& pass);
 
 		void read(ResourceHandle::Ptr res, UINT slot = 0);
-		void write(ResourceHandle::Ptr res, InitialType type = IT_CLEAR, UINT slot = 0);
+		void write(ResourceHandle::Ptr res, InitialType type = IT_NONE, UINT slot = 0);
 
 		void visitOutputs(const std::function<void(RenderPass*)> & visitor);
 		bool isPrepared()const;

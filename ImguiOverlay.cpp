@@ -1,5 +1,5 @@
 #include "ImguiOverlay.h"
-
+#include "Framework.h"
 
 ImguiPass::ImguiPass()
 {
@@ -7,10 +7,13 @@ ImguiPass::ImguiPass()
 	initRendering();
 	initFonts();
 
+	auto p = std::bind(&ImguiPass::process, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
+	Framework::setProcessor(p);
 }
 
 ImguiPass::~ImguiPass()
 {
+	Framework::setProcessor({});
 	ImGui::DestroyContext();
 }
 
@@ -117,13 +120,13 @@ void ImguiPass::draw(ImDrawData* data)
 		return;
 
 	auto renderer = Renderer::getSingleton();
-	if (!mVertexBuffer || mVertexBuffer->getSize() < data->TotalVtxCount )
+	if (!mVertexBuffer || mVertexBuffer->getSize() < data->TotalVtxCount * sizeof(ImDrawVert))
 	{
 		auto size = data->TotalIdxCount * 2;
 		mVertexBuffer = renderer->createBuffer(size * sizeof(ImDrawVert), sizeof(ImDrawVert), D3D12_HEAP_TYPE_UPLOAD);
 	}
 
-	if (!mIndexBuffer || mIndexBuffer->getSize() < data->TotalIdxCount)
+	if (!mIndexBuffer || mIndexBuffer->getSize() < data->TotalIdxCount * sizeof(ImDrawIdx))
 	{
 		auto size = data->TotalIdxCount * 2;
 		mIndexBuffer = renderer->createBuffer(size * sizeof(ImDrawIdx), sizeof(ImDrawIdx), D3D12_HEAP_TYPE_UPLOAD);
@@ -208,6 +211,20 @@ void ImguiPass::draw(ImDrawData* data)
 		global_vtx_offset += cmd_list->VtxBuffer.Size;
 	}
 
+}
+#define GET_X_LPARAM(lp)	((int)(short)LOWORD(lp))
+#define GET_Y_LPARAM(lp)	((int)(short)HIWORD(lp))
+
+LRESULT ImguiPass::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	auto& io = ImGui::GetIO();
+	switch (message)
+	{
+	case WM_LBUTTONDOWN: io.MouseDown[0] = true;break;
+	case WM_LBUTTONUP: io.MouseDown[0] = false; break;
+	case WM_MOUSEMOVE: {io.MousePos.x = GET_X_LPARAM(lParam); io.MousePos.y = GET_Y_LPARAM(lParam);} break;
+	}
+	return DefWindowProc(hWnd, message, wParam, lParam);
 }
 
 void ImguiPass::setup()

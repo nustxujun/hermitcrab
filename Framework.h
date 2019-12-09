@@ -11,6 +11,8 @@ public:
 
 	void resize(int width, int height);
 	void update();
+
+	static void setProcessor(const std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)>& f);
 private:
 	HWND createWindow();
 	void registerWindow();
@@ -21,4 +23,6 @@ private:
 	HWND mWindow;
 	std::wstring mWindowClass = L"_frame_window";
 	Renderer::Ptr mRenderer;
+
+	static std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> processor;
 };

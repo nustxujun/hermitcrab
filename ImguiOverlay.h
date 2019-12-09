@@ -27,6 +27,8 @@ private:
 	void initRendering();
 	void initFonts();
 	void draw(ImDrawData* data);
+
+	LRESULT process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 private:
 	Renderer::PipelineState::Ref mPipelineState;
 	Renderer::Buffer::Ptr mVertexBuffer;
