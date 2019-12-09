@@ -150,17 +150,25 @@ void ImguiPass::draw(ImDrawData* data)
 	float R = data->DisplayPos.x + data->DisplaySize.x;
 	float T = data->DisplayPos.y;
 	float B = data->DisplayPos.y + data->DisplaySize.y;
+	//float mvp[4][4] =
+	//{
+	//	{ 2.0f / (R - L),   0.0f,           0.0f,       0.0f },
+	//	{ 0.0f,         2.0f / (T - B),     0.0f,       0.0f },
+	//	{ 0.0f,         0.0f,           0.5f,       0.0f },
+	//	{ (R + L) / (L - R),  (T + B) / (B - T),    0.5f,       1.0f },
+	//};
+
 	float mvp[4][4] =
 	{
-		{ 2.0f / (R - L),   0.0f,           0.0f,       0.0f },
-		{ 0.0f,         2.0f / (T - B),     0.0f,       0.0f },
-		{ 0.0f,         0.0f,           0.5f,       0.0f },
-		{ (R + L) / (L - R),  (T + B) / (B - T),    0.5f,       1.0f },
+		{ 2.0f / (R - L),   0.0f,           0.0f,      (R + L) / (L - R) },
+		{ 0.0f,         2.0f / (T - B),     0.0f,      (T + B) / (B - T) },
+		{ 0.0f,         0.0f,           0.5f,       0.5f },
+		{ 0.0f,  0.0f,   0.0f,       1.0f },
 	};
 
 	auto cmdlist = renderer->getCommandList();
-	cmdlist->set32BitConstants(0,16,mvp,0);
 	cmdlist->setPipelineState(mPipelineState);
+	cmdlist->set32BitConstants(1,16,mvp,0);
 
 	D3D12_VIEWPORT vp = {0};
 	vp.Width = data->DisplaySize.x;
