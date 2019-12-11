@@ -118,8 +118,8 @@ void Framework::resize(HWND hwnd, int width, int height)
 	auto w = win.right - win.left - client.right;
 	auto h = win.bottom - win.top - client.bottom;
 
-	width = max(1, width);
-	height = max(1,height);
+	width = std::max(1, width);
+	height = std::max(1,height);
 	::MoveWindow(hwnd, win.left, win.top, w + width, h + height, FALSE);
 
 	auto r = Renderer::getSingleton();

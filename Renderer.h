@@ -475,6 +475,7 @@ public:
 	void beginFrame();
 	void endFrame();
 
+	void addSearchPath(const std::wstring& path);
 	HWND getWindow()const;
 	ID3D12Device* getDevice();
 	ID3D12CommandQueue* getCommandQueue();

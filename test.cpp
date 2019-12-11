@@ -7,6 +7,8 @@
 #include "RenderContext.h"
 #include "ImguiOverlay.h"
 #include <sstream>
+
+#ifdef NO_UE4
 int main()
 {
 	{
@@ -59,7 +61,7 @@ int main()
 
 				vertices = renderer->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
 
-				tex = renderer->createTexture(L"test.jpg");
+				tex = renderer->createTexture(L"test.png");
 
 				auto mainbar = ImguiObject::root()->createChild<ImguiMenuBar>(true);
 				fps = mainbar->createChild<ImguiText>("test");
@@ -125,3 +127,4 @@ int main()
 	return 0;
 }
 
+#endif

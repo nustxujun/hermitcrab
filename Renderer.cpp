@@ -141,6 +141,11 @@ void Renderer::endFrame()
 	present();
 }
 
+void Renderer::addSearchPath(const std::wstring & path)
+{
+	mFileSearchPaths.push_back(path);
+}
+
 HWND Renderer::getWindow() const
 {
 	return mWindow;
