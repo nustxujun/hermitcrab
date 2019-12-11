@@ -449,9 +449,9 @@ void Renderer::destroyResource(Resource::Ref res)
 	}
 }
 
-Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs)
+Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs, const std::vector<RootParameter>& rootparams)
 {
-	auto pso = PipelineState::create(rs, shaders);
+	auto pso = PipelineState::create(rs, shaders, rootparams);
 	mPipelineStates.push_back(pso);
 	return pso;
 }
@@ -1360,20 +1360,59 @@ Renderer::Shader::Shader(const MemoryData& data, ShaderType type):
 {
 }
 
-void Renderer::Shader::registerSRV(UINT num, UINT start, UINT space)
+D3D12_ROOT_PARAMETER Renderer::RootParameter::genParameter()const
 {
-	mRanges.push_back({
-		D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-		num,
-		start,
-		space, 
-		D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
-	});
+	D3D12_ROOT_PARAMETER rp;
+	rp.ParameterType = mType;
+	rp.ShaderVisibility = mVisibility;
+
+	switch (mType)
+	{
+		case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE:
+			{
+				rp.DescriptorTable.NumDescriptorRanges = 1;
+				rp.DescriptorTable.pDescriptorRanges = &mRange;
+			}
+			break;
+		case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS:
+			rp.Constants = { mRange.BaseShaderRegister , mRange.RegisterSpace, mRange.NumDescriptors };
+			break;
+		case D3D12_ROOT_PARAMETER_TYPE_CBV:
+		case D3D12_ROOT_PARAMETER_TYPE_SRV:
+		case D3D12_ROOT_PARAMETER_TYPE_UAV:
+			rp.Descriptor = { mRange.BaseShaderRegister , mRange.RegisterSpace };
+			break;
+	}
+
+	return rp;
 }
 
-void Renderer::Shader::register32BitConstant(UINT num, UINT start, UINT space)
+void Renderer::RootParameter::record(UINT start, UINT space, UINT num)
 {
-	m32BitConstants.push_back({start, space, num});
+	mRange.BaseShaderRegister = start;
+	mRange.RegisterSpace = space;
+	mRange.NumDescriptors = num;
+	mRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+}
+
+void Renderer::RootParameter::srv(UINT start, UINT space, UINT num)
+{
+	record(start, space, num);
+	mType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	mRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+
+}
+
+Renderer::RootParameter::RootParameter(D3D12_SHADER_VISIBILITY visibility):
+	mVisibility(visibility)
+{
+}
+
+void Renderer::RootParameter::cbv32(UINT num, UINT start, UINT space)
+{
+	record(num, start, space);
+	mType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+
 }
 
 void Renderer::Shader::registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc)
@@ -1381,7 +1420,23 @@ void Renderer::Shader::registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& de
 	mStaticSamplers.push_back(desc);
 }
 
-Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector<Shader::Ptr>& shaders)
+D3D12_SHADER_VISIBILITY Renderer::Shader::getShaderVisibility() const
+{
+	switch (mType)
+	{
+	case Shader::ST_VERTEX: return  D3D12_SHADER_VISIBILITY_VERTEX;
+	case Shader::ST_HULL: return D3D12_SHADER_VISIBILITY_HULL;
+	case Shader::ST_DOMAIN: return D3D12_SHADER_VISIBILITY_DOMAIN;
+	case Shader::ST_GEOMETRY: return D3D12_SHADER_VISIBILITY_GEOMETRY;
+	case Shader::ST_PIXEL: return D3D12_SHADER_VISIBILITY_PIXEL; 
+	default:
+		Common::Assert(0,L"unknown type");
+		break;
+	}
+	return D3D12_SHADER_VISIBILITY_ALL;
+}
+
+Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector<Shader::Ptr>& shaders, const std::vector<RootParameter>& rootparams)
 {
 	auto device = Renderer::getSingleton()->getDevice();
 
@@ -1394,51 +1449,33 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	{
 		samplers.insert(samplers.end(), s->mStaticSamplers.begin(), s->mStaticSamplers.end());
 
+		switch (s->mType)
 		{
-			D3D12_ROOT_PARAMETER rpt = {};
-			rpt.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-			rpt.DescriptorTable = {UINT(s->mRanges.size()), s->mRanges.data()};
-			switch (s->mType)
-			{
-			case Shader::ST_VERTEX: {
-				rsd.Flags |= D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT; 
-				desc.VS = {s->mCodeBlob->data(), (UINT)s->mCodeBlob->size()}; 
-				rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-				break;}
-			case Shader::ST_HULL:{
-				desc.HS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size()}; 
-				rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_HULL;
-				break;}
-			case Shader::ST_DOMAIN:{
-				desc.DS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size() }; 
-				rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_DOMAIN;
-				break;}
-			case Shader::ST_GEOMETRY: {
-				desc.GS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size() }; 
-				rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_GEOMETRY;
-				break; }
-			case Shader::ST_PIXEL: {
-				desc.PS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size() }; 
-				rpt.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-				break; }
-			default:
-				break;
-			}
-			if (!s->mRanges.empty())
-				params.push_back(rpt);
+		case Shader::ST_VERTEX: {
+			rsd.Flags |= D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT; 
+			desc.VS = {s->mCodeBlob->data(), (UINT)s->mCodeBlob->size()}; 
+			break;}
+		case Shader::ST_HULL:{
+			desc.HS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size()}; 
+			break;}
+		case Shader::ST_DOMAIN:{
+			desc.DS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size() }; 
+			break;}
+		case Shader::ST_GEOMETRY: {
+			desc.GS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size() }; 
+			break; }
+		case Shader::ST_PIXEL: {
+			desc.PS = { s->mCodeBlob->data(), (UINT)s->mCodeBlob->size() }; 
+			break; }
+		default:
+			break;
 		}
 
-		if (!s->m32BitConstants.empty())
-		{
-			for (auto& c : s->m32BitConstants)
-			{
-				D3D12_ROOT_PARAMETER rpt = {};
-				rpt.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-				rpt.Constants = c;
-				params.push_back(rpt);
-			}
-		}
 	}
+
+	for (auto& rp: rootparams)
+		params.push_back(rp.genParameter());
+
 	rsd.NumParameters = (UINT)params.size();
 	if (rsd.NumParameters > 0)
 		rsd.pParameters = params.data();

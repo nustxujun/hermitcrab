@@ -44,8 +44,6 @@ void ImguiPass::initRendering()
 	auto vs = renderer->compileShader(L"shaders/imgui.hlsl", L"vs", L"vs_5_0");
 	auto ps = renderer->compileShader(L"shaders/imgui.hlsl", L"ps", L"ps_5_0");
 	std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
-	ps->registerSRV(1, 0, 0);
-	ps->register32BitConstant(16,0,0);
 	ps->registerStaticSampler({
 		D3D12_FILTER_MIN_MAG_MIP_POINT,
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
@@ -60,6 +58,11 @@ void ImguiPass::initRendering()
 		D3D12_SHADER_VISIBILITY_PIXEL
 		});
 	
+	std::vector<Renderer::RootParameter> rootparams = { D3D12_SHADER_VISIBILITY_PIXEL ,D3D12_SHADER_VISIBILITY_VERTEX };
+	rootparams[0].srv(0, 0);
+	rootparams[1].cbv32(0,0,16);
+
+
 	Renderer::RenderState rs = Renderer::RenderState::Default;
 	rs.setInputLayout({
 		{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,   0, (size_t)(&((ImDrawVert*)0)->pos), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -110,7 +113,7 @@ void ImguiPass::initRendering()
 		rs.setDepthStencil(desc);
 	}
 
-	mPipelineState = renderer->createPipelineState(shaders, rs);
+	mPipelineState = renderer->createPipelineState(shaders, rs, rootparams);
 }
 
 

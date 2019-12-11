@@ -26,7 +26,8 @@ int main()
 				auto vs = renderer->compileShader(L"shaders/shaders.hlsl", L"VSMain", L"vs_5_0");
 				auto ps = renderer->compileShader(L"shaders/shaders.hlsl", L"PSMain", L"ps_5_0");
 				std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
-				ps->registerSRV(1,0,0);
+				std::vector<Renderer::RootParameter> rootparams = {D3D12_SHADER_VISIBILITY_PIXEL};
+				rootparams[0].srv(0);
 				ps->registerStaticSampler({
 					D3D12_FILTER_MIN_MAG_MIP_POINT,
 					D3D12_TEXTURE_ADDRESS_MODE_BORDER,
@@ -47,7 +48,7 @@ int main()
 					{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 					});
 
-				pso = renderer->createPipelineState(shaders, rs);
+				pso = renderer->createPipelineState(shaders, rs, rootparams);
 
 				std::pair<Vector3, Vector4> triangleVertices[] =
 				{
@@ -58,7 +59,7 @@ int main()
 
 				vertices = renderer->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
 
-				tex = renderer->createTexture(L"test.png");
+				tex = renderer->createTexture(L"test.jpg");
 
 				auto mainbar = ImguiObject::root()->createChild<ImguiMenuBar>(true);
 				fps = mainbar->createChild<ImguiText>("test");
