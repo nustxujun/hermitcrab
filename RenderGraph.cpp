@@ -48,8 +48,8 @@ void ResourceHandle::prepare()
 {
 	Common::Assert(mRefCount != 0,L"invalied resource");
 
-	//if (!mView)
-	mView = Renderer::getSingleton()->createResourceView(mWidth, mHeight,mFormat,mType, Renderer::Resource::RT_TRANSIENT);
+	if (!mView)
+		mView = Renderer::getSingleton()->createResourceView(mWidth, mHeight,mFormat,mType, Renderer::Resource::RT_TRANSIENT);
 }
 
 
