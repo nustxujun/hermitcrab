@@ -5,6 +5,8 @@
 #include "Framework.h"
 #include "Pipeline.h"
 #include "RenderContext.h"
+#include "ImguiOverlay.h"
+#include <sstream>
 int main()
 {
 	{
@@ -16,6 +18,7 @@ int main()
 			Renderer::PipelineState::Ref pso;
 			Renderer::Buffer::Ptr vertices;
 			Renderer::Texture::Ref tex;
+			ImguiText* fps;
 			void init()
 			{
 				auto renderer = Renderer::getSingleton();
@@ -57,6 +60,8 @@ int main()
 
 				tex = renderer->createTexture(L"test.png");
 
+				auto mainbar = ImguiObject::root()->createChild<ImguiMenuBar>(true);
+				fps = mainbar->createChild<ImguiText>("test");
 			}
 
 			void renderScreen()
@@ -65,6 +70,24 @@ int main()
 
 			void updateImpl()
 			{
+				static auto lastTime = GetTickCount64();
+				auto cur = GetTickCount64();
+				auto delta = cur - lastTime;
+				if (delta > 0)
+				{
+					lastTime = cur;
+
+					float time = 1000.0f / delta;
+					static float history = time;
+
+					history =  history * 0.99f + time * 0.01f;
+
+					std::stringstream ss;
+					ss.precision(4);
+					ss << history;
+					fps->text = ss.str();
+				}
+
 				pipeline.update();
 			}
 
