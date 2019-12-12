@@ -419,7 +419,23 @@ public:
 		ComPtr<ID3D12RootSignature> mRootSignature;
 	};
 
+	class Profile:public Interface<Profile>
+	{
+		friend class Renderer;
+	public:
+		Profile(UINT index);
 
+		float getCPUTime();
+		float getGPUTime();
+
+		void begin();
+		void end();
+	private:
+		UINT mIndex;
+		float mCPUHistory = 0;
+		float mGPUHistory = 0;
+		DWORD mDuration;
+	};
 
 	class CommandList final : public Interface<CommandList>
 	{
@@ -457,6 +473,7 @@ public:
 		void set32BitConstants(UINT slot, UINT num, const void* data, UINT offset);
 		void drawInstanced(UINT vertexCount, UINT instanceCount = 1, UINT startVertex = 0, UINT startInstance = 0);
 		void drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount, UINT startIndex = 0, INT startVertex = 0, UINT startInstance = 0);
+		void endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx);
 	private:
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
 		std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
@@ -494,7 +511,8 @@ public:
 	Buffer::Ptr createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs, const std::vector<RootParameter>& rootparams);
 	ResourceView::Ptr createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERSISTENT);
-	
+	Profile::Ref createProfile();
+	ComPtr<ID3D12QueryHeap> getTimeStampQueryHeap();
 private:
 	MemoryData createBuffer(size_t size = 0)
 	{
@@ -505,10 +523,12 @@ private:
 	void initDevice();
 	void initCommands();
 	void initDescriptorHeap();
+	void initProfile();
 
 	std::wstring findFile(const std::wstring& filename);
 
-	CommandAllocator::Ref allocCommandAllocator();
+	CommandAllocator::Ptr allocCommandAllocator();
+	void recycleCommandAllocator(CommandAllocator::Ptr ca);
 	void commitCommands();
 	void resetCommands();
 	void syncFrame();
@@ -520,6 +540,7 @@ private:
 	void addResource(Resource::Ptr res);
 
 	void present();
+	void updateTimeStamp();
 private:
 	static Renderer::Ptr instance;
 
@@ -535,7 +556,7 @@ private:
 
 	std::vector<CommandAllocator::Ptr> mCommandAllocators;
 	UINT mCurrentFrame;
-	CommandAllocator::Ref mCurrentCommandAllocator;
+	CommandAllocator::Ptr mCurrentCommandAllocator;
 
 
 	std::array< ResourceView::Ptr, NUM_BACK_BUFFERS> mBackbuffers;
@@ -546,4 +567,8 @@ private:
 
 	std::unordered_map<std::wstring, Texture::Ref> mTextureMap;
 	std::vector<PipelineState::Ptr> mPipelineStates;
+	ComPtr<ID3D12QueryHeap> mTimeStampQueryHeap;
+	std::vector<Profile::Ptr> mProfiles;
+	Resource::Ref mProfileReadBack;
+	CommandAllocator::Ptr mProfileCmdAlloc;
 };

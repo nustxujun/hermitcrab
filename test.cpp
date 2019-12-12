@@ -5,6 +5,15 @@
 #include "Framework.h"
 #include "Pipeline.h"
 #include "RenderContext.h"
+
+struct End
+{
+	~End()
+	{
+		_CrtDumpMemoryLeaks();
+	}
+}end;
+
 int main()
 {
 	{
@@ -16,10 +25,11 @@ int main()
 			Renderer::PipelineState::Ref pso;
 			Renderer::Buffer::Ptr vertices;
 			Renderer::Texture::Ref tex;
+			Renderer::Profile::Ref profile;
 			void init()
 			{
 				auto renderer = Renderer::getSingleton();
-
+				profile = renderer->createProfile();
 				auto vs = renderer->compileShader(L"shaders/shaders.hlsl", L"VSMain", L"vs_5_0");
 				auto ps = renderer->compileShader(L"shaders/shaders.hlsl", L"PSMain", L"ps_5_0");
 				std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
@@ -57,7 +67,6 @@ int main()
 				vertices = renderer->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
 
 				tex = renderer->createTexture(L"test.jpg");
-
 			}
 
 			void renderScreen()
@@ -71,6 +80,7 @@ int main()
 
 			void renderScene(Camera::Ptr cam, UINT, UINT)
 			{
+				profile->begin();
 				auto renderer = Renderer::getSingleton();
 				auto bb = renderer->getBackBuffer();
 				auto cmdlist = renderer->getCommandList();
@@ -89,7 +99,7 @@ int main()
 				cmdlist->setPrimitiveType();
 				cmdlist->setVertexBuffer(vertices);
 				cmdlist->drawInstanced(3);
-
+				profile->end();
 			}
 		} frame;
 
@@ -98,7 +108,6 @@ int main()
 		frame.update();
 	}
 
-	_CrtDumpMemoryLeaks();
 	return 0;
 }
 

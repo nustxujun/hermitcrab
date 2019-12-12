@@ -66,6 +66,7 @@ void Renderer::initialize(HWND window)
 	initDevice();
 	initCommands();
 	initDescriptorHeap();
+	initProfile();
 }
 
 void Renderer::resize(int width, int height)
@@ -139,6 +140,8 @@ void Renderer::endFrame()
 	commitCommands();
 
 	present();
+
+	updateTimeStamp();
 }
 
 HWND Renderer::getWindow() const
@@ -217,6 +220,7 @@ void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size
 
 	allocator->signal();
 	allocator->wait();
+	recycleCommandAllocator(allocator);
 }
 
 Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & absfilepath, const std::wstring & entry, const std::wstring & target, const std::vector<D3D_SHADER_MACRO>& macros)
@@ -470,6 +474,18 @@ Renderer::ResourceView::Ptr Renderer::createResourceView(int width, int height, 
 	return view;
 }
 
+Renderer::Profile::Ref Renderer::createProfile()
+{
+	auto ptr = Profile::create((UINT)mProfiles.size());
+	mProfiles.push_back(ptr);
+	return ptr;
+}
+
+ComPtr<ID3D12QueryHeap> Renderer::getTimeStampQueryHeap()
+{
+	return mTimeStampQueryHeap;
+}
+
 
 
 void Renderer::uninitialize()
@@ -478,6 +494,8 @@ void Renderer::uninitialize()
 
 	// clear all commands
 	mCommandAllocators.clear();
+	mCurrentCommandAllocator.reset();
+	mProfileCmdAlloc.reset();
 	mCommandQueue.Reset();
 	mCommandList.reset();
 	mResourceCommandList.reset();
@@ -489,7 +507,7 @@ void Renderer::uninitialize()
 	mPipelineStates.clear();
 	mDescriptorHeaps.fill({});
 	mResourceBarriers.clear();
-
+	mTimeStampQueryHeap.Reset();
 
 	mSwapChain.Reset();
 	auto device = mDevice.Detach();
@@ -565,6 +583,18 @@ void Renderer::initDescriptorHeap()
 	mDescriptorHeaps[DHT_CBV_SRV_UAV] = create(NUM_MAX_CBV_SRV_UAVS, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
 }
 
+void Renderer::initProfile()
+{
+	D3D12_QUERY_HEAP_DESC desc;
+	desc.Count = 1024;
+	desc.NodeMask = 0;
+	desc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+
+	CHECK(mDevice->CreateQueryHeap(&desc, IID_PPV_ARGS(&mTimeStampQueryHeap)));
+	mProfileReadBack = createResource(1024 * sizeof(uint64_t),D3D12_HEAP_TYPE_READBACK);
+
+}
+
 std::wstring Renderer::findFile(const std::wstring & filename)
 {
 	for (auto& p : mFileSearchPaths)
@@ -580,13 +610,16 @@ std::wstring Renderer::findFile(const std::wstring & filename)
 	return {};
 }
 
-Renderer::CommandAllocator::Ref Renderer::allocCommandAllocator()
+Renderer::CommandAllocator::Ptr Renderer::allocCommandAllocator()
 {
-	for (auto& a : mCommandAllocators)
+	auto endi = mCommandAllocators.end();
+	for (auto i = mCommandAllocators.begin(); i != endi; ++i)
 	{
-		if (a->completed())
+		if ((*i)->completed())
 		{
-			return a;
+			auto ca = *i;
+			mCommandAllocators.erase(i);
+			return ca;
 		}
 	}
 
@@ -594,8 +627,13 @@ Renderer::CommandAllocator::Ref Renderer::allocCommandAllocator()
 		return mCommandAllocators[0];
 
 	auto a = CommandAllocator::Ptr(new CommandAllocator());
-	mCommandAllocators.push_back(a);
+	//mCommandAllocators.push_back(a);
 	return a;
+}
+
+void Renderer::recycleCommandAllocator(CommandAllocator::Ptr ca)
+{
+	mCommandAllocators.push_back(ca);
 }
 
 void Renderer::commitCommands()
@@ -612,6 +650,7 @@ void Renderer::commitCommands()
 void Renderer::resetCommands()
 {
 	mCurrentCommandAllocator->signal();
+	recycleCommandAllocator(mCurrentCommandAllocator);
 	mCurrentCommandAllocator = allocCommandAllocator();
 
 	mCurrentCommandAllocator->reset();
@@ -701,8 +740,58 @@ void Renderer::present()
 	CHECK(mSwapChain->Present(1, 0));
 #endif
 
-
+	
 }
+
+void Renderer::updateTimeStamp()
+{
+	if (mProfileCmdAlloc)
+	{
+		mProfileCmdAlloc->wait();
+
+		UINT64 frequency;
+		CHECK(mCommandQueue->GetTimestampFrequency(&frequency));
+		double tickdelta = 1.0 / (double)frequency;
+
+		auto data = mProfileReadBack->map(0);
+		struct TimeData
+		{
+			uint64_t begin;
+			uint64_t end;
+		};
+
+		for (auto& p : mProfiles)
+		{
+			TimeData td;
+			memcpy(&td, data, sizeof(TimeData));
+			data += sizeof(TimeData);
+
+			if (td.begin > td.end)
+				continue;
+
+			auto dtime = float(tickdelta * (td.end - td.begin));
+			p->mGPUHistory = p->mGPUHistory * 0.9f + dtime * 0.1f;
+		}
+		mProfileReadBack->unmap(0);
+	}
+	else
+		mProfileCmdAlloc = allocCommandAllocator();
+
+	mProfileCmdAlloc->reset();
+	mResourceCommandList->reset(mProfileCmdAlloc);
+
+	mResourceCommandList->get()->ResolveQueryData(
+		mTimeStampQueryHeap.Get(),
+		D3D12_QUERY_TYPE_TIMESTAMP, 
+		0, (UINT)mProfiles.size() * 2,mProfileReadBack->get(),0);
+
+	mResourceCommandList->close();
+
+	ID3D12CommandList* ppCommandLists[] = { mResourceCommandList->get() };
+	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	mProfileCmdAlloc->signal();
+}
+
 Renderer::DescriptorHeap::DescriptorHeap(UINT count, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags)
 {
 	auto device = Renderer::getSingleton()->getDevice();
@@ -980,7 +1069,10 @@ void Renderer::Resource::blit(const void* data, UINT64 size)
 char* Renderer::Resource::map(UINT sub)
 {
 	char* buffer = nullptr;
-	CHECK(mResource->Map(sub,NULL,(void**)&buffer));
+	D3D12_RANGE range;
+	range.Begin = 0;
+	range.End = getSize();
+	CHECK(mResource->Map(sub,&range,(void**)&buffer));
 	return buffer;
 }
 
@@ -1299,6 +1391,11 @@ void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UIN
 	mCmdList->DrawIndexedInstanced(indexCountPerInstance, instanceCount, startIndex,startVertex,startInstance);
 }
 
+void Renderer::CommandList::endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx)
+{
+	mCmdList->EndQuery(queryheap.Get(),type, queryidx);
+}
+
 void Renderer::CommandList::close()
 {
 	CHECK(mCmdList->Close());
@@ -1522,5 +1619,47 @@ Renderer::Buffer::Buffer(UINT size, UINT stride, D3D12_HEAP_TYPE type)
 void Renderer::Buffer::blit(const void* buffer, size_t size)
 {
 	mResource->blit(buffer,size);
+}
+
+Renderer::Profile::Profile(UINT index)
+{
+	mIndex = index;
+}
+
+float Renderer::Profile::getCPUTime()
+{
+	return mCPUHistory;
+}
+
+float Renderer::Profile::getGPUTime()
+{
+	return mGPUHistory;
+}
+
+void Renderer::Profile::begin()
+{
+	auto renderer = Renderer::getSingleton();
+	renderer->getCommandList()->endQuery(
+		renderer->getTimeStampQueryHeap(),
+		D3D12_QUERY_TYPE_TIMESTAMP,
+		mIndex * 2);
+
+	mDuration = GetTickCount();
+
+}
+
+void Renderer::Profile::end()
+{
+	mDuration = GetTickCount() - mDuration;
+	float dtime = 0;
+	if (mDuration > 0)
+		dtime = 1000.0f / mDuration;
+	mCPUHistory = mCPUHistory * 0.9f + dtime * 0.1f;
+
+	auto renderer = Renderer::getSingleton();
+	renderer->getCommandList()->endQuery(
+		renderer->getTimeStampQueryHeap(),
+		D3D12_QUERY_TYPE_TIMESTAMP,
+		mIndex * 2 + 1);
 }
 
