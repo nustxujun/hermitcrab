@@ -87,8 +87,9 @@ void Renderer::resize(int width, int height)
 	ComPtr<ID3D12DeviceDownlevel> deviceDownlevel;
 	CHECK(mDevice.As(&deviceDownlevel));
 
-	mBackbuffers[0] = ResourceView::create(VT_RENDERTARGET, width, height,swapChainDesc.Format);
-
+	for (auto& b: mBackbuffers)
+		b = ResourceView::create(VT_RENDERTARGET, width, height, swapChainDesc.Format);
+	mCurrentFrame = 0;
 #else
 	if (mSwapChain)
 	{
@@ -672,6 +673,8 @@ void Renderer::resetCommands()
 
 #ifndef D3D12ON7
 	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
+#else
+	mCurrentFrame = mCurrentFrame >= NUM_BACK_BUFFERS - 1?  0: mCurrentFrame + 1;
 #endif
 
 	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -746,7 +749,7 @@ void Renderer::present()
 	CHECK(mCommandQueue.As(&commandQueueDownlevel));
 	CHECK(commandQueueDownlevel->Present(
 		mCommandList->get(),
-		mBackbuffers[0]->getTexture()->get(),
+		mBackbuffers[mCurrentFrame]->getTexture()->get(),
 		mWindow,
 		D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK));
 #else
@@ -881,8 +884,22 @@ Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXG
 {
 	auto renderer = Renderer::getSingleton();
 
-
-	mTexture = renderer->createTexture(width, height, format, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,rt);
+	D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+	switch (format)
+	{
+	case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+	case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS:
+	case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT:
+	case DXGI_FORMAT_D32_FLOAT:
+	case DXGI_FORMAT_R32_TYPELESS:
+	case DXGI_FORMAT_R24G8_TYPELESS:
+	case DXGI_FORMAT_D24_UNORM_S8_UINT:
+	case DXGI_FORMAT_R24_UNORM_X8_TYPELESS:
+	case DXGI_FORMAT_X24_TYPELESS_G8_UINT:
+	case DXGI_FORMAT_D16_UNORM:
+		flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+	}
+	mTexture = renderer->createTexture(width, height, format, D3D12_HEAP_TYPE_DEFAULT, flags,rt);
 	
 
 	if (rt == Resource::RT_PERSISTENT)

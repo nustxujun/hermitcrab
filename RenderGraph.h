@@ -7,6 +7,14 @@ class ResourceHandle
 {
 public:
 	using Ptr = std::shared_ptr<ResourceHandle>;
+	union ClearValue
+	{
+		Color color;
+		struct {
+			float depth;
+			UINT8 stencil;
+		};
+	};
 
 	static ResourceHandle::Ptr create(Renderer::ViewType type, int w, int h, DXGI_FORMAT format);
 
@@ -15,8 +23,8 @@ public:
 	Renderer::ViewType getType()const;
 	const std::wstring& getName()const;
 	void setName(const std::wstring& n);
-	void setClearColor(const Color& vec){mClearColor = vec;};
-	const Color& getClearColor()const{return mClearColor;};
+	void setClearValue(const ClearValue& vec){mClearValue = vec;};
+	const ClearValue& getClearValue()const{return mClearValue;};
 
 	void addRef();
 	void release();
@@ -30,9 +38,8 @@ private:
 	int mWidth;
 	int mHeight;
 	DXGI_FORMAT mFormat;
-	Vector4 mClearValue = {};
 	Renderer::ResourceView::Ptr mView;
-	Color mClearColor = {};
+	ClearValue mClearValue = {};
 };
 
 
@@ -45,19 +52,23 @@ public:
 	class Resources
 	{
 	public:
-		ResourceHandle::Ptr operator[](size_t index)const;
-		ResourceHandle::Ptr operator[](const std::wstring& str)const;
-		ResourceHandle::Ptr find(Renderer::ViewType type, size_t index = 0)const;
+		//ResourceHandle::Ptr operator[](size_t index)const;
+		//ResourceHandle::Ptr operator[](const std::wstring& str)const;
+		//ResourceHandle::Ptr find(Renderer::ViewType type, size_t index = 0)const;
 		ResourceHandle::Ptr getRenderTarget(size_t index = 0) const;
+		ResourceHandle::Ptr getDepthStencil()const;
 
 		void add(ResourceHandle::Ptr res, UINT slot = 0);
 		void clear();
-		size_t size()const{return mResources.size();}
+		size_t getNumRenderTargets()const {return mRenderTargets.size();}
+		//size_t size()const{return mResources.size();}
 
-		std::vector<ResourceHandle::Ptr>::iterator begin(){return mResources.begin(); }
-		std::vector<ResourceHandle::Ptr>::iterator end() { return mResources.end(); }
+		//std::vector<ResourceHandle::Ptr>::iterator begin(){return mResources.begin(); }
+		//std::vector<ResourceHandle::Ptr>::iterator end() { return mResources.end(); }
 	private:
-		std::vector<ResourceHandle::Ptr> mResources;
+		std::vector<ResourceHandle::Ptr> mRenderTargets;
+		ResourceHandle::Ptr mDepthStencil;
+
 		std::unordered_map<std::wstring, ResourceHandle::Ptr> mResourceMap;
 	};
 
@@ -96,8 +107,8 @@ public:
 
 	protected:
 		std::vector<ResourceHandle::Ptr> mShaderResources;
-		Resources mRenderTargets;
-		std::vector<InitialType> mInitialTypes;
+		Resources mResources;
+		std::map<ResourceHandle*, InitialType> mInitialTypes;
 
 		std::vector<RenderPass*> mInputs;
 		std::vector<RenderPass*> mOutputs;
@@ -139,6 +150,7 @@ public:
 		void execute() override{};
 	private:
 		ResourceHandle::Ptr mRenderTarget;
+		ResourceHandle::Ptr mDepthStencil;
 	};
 
 
