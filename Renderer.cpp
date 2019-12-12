@@ -141,7 +141,7 @@ void Renderer::endFrame()
 
 	present();
 
-	updateTimeStamp();
+	//updateTimeStamp();
 }
 
 void Renderer::addSearchPath(const std::wstring & path)
@@ -513,6 +513,7 @@ void Renderer::uninitialize()
 	mDescriptorHeaps.fill({});
 	mResourceBarriers.clear();
 	mTimeStampQueryHeap.Reset();
+	mProfiles.clear();
 
 	mSwapChain.Reset();
 	auto device = mDevice.Detach();
@@ -629,7 +630,11 @@ Renderer::CommandAllocator::Ptr Renderer::allocCommandAllocator()
 	}
 
 	if (mCommandAllocators.size() >= 16)
-		return mCommandAllocators[0];
+	{
+		auto ca = mCommandAllocators.back();
+		mCommandAllocators.pop_back();
+		return ca;
+	}
 
 	auto a = CommandAllocator::Ptr(new CommandAllocator());
 	//mCommandAllocators.push_back(a);
@@ -638,6 +643,9 @@ Renderer::CommandAllocator::Ptr Renderer::allocCommandAllocator()
 
 void Renderer::recycleCommandAllocator(CommandAllocator::Ptr ca)
 {
+	for (auto& c: mCommandAllocators)
+		if (c->get() == ca->get())
+			Common::Assert(0, L"faild");
 	mCommandAllocators.push_back(ca);
 }
 
@@ -742,7 +750,7 @@ void Renderer::present()
 		mWindow,
 		D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK));
 #else
-	CHECK(mSwapChain->Present(1, 0));
+	CHECK(mSwapChain->Present(1,0));
 #endif
 
 	

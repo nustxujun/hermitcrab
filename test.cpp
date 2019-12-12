@@ -8,7 +8,7 @@
 #include "ImguiOverlay.h"
 #include <sstream>
 
-#ifdef NO_UE4
+#if defined(NO_UE4) || defined(_CONSOLE)
 
 struct End
 {
@@ -29,11 +29,8 @@ int main()
 			Renderer::PipelineState::Ref pso;
 			Renderer::Buffer::Ptr vertices;
 			Renderer::Texture::Ref tex;
-<<<<<<< HEAD
 			Renderer::Profile::Ref profile;
-=======
 			ImguiText* fps;
->>>>>>> c062cf8a6aa07f98ecffaad70c93bc1454a0429a
 			void init()
 			{
 				auto renderer = Renderer::getSingleton();
@@ -74,14 +71,11 @@ int main()
 
 				vertices = renderer->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
 
-<<<<<<< HEAD
 				tex = renderer->createTexture(L"test.jpg");
-=======
-				tex = renderer->createTexture(L"test.png");
+				//tex = renderer->createTexture(L"test.png");
 
 				auto mainbar = ImguiObject::root()->createChild<ImguiMenuBar>(true);
 				fps = mainbar->createChild<ImguiText>("test");
->>>>>>> c062cf8a6aa07f98ecffaad70c93bc1454a0429a
 			}
 
 			void renderScreen()
