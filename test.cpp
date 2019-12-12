@@ -5,6 +5,10 @@
 #include "Framework.h"
 #include "Pipeline.h"
 #include "RenderContext.h"
+#include "ImguiOverlay.h"
+#include <sstream>
+
+#ifdef NO_UE4
 
 struct End
 {
@@ -25,7 +29,11 @@ int main()
 			Renderer::PipelineState::Ref pso;
 			Renderer::Buffer::Ptr vertices;
 			Renderer::Texture::Ref tex;
+<<<<<<< HEAD
 			Renderer::Profile::Ref profile;
+=======
+			ImguiText* fps;
+>>>>>>> c062cf8a6aa07f98ecffaad70c93bc1454a0429a
 			void init()
 			{
 				auto renderer = Renderer::getSingleton();
@@ -66,7 +74,14 @@ int main()
 
 				vertices = renderer->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
 
+<<<<<<< HEAD
 				tex = renderer->createTexture(L"test.jpg");
+=======
+				tex = renderer->createTexture(L"test.png");
+
+				auto mainbar = ImguiObject::root()->createChild<ImguiMenuBar>(true);
+				fps = mainbar->createChild<ImguiText>("test");
+>>>>>>> c062cf8a6aa07f98ecffaad70c93bc1454a0429a
 			}
 
 			void renderScreen()
@@ -75,6 +90,24 @@ int main()
 
 			void updateImpl()
 			{
+				static auto lastTime = GetTickCount64();
+				auto cur = GetTickCount64();
+				auto delta = cur - lastTime;
+				if (delta > 0)
+				{
+					lastTime = cur;
+
+					float time = 1000.0f / delta;
+					static float history = time;
+
+					history =  history * 0.99f + time * 0.01f;
+
+					std::stringstream ss;
+					ss.precision(4);
+					ss << history;
+					fps->text = ss.str();
+				}
+
 				pipeline.update();
 			}
 
@@ -111,3 +144,4 @@ int main()
 	return 0;
 }
 
+#endif

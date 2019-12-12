@@ -127,3 +127,6 @@ using Matrix = std::array<Vector4, 4>;
 
 #define U2M Common::convert
 #define M2U Common::convert
+
+#undef min
+#undef max
