@@ -384,6 +384,7 @@ public:
 	public:
 		friend class Renderer::PipelineState;
 		static const RenderState Default;
+		static const RenderState GeneralSolid;
 	public:
 		RenderState(std::function<void(RenderState& self)> initializer);
 
