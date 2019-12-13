@@ -545,6 +545,7 @@ void Renderer::initDevice()
 		};
 		D3D12_MESSAGE_ID DenyIds[] = {
 			D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE, 
+			//D3D12_MESSAGE_ID_CLEARDEPTHSTENCILVIEW_MISMATCHINGCLEARVALUE,
 			//D3D12_MESSAGE_ID_MAP_INVALID_NULLRANGE,                         // This warning occurs when using capture frame while graphics debugging.
 			//D3D12_MESSAGE_ID_UNMAP_INVALID_NULLRANGE,                       // This warning occurs when using capture frame while graphics debugging.
 		};
@@ -884,20 +885,24 @@ Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXG
 {
 	auto renderer = Renderer::getSingleton();
 
-	D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+	D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
 	switch (format)
 	{
 	case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
-	case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS:
 	case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT:
 	case DXGI_FORMAT_D32_FLOAT:
-	case DXGI_FORMAT_R32_TYPELESS:
-	case DXGI_FORMAT_R24G8_TYPELESS:
 	case DXGI_FORMAT_D24_UNORM_S8_UINT:
-	case DXGI_FORMAT_R24_UNORM_X8_TYPELESS:
 	case DXGI_FORMAT_X24_TYPELESS_G8_UINT:
 	case DXGI_FORMAT_D16_UNORM:
-		flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+		flags |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
+	case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS:
+	case DXGI_FORMAT_R32_TYPELESS:
+	case DXGI_FORMAT_R24G8_TYPELESS:
+	case DXGI_FORMAT_R24_UNORM_X8_TYPELESS:
+		flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+		break;
+	default:
+		flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
 	}
 	mTexture = renderer->createTexture(width, height, format, D3D12_HEAP_TYPE_DEFAULT, flags,rt);
 	
@@ -1080,7 +1085,21 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 
 	auto device = Renderer::getSingleton()->getDevice();
 
-	CHECK(device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, mState, nullptr, IID_PPV_ARGS(&mResource)));
+	D3D12_CLEAR_VALUE* pcv = nullptr;
+	D3D12_CLEAR_VALUE cv = {resdesc.Format, {}};
+
+	if (resdesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
+	{
+		pcv = &cv;
+	}
+	else if (resdesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
+	{
+		cv.DepthStencil = {1.0f, 0};
+		pcv = &cv;
+	}
+	
+	cv.DepthStencil = {1.0f, 0};
+	CHECK(device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, mState, pcv, IID_PPV_ARGS(&mResource)));
 
 	mDesc = resdesc;
 }
@@ -1181,7 +1200,7 @@ void Renderer::Texture::init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_F
 	if (flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
 		state |= D3D12_RESOURCE_STATE_RENDER_TARGET;
 	else if (flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
-		state |= D3D12_RESOURCE_STATE_DEPTH_WRITE | D3D12_RESOURCE_STATE_DEPTH_READ;
+		state |= D3D12_RESOURCE_STATE_DEPTH_WRITE ;
 	else if (flags & D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
 		state |= D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 
@@ -1199,9 +1218,11 @@ const Renderer::DescriptorHandle& Renderer::Texture::getHandle()
 
 void Renderer::Texture::createView()
 {
+	auto desc = getDesc();
+	if (desc.Flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE)
+		return ;
 	mHandle = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
 
-	auto desc = getDesc();
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.Format = desc.Format;
@@ -1334,7 +1355,7 @@ void Renderer::CommandList::clearStencil(const ResourceView::Ref & rt, UINT8 ste
 
 void Renderer::CommandList::clearDepthStencil(const ResourceView::Ref & rt, float depth, UINT8 stencil)
 {
-	mCmdList->ClearDepthStencilView(rt->getHandle(), D3D12_CLEAR_FLAG_STENCIL, depth, stencil, 0, 0);
+	mCmdList->ClearDepthStencilView(rt->getHandle(), D3D12_CLEAR_FLAG_STENCIL | D3D12_CLEAR_FLAG_DEPTH, depth, stencil, 0, 0);
 }
 
 void Renderer::CommandList::setViewport(const D3D12_VIEWPORT& vp)
