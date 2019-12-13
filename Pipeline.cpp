@@ -43,7 +43,7 @@ RenderGraph::LambdaRenderPass Pipeline::drawScene(Camera::Ptr cam, UINT flags , 
 {
 	return RenderGraph::LambdaRenderPass({},[](auto* pass, const auto& inputs) {
 		pass->write(inputs[0]->getRenderTarget());
-		pass->read(inputs[0]->getDepthStencil());
+		pass->write(inputs[0]->getDepthStencil());
 
 		},[=](){
 			RenderContext::getSingleton()->renderScene(cam,flags, mask);
