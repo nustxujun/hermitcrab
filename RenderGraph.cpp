@@ -59,7 +59,7 @@ RenderGraph::RenderPass & RenderGraph::begin()
 	return mPasses[mPasses.size() - 1];
 }
 
-void RenderGraph::setup()
+void RenderGraph::setup(const Visitor& prev , const Visitor& post )
 {
 	mCurrents.clear();
 	std::set<RenderPass* > map;
@@ -84,10 +84,16 @@ void RenderGraph::setup()
 	}
 
 	for (auto& p: mCurrents)
+	{
+		if (prev)
+			prev(p);
 		p->setup();
+		if (post)
+			post(p);
+	}
 }
 
-void RenderGraph::compile()
+void RenderGraph::compile(const Visitor& prev , const Visitor& post )
 {
 	for (auto& p : mCurrents)
 	{
@@ -96,21 +102,26 @@ void RenderGraph::compile()
 		{
 			inputs.push_back(&i->mResources);
 		}
-
+		if (prev)
+			prev(p);
 		p->compile(inputs);
+		if (post)
+			post(p);
 	}
 }
 
-void RenderGraph::execute()
+void RenderGraph::execute(const Visitor& prev, const Visitor& post)
 {
 	std::list<RenderPass*> queue;
 	std::function<void(RenderPass*)> f;
-	f = [&queue,&f](RenderPass* p)
+	f = [&queue,&f, &prev, & post](RenderPass* p)
 	{
 		if (p->isPrepared())
 		{
 			p->prepareResources();
+			if(prev) prev(p);
 			p->execute();
+			if (post) post(p);
 			p->visitOutputs([&f](RenderPass* p ){
 				f(p);
 			});
@@ -307,6 +318,13 @@ RenderGraph::LambdaRenderPass::LambdaRenderPass(LambdaRenderPass && lrp):
 {
 }
 
+void RenderGraph::LambdaRenderPass::operator=(LambdaRenderPass && lrp)
+{
+	mSetup = std::move(lrp.mSetup);
+	mExecute = std::move(lrp.mExecute);
+	mCompile = std::move(lrp.mCompile);
+}
+
 RenderGraph::LambdaRenderPass::LambdaRenderPass(const SetupFunc& setup, const CompileFunc& compile, const ExecuteFunc& exe):
 	mSetup(setup), mExecute(exe),mCompile(compile)
 {
@@ -332,6 +350,7 @@ void RenderGraph::LambdaRenderPass::execute()
 
 RenderGraph::BeginPass::BeginPass()
 {
+	setName("begin pass");
 	mRenderTarget = ResourceHandle::create(Renderer::VT_RENDERTARGET,0,0,DXGI_FORMAT_UNKNOWN);
 	mRenderTarget->setClearValue({0,0,0,0});
 	mDepthStencil = ResourceHandle::create(Renderer::VT_DEPTHSTENCIL, 0,0, DXGI_FORMAT_D24_UNORM_S8_UINT);

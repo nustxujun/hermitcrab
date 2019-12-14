@@ -1743,11 +1743,17 @@ void Renderer::Profile::begin()
 void Renderer::Profile::end()
 {
 	mDuration = GetTickCount() - mDuration;
-	float dtime = 0;
-	if (mDuration > 0)
-		dtime = 1000.0f / mDuration;
-	mCPUHistory = mCPUHistory * 0.9f + dtime * 0.1f;
+	mAccum += mDuration;
+	mFrameCount++;
+	if (mAccum >= INTERVAL)
+	{
+		float dtime = 0;
+		dtime =  (float)mAccum / (float)mFrameCount;
+		mCPUHistory = mCPUHistory * 0.9f + dtime * 0.1f;
 
+		mFrameCount = 0;
+		mAccum = 0;
+	}
 	auto renderer = Renderer::getSingleton();
 	renderer->getCommandList()->endQuery(
 		renderer->getTimeStampQueryHeap(),

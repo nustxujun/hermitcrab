@@ -5,15 +5,15 @@
 #include "imgui/imgui.h"
 #include "RenderGraph.h"
 
-class ImguiObject;
-class ImguiPass final: public RenderGraph::RenderPass
+class ImGuiObject;
+class ImGuiPass final: public RenderGraph::RenderPass
 {
 	void operator=(RenderPass&) = delete;
 public:
-	using Ptr = std::shared_ptr<ImguiPass>;
+	using Ptr = std::shared_ptr<ImGuiPass>;
 public:
-	ImguiPass();
-	~ImguiPass();
+	ImGuiPass();
+	~ImGuiPass();
 
 	void setup();
 	void compile(const RenderGraph::Inputs& inputs);
@@ -39,7 +39,7 @@ private:
 };
 
 
-class ImguiObject
+class ImGuiObject
 {
 public:
 	virtual void update() {
@@ -55,14 +55,14 @@ public:
 		return c;
 	}
 
-	virtual ~ImguiObject()
+	virtual ~ImGuiObject()
 	{
 		destroy();
 	}
 
 	void destroy()
 	{
-		std::vector<ImguiObject*> temp;
+		std::vector<ImGuiObject*> temp;
 		temp.swap(children);
 		for (auto& i : temp)
 		{
@@ -84,20 +84,20 @@ public:
 		}
 	}
 
-	ImguiObject* operator[](size_t index)const 
+	ImGuiObject* operator[](size_t index)const 
 	{
 		return children[index];
 	}
 
 
 
-	std::vector<ImguiObject*> children;
-	ImguiObject* parent = nullptr;
+	std::vector<ImGuiObject*> children;
+	ImGuiObject* parent = nullptr;
 
 
-	static ImguiObject* root() 
+	static ImGuiObject* root() 
 	{
-		static ImguiObject r;
+		static ImGuiObject r;
 		return &r;
 	}
 
@@ -112,13 +112,13 @@ protected:
 
 };
 
-struct ImguiWindow: public ImguiObject
+struct ImGuiWindow: public ImGuiObject
 {
 	std::string text;
 	bool visible;
 	ImGuiWindowFlags flags;
 
-	ImguiWindow(const char* t = "", bool b = true, ImGuiWindowFlags f = 0): 
+	ImGuiWindow(const char* t = "", bool b = true, ImGuiWindowFlags f = 0): 
 		text(t), visible(b), flags(f)
 	{}
 	void update() {
@@ -130,7 +130,7 @@ struct ImguiWindow: public ImguiObject
 		mCmdMaps.clear();
 
 		ImGui::Begin(text.c_str(),&visible, flags);
-		ImguiObject::update();
+		ImGuiObject::update();
 		ImGui::End();
 	}
 
@@ -156,30 +156,30 @@ private:
 
 };
 
-struct ImguiText :public ImguiObject
+struct ImGuiText :public ImGuiObject
 {
 	std::string text;
 
 	void update() {
 		ImGui::Text(text.c_str());
-		ImguiObject::update();
+		ImGuiObject::update();
 	}
 
-	ImguiText(const char* c = "") : text(c)
+	ImGuiText(const char* c = "") : text(c)
 	{
 	}
 };
 
-struct ImguiMenuItem : public ImguiObject
+struct ImGuiMenuItem : public ImGuiObject
 {
 	std::string text;
 	bool selected = true;
 	bool enabled;
 
-	using Callback = std::function<void(ImguiMenuItem*)>;
+	using Callback = std::function<void(ImGuiMenuItem*)>;
 	Callback callback;
 
-	ImguiMenuItem(const char* t, Callback cb, bool e = true):
+	ImGuiMenuItem(const char* t, Callback cb, bool e = true):
 		text(t), callback(cb), enabled(e)
 	{
 	}
@@ -189,12 +189,12 @@ struct ImguiMenuItem : public ImguiObject
 		if (ImGui::MenuItem(text.c_str(), nullptr, &selected, enabled) && callback)
 			callback(this);
 
-		ImguiObject::update();
+		ImGuiObject::update();
 	}
 
 };
 
-struct ImguiMenu :public ImguiObject
+struct ImGuiMenu :public ImGuiObject
 {
 	std::string text;
 	bool enabled = true;
@@ -203,25 +203,25 @@ struct ImguiMenu :public ImguiObject
 	{
 		if (ImGui::BeginMenu(text.c_str(), enabled))
 		{
-			ImguiObject::update();
+			ImGuiObject::update();
 			ImGui::EndMenu();
 		}
 	}
 
 
-	ImguiMenu(const char* t, bool e):
+	ImGuiMenu(const char* t, bool e):
 		text(t), enabled(e)
 	{
 	}
 
-	ImguiMenuItem* createMenuItem(const char* t, ImguiMenuItem::Callback c, bool enable = true)
+	ImGuiMenuItem* createMenuItem(const char* t, ImGuiMenuItem::Callback c, bool enable = true)
 	{
-		return createChild<ImguiMenuItem>(t, c, enable);
+		return createChild<ImGuiMenuItem>(t, c, enable);
 	}
 
 };
 
-struct ImguiMenuBar: public ImguiObject
+struct ImGuiMenuBar: public ImGuiObject
 {
 	bool main = false;
 	void update() {
@@ -229,7 +229,7 @@ struct ImguiMenuBar: public ImguiObject
 		{
 			if (ImGui::BeginMainMenuBar())
 			{
-				ImguiObject::update();
+				ImGuiObject::update();
 				ImGui::EndMainMenuBar();
 			}
 		}
@@ -237,30 +237,30 @@ struct ImguiMenuBar: public ImguiObject
 		{
 			if (ImGui::BeginMenuBar())
 			{
-				ImguiObject::update();
+				ImGuiObject::update();
 				ImGui::EndMenuBar();
 			}
 		}
 	}
 
-	ImguiMenuBar(bool m = false) :main(m)
+	ImGuiMenuBar(bool m = false) :main(m)
 	{
 	}
 
-	ImguiMenu* createMenu(const char*  text, bool enable)
+	ImGuiMenu* createMenu(const char*  text, bool enable)
 	{
-		return createChild<ImguiMenu>(text, enable);
+		return createChild<ImGuiMenu>(text, enable);
 	}
 };
 
-struct ImguiSlider :public ImguiObject
+struct ImGuiSlider :public ImGuiObject
 {
 	std::string text;
 	float value;
 	float valMin;
 	float valMax;
 	std::string display = "%.3f";
-	using Callback = std::function<void(ImguiSlider*)>;
+	using Callback = std::function<void(ImGuiSlider*)>;
 	Callback callback;
 
 
@@ -271,7 +271,7 @@ struct ImguiSlider :public ImguiObject
 			callback(this);
 		}
 	}
-	ImguiSlider(const char* t, float v, float vmin, float vmax, Callback cb):
+	ImGuiSlider(const char* t, float v, float vmin, float vmax, Callback cb):
 		text(t), value(v),valMin(vmin), valMax(vmax),callback(cb)
 	{
 

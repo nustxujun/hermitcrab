@@ -1,24 +1,25 @@
-#include "ImguiOverlay.h"
+#include "ImGuiOverlay.h"
 #include "Framework.h"
 
-ImguiPass::ImguiPass()
+ImGuiPass::ImGuiPass()
 {
+	setName("ImGui pass");
 	initImGui();
 	initRendering();
 	initFonts();
 
-	auto p = std::bind(&ImguiPass::process, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
+	auto p = std::bind(&ImGuiPass::process, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
 	Framework::setProcessor(p);
 }
 
-ImguiPass::~ImguiPass()
+ImGuiPass::~ImGuiPass()
 {
 	Framework::setProcessor({});
 	ImGui::DestroyContext();
 }
 
 
-void ImguiPass::initImGui()
+void ImGuiPass::initImGui()
 {
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -37,7 +38,7 @@ void ImguiPass::initImGui()
 
 }
 
-void ImguiPass::initRendering()
+void ImGuiPass::initRendering()
 {
 	auto renderer = Renderer::getSingleton();
 
@@ -117,7 +118,7 @@ void ImguiPass::initRendering()
 }
 
 
-void ImguiPass::draw(ImDrawData* data)
+void ImGuiPass::draw(ImDrawData* data)
 {
 	if (data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f || data->TotalIdxCount <= 0)
 		return;
@@ -218,7 +219,7 @@ void ImguiPass::draw(ImDrawData* data)
 #define GET_X_LPARAM(lp)	((int)(short)LOWORD(lp))
 #define GET_Y_LPARAM(lp)	((int)(short)HIWORD(lp))
 
-LRESULT ImguiPass::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT ImGuiPass::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	auto& io = ImGui::GetIO();
 	switch (message)
@@ -230,7 +231,7 @@ LRESULT ImguiPass::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 	return DefWindowProc(hWnd, message, wParam, lParam);
 }
 
-void ImguiPass::setup()
+void ImGuiPass::setup()
 {
 	HWND win = Renderer::getSingleton()->getWindow();
 	RECT rect;
@@ -238,17 +239,17 @@ void ImguiPass::setup()
 	resize(win, rect.right, rect.bottom);
 }
 
-void ImguiPass::compile(const RenderGraph::Inputs & inputs)
+void ImGuiPass::compile(const RenderGraph::Inputs & inputs)
 {
 	write(inputs[0]->getRenderTarget());
 }
 
-void ImguiPass::execute()
+void ImGuiPass::execute()
 {
 	
 	ImGui::NewFrame();
 	ImGui::ShowDemoWindow();
-	ImguiObject::root()->update();
+	ImGuiObject::root()->update();
 
 	ImGui::Render();
 
@@ -256,7 +257,7 @@ void ImguiPass::execute()
 	draw(data);
 }
 
-void ImguiPass::resize(HWND win, int width, int height)
+void ImGuiPass::resize(HWND win, int width, int height)
 {
 	if (width == mWidth && height == mHeight)
 		return ;
@@ -268,7 +269,7 @@ void ImguiPass::resize(HWND win, int width, int height)
 }
 
 
-void ImguiPass::initFonts()
+void ImGuiPass::initFonts()
 {
 	// Build texture atlas
 	ImGuiIO& io = ImGui::GetIO();

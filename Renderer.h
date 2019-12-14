@@ -423,6 +423,7 @@ public:
 	class Profile:public Interface<Profile>
 	{
 		friend class Renderer;
+		const static DWORD INTERVAL = 1;
 	public:
 		Profile(UINT index);
 
@@ -436,6 +437,8 @@ public:
 		float mCPUHistory = 0;
 		float mGPUHistory = 0;
 		DWORD mDuration;
+		DWORD mAccum = 0;
+		UINT mFrameCount = 0;
 	};
 
 	class CommandList final : public Interface<CommandList>

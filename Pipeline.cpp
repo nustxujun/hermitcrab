@@ -1,23 +1,13 @@
 #include "Pipeline.h"
 #include "Renderer.h"
 #include "RenderContext.h"
+#include <sstream>
 
 
-
-RenderGraph::LambdaRenderPass Pipeline::clearDepth(const Color & color)
-{
-	return RenderGraph::LambdaRenderPass({},[color](auto* pass, const auto& inputs) {
-		//pass->write(inputs[0]->getRenderTarget());
-		}, []()
-		{
-			//Renderer::getSingleton()->getCommandList()->clearRenderTarget(inputs[0], { 0.5f,0.5f, 0.5f,1.0f });
-		});
-}
-
-RenderGraph::LambdaRenderPass Pipeline::present()
+RenderGraph::LambdaRenderPass::Ptr Pipeline::present()
 {
 	UpValue<ResourceHandle::Ptr> res;
-	return RenderGraph::LambdaRenderPass({},[res](auto* pass, const auto& inputs)mutable {
+	auto pass = RenderGraph::LambdaRenderPass::Ptr{new  RenderGraph::LambdaRenderPass({},[res](auto* pass, const auto& inputs)mutable {
 			pass->read(inputs[0]->getRenderTarget());
 			res = (inputs[0]->getRenderTarget());
 		}, [res]()mutable
@@ -36,33 +26,78 @@ RenderGraph::LambdaRenderPass Pipeline::present()
 			cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 
-		});
+		})};
+	pass->setName("present pass");
+	return pass;
 }
 
-RenderGraph::LambdaRenderPass Pipeline::drawScene(Camera::Ptr cam, UINT flags , UINT mask)
+RenderGraph::LambdaRenderPass::Ptr Pipeline::drawScene(Camera::Ptr cam, UINT flags , UINT mask)
 {
-	return RenderGraph::LambdaRenderPass({},[](auto* pass, const auto& inputs) {
+	auto pass = RenderGraph::LambdaRenderPass::Ptr{new RenderGraph::LambdaRenderPass({},[](auto* pass, const auto& inputs) {
 		pass->write(inputs[0]->getRenderTarget());
 		pass->write(inputs[0]->getDepthStencil());
 
 		},[=](){
 			RenderContext::getSingleton()->renderScene(cam,flags, mask);
-		} );
+		} )};
+
+	pass->setName("draw scene pass");
+	return pass;
 }
 
 
-void ForwardPipeline::update()
+//void ForwardPipeline::update()
+//{
+//	RenderGraph graph;
+//	auto renderer = Renderer::getSingleton();
+//
+//	auto presentPass = present();
+//	auto drawScenePass = drawScene(RenderContext::getSingleton()->getMainCamera());
+//	graph.begin()>> drawScenePass >> gui()>> presentPass;
+//
+//
+//	graph.setup();
+//	graph.compile();
+//	graph.execute();
+//}
+
+DefaultPipeline::DefaultPipeline()
+{
+	mPresent = present();
+	mDrawScene = drawScene(RenderContext::getSingleton()->getMainCamera());
+	mProfileWindow = ImGuiObject::root()->createChild<ImGuiWindow>("profile");
+}
+
+void DefaultPipeline::update()
 {
 	RenderGraph graph;
-	auto renderer = Renderer::getSingleton();
-
-	auto clearPass = clearDepth({ 0.5,0.5,0.5,1 });
-	auto presentPass = present();
-	auto drawScenePass = drawScene(RenderContext::getSingleton()->getMainCamera());
-	graph.begin()>> drawScenePass >> gui()>> presentPass;
-
+	graph.begin() >> mDrawScene >> mGui >> mPresent;
 
 	graph.setup();
 	graph.compile();
-	graph.execute();
+	graph.execute(
+		[&profiles = mProfiles, profilewin = mProfileWindow](RenderGraph::RenderPass* pass) {
+			if (pass->getName() == "begin pass")
+				return ;
+			if (!profiles[pass].first )
+			{
+				profiles[pass] = {
+					Renderer::getSingleton()->createProfile(),
+					profilewin->createChild<ImGuiText>(""),
+				};
+			}
+			profiles[pass].first->begin();
+		},
+		[&profiles = mProfiles](RenderGraph::RenderPass* pass)
+		{
+			if (!profiles[pass].first)
+				return;
+			auto& p = profiles[pass].first;
+			p->end();
+			std::stringstream ss;
+			ss.precision(3);
+			ss << pass->getName() << ": " << p->getCPUTime()<< "(" << p->getGPUTime() << ")" << "ms";
+			profiles[pass].second->text = ss.str();
+		}
+	);
 }

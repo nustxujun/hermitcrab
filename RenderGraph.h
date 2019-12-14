@@ -99,6 +99,8 @@ public:
 		void visitOutputs(const std::function<void(RenderPass*)> & visitor);
 		bool isPrepared()const;
 		void clear();
+		void setName(const std::string& name){mName = name;};
+		const std::string& getName()const{return mName;}
 	protected:
 		virtual void addInput(RenderPass* p);
 		virtual void addOutput(RenderPass* p);
@@ -112,12 +114,15 @@ public:
 
 		std::vector<RenderPass*> mInputs;
 		std::vector<RenderPass*> mOutputs;
+		std::string mName;
 	};
 
 	class LambdaRenderPass final : public RenderPass
 	{
 	public:
+		LambdaRenderPass() = default;
 		LambdaRenderPass(LambdaRenderPass&& lrp);
+		void operator=(LambdaRenderPass&& lrp);
 
 		using SetupFunc = std::function <void(RenderPass*)>;
 		using CompileFunc = std::function <void(RenderPass*, const Inputs&)>;
@@ -153,13 +158,12 @@ public:
 		ResourceHandle::Ptr mDepthStencil;
 	};
 
-
+	using Visitor = std::function<void(RenderPass*)>;
 public:
-
 	RenderPass& begin();
-	void setup();
-	void compile();
-	void execute();
+	void setup(const Visitor& prev = {}, const Visitor& post = {});
+	void compile(const Visitor& prev = {}, const Visitor& post = {});
+	void execute(const Visitor& prev = {}, const Visitor& post = {});
 private:
 	std::vector<BeginPass> mPasses;
 	std::vector<RenderPass*> mCurrents;
