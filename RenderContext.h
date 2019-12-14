@@ -11,8 +11,11 @@ public:
 public:
 	void setViewMatrix(const Matrix& v);
 	void setProjectionMatrix(const Matrix& v);
-	void setViewPort(float left, float top, float width, float height);
+	void setViewport(float left, float top, float width, float height);
 
+	const Matrix& getViewMatrix()const {return mView;}
+	const Matrix& getProjectionMatrix()const {return mProjection;}
+	const D3D12_VIEWPORT getViewport()const{return mViewport;}
 private:
 	Matrix mView;
 	Matrix mProjection;
@@ -26,6 +29,7 @@ public:
 	virtual void renderScene(Camera::Ptr cam, UINT flags = 0, UINT mask = 0xffffffff) = 0;
 	virtual void renderScreen() = 0;
 
+	void resize(int width, int height);
 	Camera::Ptr getMainCamera()const;
 
 	RenderContext()

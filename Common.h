@@ -44,6 +44,7 @@ public :
 		TCHAR msg[1024] = { 0 };
 		FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, 0, hr, 0, msg, sizeof(msg), 0);
 		MessageBox(NULL, msg, NULL, MB_ICONERROR);
+		_CrtDbgBreak();
 		abort();
 	}
 
@@ -52,6 +53,7 @@ public :
 		if (v)
 			return;
 		MessageBoxW(0, what.c_str(), 0, MB_ICONERROR);
+		_CrtDbgBreak();
 		abort();
 
 	}

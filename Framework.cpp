@@ -1,4 +1,5 @@
 #include "Framework.h"
+#include "RenderContext.h"
 
 std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> Framework::processor;
 
@@ -125,4 +126,7 @@ void Framework::resize(HWND hwnd, int width, int height)
 	auto r = Renderer::getSingleton();
 	if (r)
 		Renderer::getSingleton()->resize(width, height);
+	auto rc = RenderContext::getSingleton();
+	if (rc)
+		rc->resize(width,height);
 }
