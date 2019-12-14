@@ -5,7 +5,7 @@
 #include "Framework.h"
 #include "Pipeline.h"
 #include "RenderContext.h"
-#include "ImguiOverlay.h"
+#include "ImGuiOverlay.h"
 #include <sstream>
 
 #if defined(NO_UE4) || defined(_CONSOLE)
@@ -25,16 +25,14 @@ int main()
 		class Frame : public Framework, public RenderContext
 		{
 		public:
-			ForwardPipeline pipeline;
 			Renderer::PipelineState::Ref pso;
 			Renderer::Buffer::Ptr vertices;
 			Renderer::Texture::Ref tex;
-			Renderer::Profile::Ref profile;
-			ImguiText* fps;
+			ImGuiText* fps;
+			DefaultPipeline pipeline;
 			void init()
 			{
 				auto renderer = Renderer::getSingleton();
-				profile = renderer->createProfile();
 				auto vs = renderer->compileShader(L"shaders/shaders.hlsl", L"VSMain", L"vs_5_0");
 				auto ps = renderer->compileShader(L"shaders/shaders.hlsl", L"PSMain", L"ps_5_0");
 				std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
@@ -71,11 +69,11 @@ int main()
 
 				vertices = renderer->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
 
-				tex = renderer->createTexture(L"test.jpg");
-				//tex = renderer->createTexture(L"test.png");
+				//tex = renderer->createTexture(L"test.jpg");
+				tex = renderer->createTexture(L"test.png");
 
-				auto mainbar = ImguiObject::root()->createChild<ImguiMenuBar>(true);
-				fps = mainbar->createChild<ImguiText>("test");
+				auto mainbar = ImGuiObject::root()->createChild<ImGuiMenuBar>(true);
+				fps = mainbar->createChild<ImGuiText>("test");
 			}
 
 			void renderScreen()
@@ -85,15 +83,16 @@ int main()
 			void updateImpl()
 			{
 				static auto lastTime = GetTickCount64();
+				static auto framecount = 0;
 				auto cur = GetTickCount64();
 				auto delta = cur - lastTime;
+				framecount++;
 				if (delta > 0)
 				{
 					lastTime = cur;
-
-					float time = 1000.0f / delta;
+					float time = (float)framecount * 1000.0f/ (float)delta ;
+					framecount = 0;
 					static float history = time;
-
 					history =  history * 0.99f + time * 0.01f;
 
 					std::stringstream ss;
@@ -107,7 +106,6 @@ int main()
 
 			void renderScene(Camera::Ptr cam, UINT, UINT)
 			{
-				profile->begin();
 				auto renderer = Renderer::getSingleton();
 				auto bb = renderer->getBackBuffer();
 				auto cmdlist = renderer->getCommandList();
@@ -126,7 +124,6 @@ int main()
 				cmdlist->setPrimitiveType();
 				cmdlist->setVertexBuffer(vertices);
 				cmdlist->drawInstanced(3);
-				profile->end();
 			}
 		} frame;
 
