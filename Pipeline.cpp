@@ -65,10 +65,10 @@ DefaultPipeline::DefaultPipeline()
 {
 	mPresent = present();
 	mDrawScene = drawScene(RenderContext::getSingleton()->getMainCamera());
-	mProfileWindow = ImGuiObject::root()->createChild<ImGuiWindow>("profile");
+	mProfileWindow = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("profile");
 
-	auto mainbar = ImGuiObject::root()->createChild<ImGuiMenuBar>(true);
-	mainbar->createChild<ImGuiButton>("profile")->callback = [profile = mProfileWindow](auto button) {
+	auto mainbar = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiMenuBar>(true);
+	mainbar->createChild<ImGuiOverlay::ImGuiButton>("profile")->callback = [profile = mProfileWindow](auto button) {
 		profile->visible = !profile->visible;
 	};
 }
@@ -88,7 +88,7 @@ void DefaultPipeline::update()
 			{
 				profiles[pass] = {
 					Renderer::getSingleton()->createProfile(),
-					profilewin->createChild<ImGuiText>(""),
+					profilewin->createChild<ImGuiOverlay::ImGuiText>(""),
 				};
 			}
 			profiles[pass].first->begin();

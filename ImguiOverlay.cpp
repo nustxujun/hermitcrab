@@ -250,7 +250,7 @@ void ImGuiPass::execute()
 	
 	ImGui::NewFrame();
 	ImGui::ShowDemoWindow();
-	ImGuiObject::root()->framemove();
+	ImGuiOverlay::ImGuiObject::root()->framemove();
 
 	ImGui::Render();
 

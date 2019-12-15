@@ -38,7 +38,8 @@ private:
 	int mHeight = 0;
 };
 
-
+namespace ImGuiOverlay
+{
 class ImGuiObject
 {
 public:
@@ -337,3 +338,5 @@ struct ImGuiSelectable : public ImGuiObject
 
 	}
 };
+
+}

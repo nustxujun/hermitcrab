@@ -23,6 +23,6 @@ private:
 	RenderGraph::LambdaRenderPass::Ptr mPresent;
 	RenderGraph::LambdaRenderPass::Ptr mDrawScene;
 	
-	std::map<RenderGraph::RenderPass*, std::pair<Renderer::Profile::Ref, ImGuiText*>> mProfiles;
-	ImGuiObject* mProfileWindow;
+	std::map<RenderGraph::RenderPass*, std::pair<Renderer::Profile::Ref, ImGuiOverlay::ImGuiText*>> mProfiles;
+	ImGuiOverlay::ImGuiObject* mProfileWindow;
 };
