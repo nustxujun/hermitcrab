@@ -2,18 +2,33 @@
 #include "Common.h"
 
 #if _MSC_VER < 1920
-#define D3D12ON7
+	#define D3D12ON7
+	#include "D3D12Downlevel.h"
 #endif
 
-#if defined(D3D12ON7)
-#include "D3D12Downlevel.h"
-#define IDXGIFACTORY IDXGIFactory1
-#else
-#define IDXGIFACTORY IDXGIFactory4
-#endif
 
 class Renderer
 {
+#if defined(D3D12ON7)
+	using IDXGIFACTORY = IDXGIFactory1;
+
+	using ShaderReflection =	ID3D11ShaderReflection;
+	using ShaderDesc =			D3D11_SHADER_DESC;
+	using ShaderInputBindDesc = D3D11_SHADER_INPUT_BIND_DESC;
+	using ShaderBufferDesc =	D3D11_SHADER_BUFFER_DESC;
+	using ShaderVariableDesc =	D3D11_SHADER_VARIABLE_DESC;
+#else
+	using IDXGIFACTORY = IDXGIFactory4;
+
+	using ShaderReflection =	ID3D12ShaderReflection;
+	using ShaderDesc =			D3D12_SHADER_DESC;
+	using ShaderInputBindDesc = D3D12_SHADER_INPUT_BIND_DESC;
+	using ShaderBufferDesc =	D3D12_SHADER_BUFFER_DESC;
+	using ShaderVariableDesc =	D3D12_SHADER_VARIABLE_DESC;
+#endif
+
+
+
 	static const auto FEATURE_LEVEL = D3D_FEATURE_LEVEL_12_0;
 	static auto const NUM_BACK_BUFFERS = 2;
 	static auto const NUM_MAX_RENDER_TARGET_VIEWS = 8 * 1024;
@@ -202,6 +217,9 @@ public:
 		static size_t hash(const D3D12_RESOURCE_DESC& desc);
 		size_t hash();
 		UINT64 getSize()const{return mDesc.Width;}
+		const DescriptorHandle& getHandle();
+	protected:
+		virtual DescriptorHandle createView();
 	private:
 		ComPtr<ID3D12Resource> mResource;
 		D3D12_RESOURCE_DESC mDesc;
@@ -209,6 +227,16 @@ public:
 		ResourceType mType = RT_PERSISTENT;
 		size_t mHashValue = 0;
 		std::wstring mName;
+		DescriptorHandle mHandle;
+
+	};
+
+	class ConstantBuffer final: public Resource
+	{
+	public:
+		using Resource::Resource;
+	private:
+		DescriptorHandle createView() override;
 	};
 
 	class Texture final: public Resource , public Interface<Texture>
@@ -227,11 +255,8 @@ public:
 
 		virtual void init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
 
-		const DescriptorHandle& getHandle();
 	private:
-		void createView();
-	private:
-		DescriptorHandle mHandle;
+		DescriptorHandle createView() override;
 	};
 
 	class ResourceView final:public Interface<ResourceView>
@@ -372,11 +397,38 @@ public:
 
 	private:
 		D3D12_SHADER_VISIBILITY getShaderVisibility()const;
+		D3D12_DESCRIPTOR_RANGE_TYPE getRangeType(D3D_SHADER_INPUT_TYPE type)const;
+		void createRootParameters();
 	private:
 		ShaderType mType;
 		MemoryData mCodeBlob;
 
+		ComPtr<ShaderReflection> mReflection;
 		std::vector< D3D12_STATIC_SAMPLER_DESC> mStaticSamplers;
+		std::vector<D3D12_ROOT_PARAMETER> mRootParameters;
+		std::vector<D3D12_DESCRIPTOR_RANGE> mRanges;
+
+		struct Variable
+		{
+			UINT offset;
+			UINT size;
+		};
+
+		struct CBuffer
+		{
+			UINT slot;
+			UINT size;
+			std::map<std::string, Variable> variables;
+		};
+		struct Reflection
+		{
+			std::map<std::string, CBuffer> cbuffers;
+			std::map<std::string, UINT> textures;
+			std::map<std::string, UINT> samplers;
+			std::map<std::string, UINT> uavs;
+		};
+
+		Reflection mSemanticsMap;
 	};
 
 	class RenderState
@@ -409,15 +461,43 @@ public:
 
 	class PipelineState final : public Interface<PipelineState>
 	{
+		friend class Renderer;
 	public:
 		PipelineState(const RenderState& rs, const std::vector<Shader::Ptr>& shaders, const std::vector<RootParameter>& params);
 		~PipelineState();
 
 		ID3D12PipelineState* get(){return mPipelineState.Get();}
 		ID3D12RootSignature* getRootSignature(){return mRootSignature.Get();}
+
+		void setTexture(Shader::ShaderType type,const std::string& name, const Texture::Ref & tex);
+		void setVSTexture(const std::string& name, const Texture::Ref & tex);
+		void setPSTexture( const std::string& name, const Texture::Ref & tex);
+
+		void setVariable(Shader::ShaderType type, const std::string& name, const void* data);
+		void setVSVariable(const std::string& name, const void* data);
+		void setPSVariable(const std::string& name, const void* data);
+
+	private:
+		void createConstantBuffer();
+		void refreshConstantBuffer();
+		void setRootDescriptorTable(CommandList* cmdlist);
 	private:
 		ComPtr<ID3D12PipelineState> mPipelineState;
 		ComPtr<ID3D12RootSignature> mRootSignature;
+
+		std::map<Shader::ShaderType, Shader::Reflection> mSemanticsMap;
+		std::map<Shader::ShaderType, std::map<UINT, Texture::Ref>> mTextures;
+
+		struct CBuffer
+		{
+			UINT slot;
+			UINT size;
+			MemoryData cpubuffer;
+			Resource::Ref gpubuffer;
+			bool needrefesh;
+		};
+
+		std::map<Shader::ShaderType, std::map<std::string, CBuffer>> mCBuffers;
 	};
 
 	class Profile:public Interface<Profile>
@@ -474,6 +554,7 @@ public:
 		void setIndexBuffer(const Buffer::Ptr& indices);
 		void setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		void setTexture(UINT slot, Texture::Ref tex );
+		void setRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void set32BitConstants(UINT slot, UINT num, const void* data, UINT offset);
 		void drawInstanced(UINT vertexCount, UINT instanceCount = 1, UINT startVertex = 0, UINT startInstance = 0);
 		void drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount, UINT startIndex = 0, INT startVertex = 0, UINT startInstance = 0);
@@ -515,12 +596,13 @@ public:
 	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	Texture::Ref createTexture(const std::wstring& filename);
 	Buffer::Ptr createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
+	Resource::Ref createConstantBuffer(UINT size);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs, const std::vector<RootParameter>& rootparams);
 	ResourceView::Ptr createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERSISTENT);
 	Profile::Ref createProfile();
 	ComPtr<ID3D12QueryHeap> getTimeStampQueryHeap();
 private:
-	MemoryData createBuffer(size_t size = 0)
+	MemoryData createMemoryData(size_t size = 0)
 	{
 		return MemoryData(new std::vector<char>(size));
 	}

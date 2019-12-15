@@ -24,6 +24,7 @@
 // d3d
 #include <d3d12.h>
 #include <dxgi1_4.h>
+#include <D3Dcompiler.h>
 
 
 // macros

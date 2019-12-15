@@ -3,7 +3,6 @@
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"dxgi.lib")
 #pragma comment(lib,"d3dcompiler.lib")
-#include <D3Dcompiler.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -288,7 +287,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & absfilepath, 
 			{
 				unsigned int size ;
 				cachefile >> size;
-				auto buffer = createBuffer(size);
+				auto buffer = createMemoryData(size);
 				cachefile.read(buffer->data(), size);
 
 				return Shader::Ptr(new Shader(buffer, type));
@@ -316,7 +315,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & absfilepath, 
 		return {};
 	}
 
-	auto result = createBuffer(blob->GetBufferSize());
+	auto result = createMemoryData(blob->GetBufferSize());
 	memcpy(result->data(), blob->GetBufferPointer(), result->size());
 
 	{
@@ -351,7 +350,7 @@ Renderer::Resource::Ref Renderer::createResource(size_t size, D3D12_HEAP_TYPE ty
 	resdesc.SampleDesc.Count = 1;
 	resdesc.SampleDesc.Quality = 0;
 	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	resdesc.Flags = D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
 
 	if (restype == Resource::RT_TRANSIENT)
 	{
@@ -441,6 +440,14 @@ Renderer::Buffer::Ptr Renderer::createBuffer(UINT size, UINT stride, D3D12_HEAP_
 		//updateBuffer(vert->getResource(), buffer,size);/
 
 	return vert;
+}
+
+Renderer::Resource::Ref Renderer::createConstantBuffer(UINT size)
+{
+	auto cb = Resource::Ptr(new ConstantBuffer(Resource::RT_PERSISTENT));
+	cb->init(size, D3D12_HEAP_TYPE_UPLOAD);
+	addResource(cb);
+	return cb;
 }
 
 void Renderer::destroyResource(Resource::Ref res)
@@ -690,7 +697,7 @@ void Renderer::syncFrame()
 {
 }
 
-ComPtr<IDXGIFACTORY> Renderer::getDXGIFactory()
+ComPtr<Renderer::IDXGIFACTORY> Renderer::getDXGIFactory()
 {
 	UINT dxgiFactoryFlags = 0;
 #if defined(_DEBUG)
@@ -1107,6 +1114,7 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 	CHECK(device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, mState, pcv, IID_PPV_ARGS(&mResource)));
 
 	mDesc = resdesc;
+	mHandle = createView();
 }
 
 
@@ -1186,6 +1194,27 @@ size_t Renderer::Resource::hash()
 	return mHashValue;
 }
 
+const Renderer::DescriptorHandle& Renderer::Resource::getHandle()
+{
+	return mHandle;
+}
+
+Renderer::DescriptorHandle Renderer::Resource::createView()
+{
+	auto desc = getDesc();
+	if (desc.Flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE)
+		return {};
+	DescriptorHandle handle = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format = desc.Format;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	srvDesc.Texture2D.MipLevels = desc.MipLevels;
+	Renderer::getSingleton()->getDevice()->CreateShaderResourceView(get(), &srvDesc, handle.cpu);
+	return handle;
+}
+
 void Renderer::Texture::init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags)
 {
 	D3D12_RESOURCE_DESC resdesc = {};
@@ -1213,27 +1242,22 @@ void Renderer::Texture::init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_F
 
 
 
-	createView();
 }
 
-const Renderer::DescriptorHandle& Renderer::Texture::getHandle()
-{
-	return mHandle;
-}
-
-void Renderer::Texture::createView()
+Renderer::DescriptorHandle Renderer::Texture::createView()
 {
 	auto desc = getDesc();
 	if (desc.Flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE)
-		return ;
-	mHandle = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
+		return {} ;
+	DescriptorHandle handle = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.Format = desc.Format;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MipLevels = desc.MipLevels;
-	Renderer::getSingleton()->getDevice()->CreateShaderResourceView(get(), &srvDesc,mHandle.cpu);
+	Renderer::getSingleton()->getDevice()->CreateShaderResourceView(get(), &srvDesc, handle.cpu);
+	return handle;
 }
 
 Renderer::Fence::Fence()
@@ -1397,6 +1421,9 @@ void Renderer::CommandList::setRenderTargets(const std::vector<ResourceView::Ref
 
 void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
 {
+	ps->refreshConstantBuffer();
+	ps->setRootDescriptorTable(this);
+
 	mCmdList->SetPipelineState(ps->get());
 	mCmdList->SetGraphicsRootSignature(ps->getRootSignature());
 }
@@ -1430,6 +1457,11 @@ void Renderer::CommandList::setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type)
 void Renderer::CommandList::setTexture(UINT slot, Texture::Ref tex)
 {
 	mCmdList->SetGraphicsRootDescriptorTable(slot, tex->getHandle().gpu);
+}
+
+void Renderer::CommandList::setRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
+{
+	mCmdList->SetGraphicsRootDescriptorTable(slot, handle);
 }
 
 void Renderer::CommandList::set32BitConstants(UINT slot, UINT num, const void * data, UINT offset)
@@ -1549,11 +1581,6 @@ Renderer::RenderState::RenderState(std::function<void(RenderState&self)> initial
 	initializer(*this);
 }
 
-Renderer::Shader::Shader(const MemoryData& data, ShaderType type):
-	mCodeBlob(data), mType(type)
-{
-}
-
 D3D12_ROOT_PARAMETER Renderer::RootParameter::genParameter()const
 {
 	D3D12_ROOT_PARAMETER rp;
@@ -1609,6 +1636,12 @@ void Renderer::RootParameter::cbv32(UINT num, UINT start, UINT space)
 
 }
 
+Renderer::Shader::Shader(const MemoryData& data, ShaderType type) :
+	mCodeBlob(data), mType(type)
+{
+	createRootParameters();
+}
+
 void Renderer::Shader::registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc)
 {
 	mStaticSamplers.push_back(desc);
@@ -1630,6 +1663,89 @@ D3D12_SHADER_VISIBILITY Renderer::Shader::getShaderVisibility() const
 	return D3D12_SHADER_VISIBILITY_ALL;
 }
 
+D3D12_DESCRIPTOR_RANGE_TYPE Renderer::Shader::getRangeType(D3D_SHADER_INPUT_TYPE type) const
+{
+	switch (type)
+	{
+	case D3D_SIT_CBUFFER: return D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+	case D3D_SIT_TEXTURE: return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	case D3D_SIT_SAMPLER: return D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+	default:
+		Common::Assert(0, L"unsupported shader input type");
+		return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	}
+}
+
+void Renderer::Shader::createRootParameters()
+{
+	CHECK(D3DReflect(mCodeBlob->data(), mCodeBlob->size(), IID_PPV_ARGS(&mReflection)));
+
+	ShaderDesc shaderdesc;
+	mReflection->GetDesc(&shaderdesc);
+	mRanges.resize(shaderdesc.BoundResources);
+
+	for (auto i = 0; i < shaderdesc.BoundResources; ++i)
+	{
+		D3D11_SHADER_INPUT_BIND_DESC desc;
+		mReflection->GetResourceBindingDesc(i,&desc);
+		if (desc.Type == D3D_SIT_SAMPLER)
+			continue;
+
+		mRootParameters.push_back({});
+		auto& rootparam = mRootParameters.back();
+		rootparam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		rootparam.ShaderVisibility = getShaderVisibility();
+		rootparam.DescriptorTable.NumDescriptorRanges = 1;
+		
+		rootparam.DescriptorTable.pDescriptorRanges = &mRanges[i];
+
+		auto& range = mRanges[i];
+		range.RangeType = getRangeType(desc.Type);
+		range.BaseShaderRegister = desc.BindPoint;
+		range.NumDescriptors = desc.BindCount;
+		range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+#ifdef D3D12ON7
+		range.RegisterSpace = 0;
+#else
+		range.RegisterSpace = desc.Space;
+#endif
+
+		switch (range.RangeType)
+		{
+		case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
+			{
+				auto cbuffer = mReflection->GetConstantBufferByName(desc.Name);
+				ShaderBufferDesc bd;
+				cbuffer->GetDesc(&bd);
+
+				auto& cbuffers = mSemanticsMap.cbuffers[bd.Name];
+				cbuffers.size = bd.Size;
+				cbuffers.slot = i;
+				for (auto j = 0; j < bd.Variables; ++j)
+				{
+					auto var = cbuffer->GetVariableByIndex(j);
+					ShaderVariableDesc vd;
+					var->GetDesc(&vd);
+					cbuffers.variables[vd.Name] = {vd.StartOffset, vd.Size};
+				}
+			}
+			break;
+		case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
+			mSemanticsMap.textures[desc.Name] = i;
+			break;
+		case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
+			mSemanticsMap.uavs[desc.Name] = i;
+			break;
+		case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
+			mSemanticsMap.samplers[desc.Name] = i;
+			auto var = mReflection->GetVariableByName(desc.Name);
+			break;
+		}
+	}
+
+}
+
 Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector<Shader::Ptr>& shaders, const std::vector<RootParameter>& rootparams)
 {
 	auto device = Renderer::getSingleton()->getDevice();
@@ -1642,7 +1758,8 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	for (auto& s : shaders)
 	{
 		samplers.insert(samplers.end(), s->mStaticSamplers.begin(), s->mStaticSamplers.end());
-
+		params.insert(params.end(), s->mRootParameters.begin(), s->mRootParameters.end());
+		mSemanticsMap[s->mType] = s->mSemanticsMap;
 		switch (s->mType)
 		{
 		case Shader::ST_VERTEX: {
@@ -1664,11 +1781,8 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 		default:
 			break;
 		}
-
 	}
 
-	for (auto& rp: rootparams)
-		params.push_back(rp.genParameter());
 
 	rsd.NumParameters = (UINT)params.size();
 	if (rsd.NumParameters > 0)
@@ -1679,9 +1793,10 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 
 	ComPtr<ID3D10Blob> blob;
 	ComPtr<ID3D10Blob> err;
-	CHECK(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1,&blob,&err));
-	if (err)
-		Common::Assert(0,(const wchar_t*) err->GetBufferPointer());
+	if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1,&blob,&err)))
+	{
+		Common::Assert(0,M2U((const char*)err->GetBufferPointer()));
+	}
 	CHECK(device->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(), IID_PPV_ARGS(&mRootSignature)));
 	
 
@@ -1699,10 +1814,111 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	desc.SampleDesc = rs.mSample;
 	
 	CHECK(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&mPipelineState)));
+
+	createConstantBuffer();
 }
 
 Renderer::PipelineState::~PipelineState()
 {
+}
+
+void Renderer::PipelineState::setTexture(Shader::ShaderType type, const std::string & name, const Texture::Ref & tex)
+{
+	auto& textures = mSemanticsMap[type].textures;
+	auto ret = textures.find(name);
+	Common::Assert(ret != textures.end(), L"specify texture name is not existed.");
+
+	mTextures[type][ret->second] = tex;
+}
+
+void Renderer::PipelineState::setVSTexture( const std::string & name, const Texture::Ref & tex)
+{
+	setTexture(Shader::ST_VERTEX, name, tex);
+}
+
+void Renderer::PipelineState::setPSTexture( const std::string & name, const Texture::Ref & tex)
+{
+	setTexture(Shader::ST_PIXEL, name, tex);
+}
+
+void Renderer::PipelineState::setVariable(Shader::ShaderType type, const std::string & name, const void * data)
+{
+	auto& cbuffers = mSemanticsMap[type].cbuffers;
+	for (auto& cb : cbuffers)
+	{
+		auto ret = cb.second.variables.find(name);
+		if (ret == cb.second.variables.end())
+			continue;
+
+		auto& cbuff = mCBuffers[type][cb.first];
+		auto buffer = cbuff.cpubuffer;
+		memcpy(buffer->data() + ret->second.offset, data, ret->second.size);
+		cbuff.needrefesh = true;
+		return;
+	}
+
+	Common::Assert(0, L"specify variable name is not existed.");
+}
+
+void Renderer::PipelineState::setVSVariable(const std::string & name, const void * data)
+{
+	setVariable(Shader::ST_VERTEX, name, data);
+}
+
+void Renderer::PipelineState::setPSVariable(const std::string & name, const void * data)
+{
+	setVariable(Shader::ST_PIXEL, name, data);
+}
+
+void Renderer::PipelineState::createConstantBuffer()
+{
+	auto renderer = Renderer::getSingleton();
+	for (auto& s : mSemanticsMap)
+	{
+		auto& cbuffers = mCBuffers[s.first];
+		for (auto& cb : s.second.cbuffers)
+		{
+			auto& c= cbuffers[cb.first];
+			c.size = cb.second.size;
+			c.slot = cb.second.slot;
+			c.cpubuffer = MemoryData(new std::vector<char>(cb.second.size));
+			c.gpubuffer = renderer->createConstantBuffer(cb.second.size);
+		}
+	}
+}
+
+void Renderer::PipelineState::refreshConstantBuffer()
+{
+	for (auto& cbs : mCBuffers)
+	{
+		for (auto& cb : cbs.second)
+		{
+			if (!cb.second.needrefesh)
+				continue;
+			auto& buffer = cb.second.cpubuffer;
+			cb.second.gpubuffer->blit(buffer->data(), buffer->size());
+			cb.second.needrefesh = false;
+		}
+	}
+}
+
+void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
+{
+	for (auto&texs : mTextures)
+	{
+		for (auto& t : texs.second)
+		{
+			cmdlist->setRootDescriptorTable(t.first,t.second->getHandle().gpu);
+		}
+	}
+
+	for (auto& cbs : mCBuffers)
+	{
+		for (auto& cb : cbs.second)
+		{
+			cmdlist->setRootDescriptorTable(cb.second.slot, cb.second.gpubuffer->getHandle());
+		}
+	}
 }
 
 Renderer::Buffer::Buffer(UINT size, UINT stride, D3D12_HEAP_TYPE type)
@@ -1766,3 +1982,15 @@ void Renderer::Profile::end()
 		mIndex * 2 + 1);
 }
 
+Renderer::DescriptorHandle Renderer::ConstantBuffer::createView()
+{
+	auto desc = getDesc();
+
+	DescriptorHandle handle = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
+
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbd = {};
+	cbd.BufferLocation = get()->GetGPUVirtualAddress();
+	cbd.SizeInBytes = desc.Width;
+	Renderer::getSingleton()->getDevice()->CreateConstantBufferView(&cbd, handle.cpu);
+	return handle;
+}

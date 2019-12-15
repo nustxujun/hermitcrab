@@ -174,8 +174,10 @@ void ImGuiPass::draw(ImDrawData* data)
 	};
 
 	auto cmdlist = renderer->getCommandList();
+
+	mPipelineState->setVSVariable("ProjectionMatrix", mvp);
 	cmdlist->setPipelineState(mPipelineState);
-	cmdlist->set32BitConstants(1,16,mvp,0);
+	//cmdlist->set32BitConstants(1,16,mvp,0);
 
 	D3D12_VIEWPORT vp = {0};
 	vp.Width = data->DisplaySize.x;

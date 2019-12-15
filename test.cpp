@@ -106,9 +106,11 @@ int main()
 				auto renderer = Renderer::getSingleton();
 				auto bb = renderer->getBackBuffer();
 				auto cmdlist = renderer->getCommandList();
+
+				pso->setPSTexture("g_texture", tex);
 				cmdlist->setPipelineState(pso);
 
-				cmdlist->setTexture(0, tex);
+				//cmdlist->setTexture(0, tex);
 
 
 				auto desc = bb->getTexture()->getDesc();
