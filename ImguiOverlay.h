@@ -42,9 +42,14 @@ private:
 class ImGuiObject
 {
 public:
+	void framemove() 
+	{
+		if (visible)
+			update();
+	}
 	virtual void update() {
 		for (auto& i : children)
-			i->update();
+			i->framemove();
 	};
 	template<class T, class ... Args>
 	T* createChild(const Args& ... args)
@@ -107,6 +112,10 @@ public:
 	{
 		mCmdMaps[index] = cmd;
 	}
+
+	bool visible = true;
+	float width = 0;
+	float height = 0;
 protected:
 	std::map<int, std::function<void(void)>> mCmdMaps;
 
@@ -115,16 +124,14 @@ protected:
 struct ImGuiWindow: public ImGuiObject
 {
 	std::string text;
-	bool visible;
 	ImGuiWindowFlags flags;
 
 	ImGuiWindow(const char* t = "", bool b = true, ImGuiWindowFlags f = 0): 
-		text(t), visible(b), flags(f)
-	{}
-	void update() {
-		if (!visible)
-			return;
-
+		text(t),  flags(f)
+	{
+		visible = b;
+	}
+	void update() override {
 		for (auto& i : mCmdMaps)
 			i.second();
 		mCmdMaps.clear();
@@ -160,7 +167,7 @@ struct ImGuiText :public ImGuiObject
 {
 	std::string text;
 
-	void update() {
+	void update() override {
 		ImGui::Text(text.c_str());
 		ImGuiObject::update();
 	}
@@ -184,7 +191,7 @@ struct ImGuiMenuItem : public ImGuiObject
 	{
 	}
 
-	void update()
+	void update() override
 	{
 		if (ImGui::MenuItem(text.c_str(), nullptr, &selected, enabled) && callback)
 			callback(this);
@@ -199,7 +206,7 @@ struct ImGuiMenu :public ImGuiObject
 	std::string text;
 	bool enabled = true;
 	
-	void update()
+	void update() override
 	{
 		if (ImGui::BeginMenu(text.c_str(), enabled))
 		{
@@ -224,7 +231,7 @@ struct ImGuiMenu :public ImGuiObject
 struct ImGuiMenuBar: public ImGuiObject
 {
 	bool main = false;
-	void update() {
+	void update() override {
 		if (main)
 		{
 			if (ImGui::BeginMainMenuBar())
@@ -264,16 +271,69 @@ struct ImGuiSlider :public ImGuiObject
 	Callback callback;
 
 
-	void update()
+	void update() override
 	{
 		if (ImGui::SliderFloat(text.c_str(), &value, valMin, valMax, display.c_str()) && callback)
 		{
 			callback(this);
 		}
+
+		ImGuiObject::update();
+
 	}
 	ImGuiSlider(const char* t, float v, float vmin, float vmax, Callback cb):
 		text(t), value(v),valMin(vmin), valMax(vmax),callback(cb)
 	{
+
+	}
+};
+
+struct ImGuiButton : public ImGuiObject
+{
+	std::string text;
+
+	using Callback = std::function<void(ImGuiButton*)>;
+	Callback callback;
+
+	ImGuiButton(const std::string& t, float w = 0, float h = 0):
+		text(t)
+	{
+		width = w;
+		height = h;
+	}
+
+	void update()override
+	{
+		if (ImGui::Button(text.c_str(),{width, height}))
+			callback(this);
+
+		ImGuiObject::update();
+	}
+};
+
+
+struct ImGuiSelectable : public ImGuiObject
+{
+	std::string text;
+	bool selection = false;
+	ImGuiSelectableFlags flags = 0;
+
+	using Callback = std::function<void(ImGuiSelectable*)>;
+	Callback callback;
+	ImGuiSelectable(const std::string& c, float w = 0, float h = 0, bool selected = false):
+		text(c), selection(selected)
+	{
+		width = w;
+		height = h;
+	}
+
+	void update() override
+	{
+		if (ImGui::Selectable(text.c_str(),&selection,flags, {width, height}))
+		{
+			callback(this);
+			ImGuiObject::update();
+		}
 
 	}
 };

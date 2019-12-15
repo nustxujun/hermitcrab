@@ -228,7 +228,8 @@ LRESULT ImGuiPass::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 	case WM_LBUTTONUP: io.MouseDown[0] = false; break;
 	case WM_MOUSEMOVE: {io.MousePos.x = GET_X_LPARAM(lParam); io.MousePos.y = GET_Y_LPARAM(lParam);} break;
 	}
-	return DefWindowProc(hWnd, message, wParam, lParam);
+
+	return DefWindowProcW(hWnd, message, wParam, lParam);
 }
 
 void ImGuiPass::setup()
@@ -249,7 +250,7 @@ void ImGuiPass::execute()
 	
 	ImGui::NewFrame();
 	ImGui::ShowDemoWindow();
-	ImGuiObject::root()->update();
+	ImGuiObject::root()->framemove();
 
 	ImGui::Render();
 

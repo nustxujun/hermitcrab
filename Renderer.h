@@ -496,6 +496,7 @@ public:
 	void beginFrame();
 	void endFrame();
 
+	void setVSync(bool enable);
 	void addSearchPath(const std::wstring& path);
 	HWND getWindow()const;
 	ID3D12Device* getDevice();
@@ -576,4 +577,10 @@ private:
 	std::vector<Profile::Ptr> mProfiles;
 	Resource::Ref mProfileReadBack;
 	CommandAllocator::Ptr mProfileCmdAlloc;
+
+
+
+
+	bool mVSync = true;
+
 };

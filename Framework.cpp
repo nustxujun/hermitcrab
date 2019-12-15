@@ -107,7 +107,7 @@ LRESULT Framework::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 
 	if (processor)
 		return processor(hWnd, message, wParam, lParam);
-	return DefWindowProc(hWnd, message, wParam, lParam);
+	return DefWindowProcW(hWnd, message, wParam, lParam);
 }
 
 void Framework::resize(HWND hwnd, int width, int height)

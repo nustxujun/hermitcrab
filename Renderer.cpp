@@ -145,6 +145,11 @@ void Renderer::endFrame()
 	//updateTimeStamp();
 }
 
+void Renderer::setVSync(bool enable)
+{
+	mVSync = enable;
+}
+
 void Renderer::addSearchPath(const std::wstring & path)
 {
 	mFileSearchPaths.push_back(path);
@@ -752,9 +757,9 @@ void Renderer::present()
 		mCommandList->get(),
 		mBackbuffers[mCurrentFrame]->getTexture()->get(),
 		mWindow,
-		D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK));
+		mVSync? D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK: D3D12_DOWNLEVEL_PRESENT_FLAG_NONE));
 #else
-	CHECK(mSwapChain->Present(1,0));
+	CHECK(mSwapChain->Present(mVSync: 1: 0,0));
 #endif
 
 	

@@ -66,6 +66,11 @@ DefaultPipeline::DefaultPipeline()
 	mPresent = present();
 	mDrawScene = drawScene(RenderContext::getSingleton()->getMainCamera());
 	mProfileWindow = ImGuiObject::root()->createChild<ImGuiWindow>("profile");
+
+	auto mainbar = ImGuiObject::root()->createChild<ImGuiMenuBar>(true);
+	mainbar->createChild<ImGuiButton>("profile")->callback = [profile = mProfileWindow](auto button) {
+		profile->visible = !profile->visible;
+	};
 }
 
 void DefaultPipeline::update()

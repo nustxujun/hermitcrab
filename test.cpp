@@ -28,7 +28,6 @@ int main()
 			Renderer::PipelineState::Ref pso;
 			Renderer::Buffer::Ptr vertices;
 			Renderer::Texture::Ref tex;
-			ImGuiText* fps;
 			DefaultPipeline pipeline;
 			void init()
 			{
@@ -72,8 +71,6 @@ int main()
 				//tex = renderer->createTexture(L"test.jpg");
 				tex = renderer->createTexture(L"test.png");
 
-				auto mainbar = ImGuiObject::root()->createChild<ImGuiMenuBar>(true);
-				fps = mainbar->createChild<ImGuiText>("test");
 			}
 
 			void renderScreen()
@@ -97,8 +94,8 @@ int main()
 
 					std::stringstream ss;
 					ss.precision(4);
-					ss << history;
-					fps->text = ss.str();
+					ss << history << "(" << 1000.0f / history << "ms)";
+					::SetWindowTextA(Renderer::getSingleton()->getWindow(),ss.str().c_str());
 				}
 
 				pipeline.update();
