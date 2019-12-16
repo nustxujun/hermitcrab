@@ -107,6 +107,14 @@ public:
 		return &r;
 	}
 
+	static void clear()
+	{
+		std::vector<ImGuiObject*> tmp;
+		tmp.swap(root()->children);
+		for (auto& c: tmp)
+			delete c;
+	}
+
 	using Cmd = std::function<void(void)>;
 
 	void setCommand(int index, Cmd cmd)

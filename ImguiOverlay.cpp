@@ -14,6 +14,7 @@ ImGuiPass::ImGuiPass()
 
 ImGuiPass::~ImGuiPass()
 {
+	ImGuiOverlay::ImGuiObject::clear();
 	Framework::setProcessor({});
 	ImGui::DestroyContext();
 }
