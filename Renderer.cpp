@@ -1694,7 +1694,7 @@ void Renderer::Shader::createRootParameters()
 	mReflection->GetDesc(&shaderdesc);
 	mRanges.resize(shaderdesc.BoundResources);
 
-	for (auto i = 0; i < shaderdesc.BoundResources; ++i)
+	for (UINT i = 0; i < shaderdesc.BoundResources; ++i)
 	{
 		ShaderInputBindDesc desc;
 		mReflection->GetResourceBindingDesc(i,&desc);
@@ -1733,7 +1733,7 @@ void Renderer::Shader::createRootParameters()
 				auto& cbuffers = mSemanticsMap.cbuffers[bd.Name];
 				cbuffers.size = bd.Size;
 				cbuffers.slot = slot;
-				for (auto j = 0; j < bd.Variables; ++j)
+				for (UINT j = 0; j < bd.Variables; ++j)
 				{
 					auto var = cbuffer->GetVariableByIndex(j);
 					ShaderVariableDesc vd;
