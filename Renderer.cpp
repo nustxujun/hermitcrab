@@ -141,7 +141,7 @@ void Renderer::endFrame()
 
 	present();
 
-	//updateTimeStamp();
+	updateTimeStamp();
 }
 
 void Renderer::setVSync(bool enable)
@@ -445,7 +445,7 @@ Renderer::Buffer::Ptr Renderer::createBuffer(UINT size, UINT stride, D3D12_HEAP_
 Renderer::Resource::Ref Renderer::createConstantBuffer(UINT size)
 {
 	auto cb = Resource::Ptr(new ConstantBuffer(Resource::RT_PERSISTENT));
-	cb->init(size, D3D12_HEAP_TYPE_UPLOAD);
+	cb->init(size,D3D12_HEAP_TYPE_UPLOAD);
 	addResource(cb);
 	return cb;
 }
@@ -601,6 +601,10 @@ void Renderer::initDescriptorHeap()
 	mDescriptorHeaps[DHT_RENDERTARGET] = create(NUM_MAX_RENDER_TARGET_VIEWS, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
 	mDescriptorHeaps[DHT_DEPTHSTENCIL] = create(NUM_MAX_DEPTH_STENCIL_VIEWS, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
 	mDescriptorHeaps[DHT_CBV_SRV_UAV] = create(NUM_MAX_CBV_SRV_UAVS, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE);
+
+	mDescriptorHeaps[DHT_RENDERTARGET]->get()->SetName(L"Heap RTV");
+	mDescriptorHeaps[DHT_DEPTHSTENCIL]->get()->SetName(L"Heap DSV");
+	mDescriptorHeaps[DHT_CBV_SRV_UAV]->get()->SetName(L"Heap CBV_SRV_UAV");
 }
 
 void Renderer::initProfile()
@@ -766,7 +770,7 @@ void Renderer::present()
 		mWindow,
 		mVSync? D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK: D3D12_DOWNLEVEL_PRESENT_FLAG_NONE));
 #else
-	CHECK(mSwapChain->Present(mVSync: 1: 0,0));
+	CHECK(mSwapChain->Present(mVSync? 1: 0,0));
 #endif
 
 	
@@ -1073,7 +1077,7 @@ void Renderer::Resource::init(UINT64 size, D3D12_HEAP_TYPE heaptype, DXGI_FORMAT
 	resdesc.SampleDesc.Count = 1;
 	resdesc.SampleDesc.Quality = 0;
 	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	resdesc.Flags = D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
 
 	init(resdesc, heaptype, D3D12_RESOURCE_STATE_COMMON);
 }
@@ -1422,10 +1426,11 @@ void Renderer::CommandList::setRenderTargets(const std::vector<ResourceView::Ref
 void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
 {
 	ps->refreshConstantBuffer();
-	ps->setRootDescriptorTable(this);
 
 	mCmdList->SetPipelineState(ps->get());
 	mCmdList->SetGraphicsRootSignature(ps->getRootSignature());
+
+	ps->setRootDescriptorTable(this);
 }
 
 void Renderer::CommandList::setVertexBuffer(const std::vector<Buffer::Ptr>& vertices)
@@ -1456,7 +1461,12 @@ void Renderer::CommandList::setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type)
 
 void Renderer::CommandList::setTexture(UINT slot, Texture::Ref tex)
 {
-	mCmdList->SetGraphicsRootDescriptorTable(slot, tex->getHandle().gpu);
+	setTexture(slot, tex->getHandle());
+}
+
+void Renderer::CommandList::setTexture(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+{
+	mCmdList->SetGraphicsRootDescriptorTable(slot, handle);
 }
 
 void Renderer::CommandList::setRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
@@ -1686,11 +1696,12 @@ void Renderer::Shader::createRootParameters()
 
 	for (auto i = 0; i < shaderdesc.BoundResources; ++i)
 	{
-		D3D11_SHADER_INPUT_BIND_DESC desc;
+		ShaderInputBindDesc desc;
 		mReflection->GetResourceBindingDesc(i,&desc);
 		if (desc.Type == D3D_SIT_SAMPLER)
 			continue;
 
+		UINT slot = mRootParameters.size();
 		mRootParameters.push_back({});
 		auto& rootparam = mRootParameters.back();
 		rootparam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -1721,7 +1732,7 @@ void Renderer::Shader::createRootParameters()
 
 				auto& cbuffers = mSemanticsMap.cbuffers[bd.Name];
 				cbuffers.size = bd.Size;
-				cbuffers.slot = i;
+				cbuffers.slot = slot;
 				for (auto j = 0; j < bd.Variables; ++j)
 				{
 					auto var = cbuffer->GetVariableByIndex(j);
@@ -1732,13 +1743,13 @@ void Renderer::Shader::createRootParameters()
 			}
 			break;
 		case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-			mSemanticsMap.textures[desc.Name] = i;
+			mSemanticsMap.textures[desc.Name] = slot;
 			break;
 		case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-			mSemanticsMap.uavs[desc.Name] = i;
+			mSemanticsMap.uavs[desc.Name] = slot;
 			break;
 		case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
-			mSemanticsMap.samplers[desc.Name] = i;
+			mSemanticsMap.samplers[desc.Name] = slot;
 			auto var = mReflection->GetVariableByName(desc.Name);
 			break;
 		}
@@ -1755,10 +1766,13 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 
 	std::vector<D3D12_ROOT_PARAMETER> params;
 	std::vector< D3D12_STATIC_SAMPLER_DESC> samplers;
+	UINT offset = 0;
 	for (auto& s : shaders)
 	{
 		samplers.insert(samplers.end(), s->mStaticSamplers.begin(), s->mStaticSamplers.end());
 		params.insert(params.end(), s->mRootParameters.begin(), s->mRootParameters.end());
+		s->mSemanticsMap.offset = offset;
+		offset += s->mRootParameters.size();
 		mSemanticsMap[s->mType] = s->mSemanticsMap;
 		switch (s->mType)
 		{
@@ -1822,23 +1836,23 @@ Renderer::PipelineState::~PipelineState()
 {
 }
 
-void Renderer::PipelineState::setTexture(Shader::ShaderType type, const std::string & name, const Texture::Ref & tex)
+void Renderer::PipelineState::setResource(Shader::ShaderType type, const std::string & name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
 {
 	auto& textures = mSemanticsMap[type].textures;
 	auto ret = textures.find(name);
 	Common::Assert(ret != textures.end(), L"specify texture name is not existed.");
 
-	mTextures[type][ret->second] = tex;
+	mTextures[type][ret->second + mSemanticsMap[type].offset] = handle;
 }
 
-void Renderer::PipelineState::setVSTexture( const std::string & name, const Texture::Ref & tex)
+void Renderer::PipelineState::setVSResource( const std::string & name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
 {
-	setTexture(Shader::ST_VERTEX, name, tex);
+	setResource(Shader::ST_VERTEX, name, handle);
 }
 
-void Renderer::PipelineState::setPSTexture( const std::string & name, const Texture::Ref & tex)
+void Renderer::PipelineState::setPSResource( const std::string & name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
 {
-	setTexture(Shader::ST_PIXEL, name, tex);
+	setResource(Shader::ST_PIXEL, name, handle);
 }
 
 void Renderer::PipelineState::setVariable(Shader::ShaderType type, const std::string & name, const void * data)
@@ -1880,7 +1894,7 @@ void Renderer::PipelineState::createConstantBuffer()
 		{
 			auto& c= cbuffers[cb.first];
 			c.size = cb.second.size;
-			c.slot = cb.second.slot;
+			c.slot = cb.second.slot + s.second.offset;
 			c.cpubuffer = MemoryData(new std::vector<char>(cb.second.size));
 			c.gpubuffer = renderer->createConstantBuffer(cb.second.size);
 		}
@@ -1908,7 +1922,7 @@ void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
 	{
 		for (auto& t : texs.second)
 		{
-			cmdlist->setRootDescriptorTable(t.first,t.second->getHandle().gpu);
+			cmdlist->setRootDescriptorTable(t.first,t.second);
 		}
 	}
 
@@ -1980,6 +1994,12 @@ void Renderer::Profile::end()
 		renderer->getTimeStampQueryHeap(),
 		D3D12_QUERY_TYPE_TIMESTAMP,
 		mIndex * 2 + 1);
+}
+
+void Renderer::ConstantBuffer::init(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format )
+{
+	size = std::max(size, (size_t)256);
+	Resource::init(size, D3D12_HEAP_TYPE_UPLOAD);
 }
 
 Renderer::DescriptorHandle Renderer::ConstantBuffer::createView()

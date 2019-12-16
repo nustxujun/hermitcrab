@@ -197,11 +197,11 @@ public:
 		};
 
 		Resource(ResourceType type = RT_PERSISTENT);
-		virtual ~Resource();
 		Resource(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);
-		void init(UINT64 size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
-		void init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate);
-		void blit(const void* data, UINT64 size);
+		virtual ~Resource();
+		virtual void init(UINT64 size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
+		virtual void init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate);
+		virtual void blit(const void* data, UINT64 size);
 		char* map(UINT sub);
 		void unmap(UINT sub);
 		
@@ -235,6 +235,7 @@ public:
 	{
 	public:
 		using Resource::Resource;
+		void init(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
 	private:
 		DescriptorHandle createView() override;
 	};
@@ -422,6 +423,7 @@ public:
 		};
 		struct Reflection
 		{
+			UINT offset = 0;
 			std::map<std::string, CBuffer> cbuffers;
 			std::map<std::string, UINT> textures;
 			std::map<std::string, UINT> samplers;
@@ -469,9 +471,9 @@ public:
 		ID3D12PipelineState* get(){return mPipelineState.Get();}
 		ID3D12RootSignature* getRootSignature(){return mRootSignature.Get();}
 
-		void setTexture(Shader::ShaderType type,const std::string& name, const Texture::Ref & tex);
-		void setVSTexture(const std::string& name, const Texture::Ref & tex);
-		void setPSTexture( const std::string& name, const Texture::Ref & tex);
+		void setResource(Shader::ShaderType type,const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
+		void setVSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
+		void setPSResource( const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 
 		void setVariable(Shader::ShaderType type, const std::string& name, const void* data);
 		void setVSVariable(const std::string& name, const void* data);
@@ -486,7 +488,7 @@ public:
 		ComPtr<ID3D12RootSignature> mRootSignature;
 
 		std::map<Shader::ShaderType, Shader::Reflection> mSemanticsMap;
-		std::map<Shader::ShaderType, std::map<UINT, Texture::Ref>> mTextures;
+		std::map<Shader::ShaderType, std::map<UINT, D3D12_GPU_DESCRIPTOR_HANDLE>> mTextures;
 
 		struct CBuffer
 		{
@@ -554,6 +556,8 @@ public:
 		void setIndexBuffer(const Buffer::Ptr& indices);
 		void setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		void setTexture(UINT slot, Texture::Ref tex );
+		void setTexture(UINT slot,const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
+
 		void setRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void set32BitConstants(UINT slot, UINT num, const void* data, UINT offset);
 		void drawInstanced(UINT vertexCount, UINT instanceCount = 1, UINT startVertex = 0, UINT startInstance = 0);

@@ -208,7 +208,8 @@ void ImGuiPass::draw(ImDrawData* data)
 				const D3D12_RECT r = { (LONG)(pcmd->ClipRect.x - clip_off.x), (LONG)(pcmd->ClipRect.y - clip_off.y), (LONG)(pcmd->ClipRect.z - clip_off.x), (LONG)(pcmd->ClipRect.w - clip_off.y) };
 				cmdlist->setScissorRect(r);
 				auto handle = (D3D12_GPU_DESCRIPTOR_HANDLE*)&pcmd->TextureId;
-				cmdlist->get()->SetGraphicsRootDescriptorTable(0, *handle);
+				mPipelineState->setPSResource("texture0", *handle);
+				//cmdlist->get()->SetGraphicsRootDescriptorTable(0, *handle);
 				//cmdlist->setTexture(0, mFonts);
 				cmdlist->drawIndexedInstanced(pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
 			}
