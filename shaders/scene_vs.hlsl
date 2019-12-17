@@ -1,5 +1,5 @@
 
-cbuffer Constant: register(c0)
+cbuffer Constant: register(b0)
 {
 	matrix world;
 	matrix view; 
