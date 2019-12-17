@@ -176,7 +176,7 @@ void ImGuiPass::draw(ImDrawData* data)
 
 	auto cmdlist = renderer->getCommandList();
 
-	mPipelineState->setVSVariable("ProjectionMatrix", mvp);
+	mPipelineState->setVSConstant("ProjectionMatrix", mvp);
 	cmdlist->setPipelineState(mPipelineState);
 	//cmdlist->set32BitConstants(1,16,mvp,0);
 
@@ -253,7 +253,7 @@ void ImGuiPass::execute()
 {
 	
 	ImGui::NewFrame();
-	ImGui::ShowDemoWindow();
+	//ImGui::ShowDemoWindow();
 	ImGuiOverlay::ImGuiObject::root()->framemove();
 
 	ImGui::Render();

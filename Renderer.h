@@ -1,10 +1,11 @@
 #pragma once
 #include "Common.h"
 
-#if _MSC_VER < 1920
-	#define D3D12ON7
-	#include "D3D12Downlevel.h"
-#endif
+
+//#if WINVER  < _WIN32_WINNT_WIN10
+//	#define D3D12ON7
+//	#include "D3D12Downlevel.h"
+//#endif
 
 
 class Renderer
@@ -122,7 +123,7 @@ public:
 
 		std::shared_ptr<T> operator->()const
 		{
-			Common::Assert(!mPointer.expired(), L"invalid pointer");
+			Common::Assert(!mPointer.expired(), "invalid pointer");
 			return mPointer.lock();
 		}
 
@@ -475,9 +476,9 @@ public:
 		void setVSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void setPSResource( const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 
-		void setVariable(Shader::ShaderType type, const std::string& name, const void* data);
-		void setVSVariable(const std::string& name, const void* data);
-		void setPSVariable(const std::string& name, const void* data);
+		void setConstant(Shader::ShaderType type, const std::string& name, const void* data);
+		void setVSConstant(const std::string& name, const void* data);
+		void setPSConstant(const std::string& name, const void* data);
 
 	private:
 		void createConstantBuffer();

@@ -16,7 +16,9 @@
 Renderer::Ptr Renderer::instance;
 
 //#define CHECK(hr) { if (hr == 0x887a0005) Common::checkResult(Renderer::getSingleton()->getDevice()->GetDeviceRemovedReason()); else Common::checkResult(hr);}
-#define CHECK Common::checkResult
+#define CHECK(x) Common::checkResult(x, Common::format(" file: ",__FILE__, " line: ", __LINE__ ))
+#undef ASSERT
+#define ASSERT(x,y) Common::Assert(x, Common::format(y, " file: ", __FILE__, " line: ", __LINE__ ))
 
 Renderer::Ptr Renderer::create()
 {
@@ -214,7 +216,7 @@ void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size
 		src->unmap(0);
 	}
 	else
-		Common::Assert(0,L"unsupported resource.");
+		ASSERT(0,"unsupported resource.");
 
 	auto allocator = allocCommandAllocator();
 	allocator->reset();
@@ -242,7 +244,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & absfilepath, 
 	case 'p': type = Shader::ST_PIXEL; break;
 	case 'c': type = Shader::ST_COMPUTE; break;
 	default:
-		Common::Assert(false, L"unsupported!");
+		ASSERT(false, "unsupported!");
 		break;
 	}
 
@@ -251,7 +253,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & absfilepath, 
 	if (_stat(U2M(path).c_str(), &attrs) != 0)
 	{
 		auto err = errno;
-		Common::Assert(0, L"fail to open shader file");
+		ASSERT(0, "fail to open shader file");
 		return {};
 	}
 
@@ -311,7 +313,8 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & absfilepath, 
 
 	if (FAILED(D3DCompile(data.data(), size, U2M(path).c_str(), macros.data(), NULL, U2M(entry).c_str(), U2M(target).c_str(), compileFlags, 0, &blob, &err)))
 	{
-		Common::Assert(0, M2U((const char*)err->GetBufferPointer()));
+		::OutputDebugStringA((const char*)err->GetBufferPointer());
+		ASSERT(0, ((const char*)err->GetBufferPointer()));
 		return {};
 	}
 
@@ -416,7 +419,7 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	{
 		data = stbi_load(fn.c_str(), &width, &height, &nrComponents, 4);
 	}
-	Common::Assert(data != nullptr,L"cannot create texture");
+	ASSERT(data != nullptr,"cannot create texture");
 	
 	auto tex = createTexture(width, height, format);
 	updateResource(tex, data, width * height * D3DHelper::sizeof_DXGI_FORMAT(format), [dst = tex](auto cmdlist, auto src){
@@ -663,7 +666,7 @@ void Renderer::recycleCommandAllocator(CommandAllocator::Ptr ca)
 {
 	for (auto& c: mCommandAllocators)
 		if (c->get() == ca->get())
-			Common::Assert(0, L"faild");
+			ASSERT(0, "faild");
 	mCommandAllocators.push_back(ca);
 }
 
@@ -735,7 +738,7 @@ ComPtr<IDXGIAdapter> Renderer::getAdapter()
 		}
 	}
 
-	Common::Assert(false, L"fail to find adapter");
+	ASSERT(false, "fail to find adapter");
 	return {};
 }
 
@@ -854,7 +857,7 @@ UINT64 Renderer::DescriptorHeap::allocHeap()
 			}
 		}
 	}
-	Common::Assert(0, L" cannot alloc from descriptor heap");
+	ASSERT(0, " cannot alloc from descriptor heap");
 	return {};
 }
 
@@ -984,7 +987,7 @@ void Renderer::ResourceView::createView()
 	case Renderer::VT_UNORDEREDACCESS:
 		//device->CreateUnorderedAccessView(res, nullptr, mHandle);
 	default:
-		Common::Assert(false, L"unsupported");
+		ASSERT(false,"unsupported");
 	}
 }
 
@@ -999,7 +1002,7 @@ Renderer::DescriptorHeapType Renderer::ResourceView::matchDescriptorHeapType() c
 	case Renderer::VT_UNORDEREDACCESS:
 		return DHT_CBV_SRV_UAV;
 	default:
-		Common::Assert(false,L"unsupported");
+		ASSERT(false,"unsupported");
 		return DHT_MAX_NUM;
 	}
 }
@@ -1667,7 +1670,7 @@ D3D12_SHADER_VISIBILITY Renderer::Shader::getShaderVisibility() const
 	case Shader::ST_GEOMETRY: return D3D12_SHADER_VISIBILITY_GEOMETRY;
 	case Shader::ST_PIXEL: return D3D12_SHADER_VISIBILITY_PIXEL; 
 	default:
-		Common::Assert(0,L"unknown type");
+		ASSERT(0,"unknown type");
 		break;
 	}
 	return D3D12_SHADER_VISIBILITY_ALL;
@@ -1681,7 +1684,7 @@ D3D12_DESCRIPTOR_RANGE_TYPE Renderer::Shader::getRangeType(D3D_SHADER_INPUT_TYPE
 	case D3D_SIT_TEXTURE: return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 	case D3D_SIT_SAMPLER: return D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
 	default:
-		Common::Assert(0, L"unsupported shader input type");
+		ASSERT(0, "unsupported shader input type");
 		return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 	}
 }
@@ -1809,7 +1812,7 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	ComPtr<ID3D10Blob> err;
 	if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1,&blob,&err)))
 	{
-		Common::Assert(0,M2U((const char*)err->GetBufferPointer()));
+		//ASSERT(false,((const char*)err->GetBufferPointer()));
 	}
 	CHECK(device->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(), IID_PPV_ARGS(&mRootSignature)));
 	
@@ -1840,7 +1843,7 @@ void Renderer::PipelineState::setResource(Shader::ShaderType type, const std::st
 {
 	auto& textures = mSemanticsMap[type].textures;
 	auto ret = textures.find(name);
-	Common::Assert(ret != textures.end(), L"specify texture name is not existed.");
+	ASSERT(ret != textures.end(), "specify texture name is not existed.");
 
 	mTextures[type][ret->second + mSemanticsMap[type].offset] = handle;
 }
@@ -1855,33 +1858,44 @@ void Renderer::PipelineState::setPSResource( const std::string & name, const D3D
 	setResource(Shader::ST_PIXEL, name, handle);
 }
 
-void Renderer::PipelineState::setVariable(Shader::ShaderType type, const std::string & name, const void * data)
+void Renderer::PipelineState::setConstant(Shader::ShaderType type, const std::string & name, const void * data)
 {
 	auto& cbuffers = mSemanticsMap[type].cbuffers;
 	for (auto& cb : cbuffers)
 	{
-		auto ret = cb.second.variables.find(name);
-		if (ret == cb.second.variables.end())
-			continue;
+		if (cb.first == name)
+		{
+			auto& cbuff = mCBuffers[type][cb.first];
+			auto buffer = cbuff.cpubuffer;
+			memcpy(buffer->data(), data, buffer->size());
+			cbuff.needrefesh = true;
+			return;
+		}
+		else
+		{
+			auto ret = cb.second.variables.find(name);
+			if (ret == cb.second.variables.end())
+				continue;
 
-		auto& cbuff = mCBuffers[type][cb.first];
-		auto buffer = cbuff.cpubuffer;
-		memcpy(buffer->data() + ret->second.offset, data, ret->second.size);
-		cbuff.needrefesh = true;
-		return;
+			auto& cbuff = mCBuffers[type][cb.first];
+			auto buffer = cbuff.cpubuffer;
+			memcpy(buffer->data() + ret->second.offset, data, ret->second.size);
+			cbuff.needrefesh = true;
+			return;
+		}
 	}
 
-	Common::Assert(0, L"specify variable name is not existed.");
+	ASSERT(0, "specify variable name is not existed.");
 }
 
-void Renderer::PipelineState::setVSVariable(const std::string & name, const void * data)
+void Renderer::PipelineState::setVSConstant(const std::string & name, const void * data)
 {
-	setVariable(Shader::ST_VERTEX, name, data);
+	setConstant(Shader::ST_VERTEX, name, data);
 }
 
-void Renderer::PipelineState::setPSVariable(const std::string & name, const void * data)
+void Renderer::PipelineState::setPSConstant(const std::string & name, const void * data)
 {
-	setVariable(Shader::ST_PIXEL, name, data);
+	setConstant(Shader::ST_PIXEL, name, data);
 }
 
 void Renderer::PipelineState::createConstantBuffer()

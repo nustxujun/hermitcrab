@@ -46,7 +46,7 @@ void ResourceHandle::release()
 
 void ResourceHandle::prepare()
 {
-	Common::Assert(mRefCount != 0,L"invalied resource");
+	Common::Assert(mRefCount != 0,"invalied resource");
 
 	if (!mView)
 		mView = Renderer::getSingleton()->createResourceView(mWidth, mHeight,mFormat,mType, Renderer::Resource::RT_TRANSIENT);
@@ -155,7 +155,7 @@ RenderGraph::RenderPass & RenderGraph::RenderPass::operator>>(RenderPass & pass)
 
 void RenderGraph::RenderPass::read(ResourceHandle::Ptr res, UINT slot)
 {
-	Common::Assert((bool)res,L"resource is null");
+	Common::Assert((bool)res,"resource is null");
 	if (slot >= mShaderResources.size())
 		mShaderResources.resize(slot + 1);
 	mShaderResources[slot] = res;

@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <map>
 #include <set>
+#include <sstream>
 
 // windows
 #if defined(NO_UE4) || defined(_CONSOLE)
@@ -37,28 +38,35 @@ using ComPtr = Microsoft::WRL::ComPtr<T>;
 class Common
 {
 public :
-	static void checkResult(HRESULT hr)
+	static void checkResult(HRESULT hr, const std::string& info = {})
 	{
 		if (hr == S_OK) return;
 	
 	
-		TCHAR msg[1024] = { 0 };
-		FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, 0, hr, 0, msg, sizeof(msg), 0);
-		MessageBox(NULL, msg, NULL, MB_ICONERROR);
+		char msg[1024] = { 0 };
+		FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, 0, hr, 0, msg, sizeof(msg), 0);
+		MessageBoxA(NULL, Common::format(msg, info).c_str(), NULL, MB_ICONERROR);
 		_CrtDbgBreak();
 		abort();
 	}
 
-	static void Assert(bool v, const std::wstring& what)
+	static void Assert(bool v, const std::string& what)
 	{
 		if (v)
 			return;
-		MessageBoxW(0, what.c_str(), 0, MB_ICONERROR);
+		MessageBoxA(0, what.c_str(), 0, MB_ICONERROR);
 		_CrtDbgBreak();
 		abort();
 
 	}
 
+	template<class T, class ... Args>
+	static std::string format(const T& v, Args&& ... args)
+	{
+		std::stringstream ss;
+		ss << v << format(args...);
+		return ss.str();
+	}
 
 	static std::string convert(const std::wstring& str)
 	{
@@ -72,6 +80,12 @@ public :
 		std::wstring_convert<std::codecvt<wchar_t, char, std::mbstate_t>>
 			converter(new std::codecvt<wchar_t, char, std::mbstate_t>("CHS"));
 		return converter.from_bytes(str);
+	}
+
+private:
+	static std::string format()
+	{
+		return {};
 	}
 };
 
