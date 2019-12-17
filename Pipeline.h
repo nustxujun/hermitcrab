@@ -25,4 +25,6 @@ private:
 	
 	std::map<RenderGraph::RenderPass*, std::pair<Renderer::Profile::Ref, ImGuiOverlay::ImGuiText*>> mProfiles;
 	ImGuiOverlay::ImGuiObject* mProfileWindow;
+	ImGuiOverlay::ImGuiObject* mDebugInfo;
+
 };

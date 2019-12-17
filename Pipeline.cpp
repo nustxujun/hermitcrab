@@ -66,10 +66,20 @@ DefaultPipeline::DefaultPipeline()
 	mPresent = present();
 	mDrawScene = drawScene(RenderContext::getSingleton()->getMainCamera());
 	mProfileWindow = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("profile");
+	mDebugInfo = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("debuginfo");
+	mDebugInfo->drawCallback = [](ImGuiOverlay::ImGuiObject* gui) {
+		const auto& debuginfo = Renderer::getSingleton()->getDebugInfo();
+		ImGui::Text("drawcall count: %d",debuginfo.drawcallCount);
+		ImGui::Text("primitive count: %d", debuginfo.primitiveCount);
+		return true;
+	};
 
 	auto mainbar = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiMenuBar>(true);
 	mainbar->createChild<ImGuiOverlay::ImGuiButton>("profile")->callback = [profile = mProfileWindow](auto button) {
 		profile->visible = !profile->visible;
+	};
+	mainbar->createChild<ImGuiOverlay::ImGuiButton>("debuginfo")->callback = [debuginfo = mDebugInfo](auto button) {
+		debuginfo->visible = !debuginfo->visible;
 	};
 }
 

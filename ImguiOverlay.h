@@ -46,7 +46,9 @@ public:
 	void framemove() 
 	{
 		if (visible)
+		{
 			update();
+		}
 	}
 	virtual void update() {
 		for (auto& i : children)
@@ -125,6 +127,7 @@ public:
 	bool visible = true;
 	float width = 0;
 	float height = 0;
+	std::function<bool(ImGuiObject*)> drawCallback;
 protected:
 	std::map<int, std::function<void(void)>> mCmdMaps;
 
@@ -145,9 +148,11 @@ struct ImGuiWindow: public ImGuiObject
 			i.second();
 		mCmdMaps.clear();
 
-		ImGui::Begin(text.c_str(),&visible, flags);
-		ImGuiObject::update();
-		ImGui::End();
+		if (ImGui::Begin(text.c_str(), &visible, flags) && (!drawCallback || drawCallback(this)))
+		{
+			ImGuiObject::update();
+			ImGui::End();
+		}
 	}
 
 	enum {

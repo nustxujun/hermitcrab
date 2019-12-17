@@ -2,10 +2,10 @@
 #include "Common.h"
 
 
-//#if WINVER  < _WIN32_WINNT_WIN10
-//	#define D3D12ON7
-//	#include "D3D12Downlevel.h"
-//#endif
+#if WINVER  >= _WIN32_WINNT_WIN10
+	#define D3D12ON7
+	#include "D3D12Downlevel.h"
+#endif
 
 
 class Renderer
@@ -57,8 +57,13 @@ public:
 		VT_DEPTHSTENCIL,
 		VT_UNORDEREDACCESS,
 	};
-public:
 
+public:
+	struct DebugInfo
+	{
+		size_t drawcallCount = 0;
+		size_t primitiveCount = 0;
+	};
 
 
 	template<class T>
@@ -584,6 +589,7 @@ public:
 
 	void setVSync(bool enable);
 	void addSearchPath(const std::wstring& path);
+	const DebugInfo& getDebugInfo()const;
 	HWND getWindow()const;
 	ID3D12Device* getDevice();
 	ID3D12CommandQueue* getCommandQueue();
@@ -664,9 +670,6 @@ private:
 	std::vector<Profile::Ptr> mProfiles;
 	Resource::Ref mProfileReadBack;
 	CommandAllocator::Ptr mProfileCmdAlloc;
-
-
-
 
 	bool mVSync = true;
 

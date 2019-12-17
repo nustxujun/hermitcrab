@@ -20,6 +20,13 @@ Renderer::Ptr Renderer::instance;
 #undef ASSERT
 #define ASSERT(x,y) Common::Assert(x, Common::format(y, " file: ", __FILE__, " line: ", __LINE__ ))
 
+
+static Renderer::DebugInfo debugInfoCache;
+static Renderer::DebugInfo debugInfoCurrent;
+
+
+
+
 Renderer::Ptr Renderer::create()
 {
 	instance = Renderer::Ptr(new Renderer());
@@ -131,6 +138,7 @@ void Renderer::resize(int width, int height)
 
 void Renderer::beginFrame()
 {
+	debugInfoCurrent = {};
 	resetCommands();
 
 	auto heap = mDescriptorHeaps[DHT_CBV_SRV_UAV]->get();
@@ -144,6 +152,8 @@ void Renderer::endFrame()
 	present();
 
 	updateTimeStamp();
+
+	debugInfoCache = debugInfoCurrent;
 }
 
 void Renderer::setVSync(bool enable)
@@ -154,6 +164,11 @@ void Renderer::setVSync(bool enable)
 void Renderer::addSearchPath(const std::wstring & path)
 {
 	mFileSearchPaths.push_back(path);
+}
+
+const Renderer::DebugInfo & Renderer::getDebugInfo() const
+{
+	return debugInfoCache;
 }
 
 HWND Renderer::getWindow() const
@@ -1484,11 +1499,15 @@ void Renderer::CommandList::set32BitConstants(UINT slot, UINT num, const void * 
 
 void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, UINT startVertex, UINT startInstance)
 {
+	debugInfoCurrent.drawcallCount++;
+	debugInfoCurrent.primitiveCount+= vertexCount / 3;
 	mCmdList->DrawInstanced(vertexCount, instanceCount, startVertex, startInstance);
 }
 
 void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount, UINT startIndex, INT startVertex, UINT startInstance)
 {
+	debugInfoCurrent.drawcallCount++;
+	debugInfoCurrent.primitiveCount += indexCountPerInstance / 3;
 	mCmdList->DrawIndexedInstanced(indexCountPerInstance, instanceCount, startIndex,startVertex,startInstance);
 }
 
