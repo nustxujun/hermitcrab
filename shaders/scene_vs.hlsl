@@ -16,9 +16,9 @@ PSInput vs(float4 position : POSITION, float4 uv : TEXCOORD)
 {
 	PSInput result;
 
-	result.position = mul(world, position);
-	result.position = mul(view, result.position);
-	result.position = mul(proj,  result.position);
+	result.position = mul(position, world);
+	result.position = mul(result.position,view );
+	result.position = mul(result.position, proj);
 	result.uv = uv;
 
 	return result;

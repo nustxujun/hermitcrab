@@ -13,6 +13,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <iostream>
 
 // windows
 #if defined(NO_UE4) || defined(_CONSOLE)
@@ -45,6 +46,7 @@ public :
 	
 		char msg[1024] = { 0 };
 		FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, 0, hr, 0, msg, sizeof(msg), 0);
+		std::cout << Common::format(msg, info) ;
 		MessageBoxA(NULL, Common::format(msg, info).c_str(), NULL, MB_ICONERROR);
 		_CrtDbgBreak();
 		abort();
@@ -54,6 +56,7 @@ public :
 	{
 		if (v)
 			return;
+		std::cout << what;
 		MessageBoxA(0, what.c_str(), 0, MB_ICONERROR);
 		_CrtDbgBreak();
 		abort();
