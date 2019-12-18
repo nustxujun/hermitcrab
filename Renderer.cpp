@@ -802,7 +802,7 @@ void Renderer::updateTimeStamp()
 
 		UINT64 frequency;
 		CHECK(mCommandQueue->GetTimestampFrequency(&frequency));
-		double tickdelta = 1.0 / (double)frequency;
+		double tickdelta = 1000.0 / (double)frequency;
 
 		auto data = mProfileReadBack->map(0);
 		struct TimeData
@@ -1500,14 +1500,14 @@ void Renderer::CommandList::set32BitConstants(UINT slot, UINT num, const void * 
 void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, UINT startVertex, UINT startInstance)
 {
 	debugInfoCurrent.drawcallCount++;
-	debugInfoCurrent.primitiveCount+= vertexCount / 3;
+	debugInfoCurrent.primitiveCount+= vertexCount / 3 * instanceCount;
 	mCmdList->DrawInstanced(vertexCount, instanceCount, startVertex, startInstance);
 }
 
 void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount, UINT startIndex, INT startVertex, UINT startInstance)
 {
 	debugInfoCurrent.drawcallCount++;
-	debugInfoCurrent.primitiveCount += indexCountPerInstance / 3;
+	debugInfoCurrent.primitiveCount += indexCountPerInstance / 3 * instanceCount;
 	mCmdList->DrawIndexedInstanced(indexCountPerInstance, instanceCount, startIndex,startVertex,startInstance);
 }
 
