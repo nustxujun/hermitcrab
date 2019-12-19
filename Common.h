@@ -14,6 +14,7 @@
 #include <set>
 #include <sstream>
 #include <iostream>
+#include <bitset>
 
 // windows
 #if defined(NO_UE4) || defined(_CONSOLE)

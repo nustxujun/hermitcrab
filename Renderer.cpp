@@ -75,6 +75,7 @@ void Renderer::initialize(HWND window)
 	initCommands();
 	initDescriptorHeap();
 	initProfile();
+	initResources();
 }
 
 void Renderer::resize(int width, int height)
@@ -194,6 +195,11 @@ Renderer::CommandList::Ref Renderer::getCommandList()
 Renderer::ResourceView::Ref Renderer::getBackBuffer()
 {
 	return mBackbuffers[mCurrentFrame];
+}
+
+Renderer::ConstantBufferAllocator::Ref Renderer::getConstantBufferAllocator()
+{
+	return mConstantBufferAllocator;
 }
 
 void Renderer::flushCommandQueue()
@@ -460,11 +466,9 @@ Renderer::Buffer::Ptr Renderer::createBuffer(UINT size, UINT stride, D3D12_HEAP_
 	return vert;
 }
 
-Renderer::Resource::Ref Renderer::createConstantBuffer(UINT size)
+Renderer::ConstantBuffer::Ptr Renderer::createConstantBuffer(UINT size)
 {
-	auto cb = Resource::Ptr(new ConstantBuffer(Resource::RT_PERSISTENT));
-	cb->init(size,D3D12_HEAP_TYPE_UPLOAD);
-	addResource(cb);
+	auto cb = ConstantBuffer::Ptr(new ConstantBuffer(size, mConstantBufferAllocator));
 	return cb;
 }
 
@@ -635,6 +639,11 @@ void Renderer::initProfile()
 	CHECK(mDevice->CreateQueryHeap(&desc, IID_PPV_ARGS(&mTimeStampQueryHeap)));
 	mProfileReadBack = createResource(1024 * sizeof(uint64_t),D3D12_HEAP_TYPE_READBACK);
 
+}
+
+void Renderer::initResources()
+{
+	mConstantBufferAllocator = ConstantBufferAllocator::create();
 }
 
 std::wstring Renderer::findFile(const std::wstring & filename)
@@ -1443,7 +1452,7 @@ void Renderer::CommandList::setRenderTargets(const std::vector<ResourceView::Ref
 
 void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
 {
-	ps->refreshConstantBuffer();
+	//ps->refreshConstantBuffer();
 
 	mCmdList->SetPipelineState(ps->get());
 	mCmdList->SetGraphicsRootSignature(ps->getRootSignature());
@@ -1885,8 +1894,7 @@ void Renderer::PipelineState::setConstant(Shader::ShaderType type, const std::st
 		if (cb.first == name)
 		{
 			auto& cbuff = mCBuffers[type][cb.first];
-			auto buffer = cbuff.cpubuffer;
-			memcpy(buffer->data(), data, buffer->size());
+			cbuff.buffer->blit(data);
 			cbuff.needrefesh = true;
 			return;
 		}
@@ -1897,8 +1905,7 @@ void Renderer::PipelineState::setConstant(Shader::ShaderType type, const std::st
 				continue;
 
 			auto& cbuff = mCBuffers[type][cb.first];
-			auto buffer = cbuff.cpubuffer;
-			memcpy(buffer->data() + ret->second.offset, data, ret->second.size);
+			cbuff.buffer->blit(data, ret->second.offset, ret->second.size);
 			cbuff.needrefesh = true;
 			return;
 		}
@@ -1928,25 +1935,24 @@ void Renderer::PipelineState::createConstantBuffer()
 			auto& c= cbuffers[cb.first];
 			c.size = cb.second.size;
 			c.slot = cb.second.slot + s.second.offset;
-			c.cpubuffer = MemoryData(new std::vector<char>(cb.second.size));
-			c.gpubuffer = renderer->createConstantBuffer(cb.second.size);
+			c.buffer = renderer->createConstantBuffer(cb.second.size);
 		}
 	}
 }
 
 void Renderer::PipelineState::refreshConstantBuffer()
 {
-	for (auto& cbs : mCBuffers)
-	{
-		for (auto& cb : cbs.second)
-		{
-			if (!cb.second.needrefesh)
-				continue;
-			auto& buffer = cb.second.cpubuffer;
-			cb.second.gpubuffer->blit(buffer->data(), buffer->size());
-			cb.second.needrefesh = false;
-		}
-	}
+	//for (auto& cbs : mCBuffers)
+	//{
+	//	for (auto& cb : cbs.second)
+	//	{
+	//		if (!cb.second.needrefesh)
+	//			continue;
+	//		auto& buffer = cb.second.cpubuffer;
+	//		cb.second.gpubuffer->blit(buffer->data(), buffer->size());
+	//		cb.second.needrefesh = false;
+	//	}
+	//}
 }
 
 void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
@@ -1959,11 +1965,13 @@ void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
 		}
 	}
 
+	Renderer::getSingleton()->getConstantBufferAllocator()->sync();
+
 	for (auto& cbs : mCBuffers)
 	{
 		for (auto& cb : cbs.second)
 		{
-			cmdlist->setRootDescriptorTable(cb.second.slot, cb.second.gpubuffer->getHandle());
+			cmdlist->setRootDescriptorTable(cb.second.slot, cb.second.buffer->getHandle());
 		}
 	}
 }
@@ -2029,21 +2037,104 @@ void Renderer::Profile::end()
 		mIndex * 2 + 1);
 }
 
-void Renderer::ConstantBuffer::init(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format )
+
+Renderer::ConstantBufferAllocator::ConstantBufferAllocator()
 {
-	size = std::max(size, (size_t)256);
-	Resource::init(size, D3D12_HEAP_TYPE_UPLOAD);
+	mResource = Renderer::getSingleton()->createResource(cache_size,D3D12_HEAP_TYPE_UPLOAD);
+	mEnd = mCache.data();
 }
 
-Renderer::DescriptorHandle Renderer::ConstantBuffer::createView()
+UINT64 Renderer::ConstantBufferAllocator::alloc(UINT64 size)
 {
-	auto desc = getDesc();
+	size = ALIGN(size, 256);
+	auto count = size / 256;
 
-	DescriptorHandle handle = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
+	auto beg = count;
+	while (mFree.size() > beg)
+	{
+		if (mFree[beg].empty())
+			beg++;
+		else
+		{
+			auto free = mFree[beg].back();
+			mFree[beg].pop_back();
+
+			auto res = beg - count;
+			if (res != 0)
+			{
+				mFree[res].push_back(free + res * 256);
+			}
+
+			return  free;
+		}
+	}
+
+	auto free = mEnd;
+	mEnd += count * 256;
+	return free - mCache.data() ;
+}
+
+void Renderer::ConstantBufferAllocator::dealloc(UINT64 address, UINT64 size)
+{
+	auto count = size / 256;
+
+	if (mFree.size() <= count)
+	{
+		mFree.resize(count + 1);
+	}
+
+	mFree[count].push_back(address);
+}
+
+D3D12_GPU_VIRTUAL_ADDRESS Renderer::ConstantBufferAllocator::getGPUVirtualAddress()
+{
+	return mResource->get()->GetGPUVirtualAddress();
+}
+
+void Renderer::ConstantBufferAllocator::blit(UINT64 offset, const void * buffer, UINT64 size)
+{
+	memcpy(mCache.data() + offset, buffer, size);
+	mRefresh = true;
+}
+
+void Renderer::ConstantBufferAllocator::sync()
+{
+	if (!mRefresh)
+		return;
+	void* buff = mResource->map(0);
+
+	memcpy(buff, mCache.data(), mEnd - mCache.data());
+
+	mResource->unmap(0);
+}
+
+Renderer::ConstantBuffer::ConstantBuffer(size_t size, ConstantBufferAllocator::Ref allocator):
+	mAllocator(allocator)
+{
+	const size_t minSizeRequired = 256;
+	mSize = ALIGN(size, 256);
+
+	mOffset = allocator->alloc(mSize);
+
+	mView = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
 
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbd = {};
-	cbd.BufferLocation = get()->GetGPUVirtualAddress();
-	cbd.SizeInBytes = desc.Width;
-	Renderer::getSingleton()->getDevice()->CreateConstantBufferView(&cbd, handle.cpu);
-	return handle;
+	cbd.BufferLocation = allocator->getGPUVirtualAddress() + mOffset;
+	cbd.SizeInBytes = (UINT)mSize;
+	Renderer::getSingleton()->getDevice()->CreateConstantBufferView(&cbd, mView.cpu);
+}
+
+Renderer::ConstantBuffer::~ConstantBuffer()
+{
+	mAllocator->dealloc(mOffset, mSize);
+}
+
+void Renderer::ConstantBuffer::blit(const void * buffer, UINT64 offset , UINT64 size)
+{
+	mAllocator->blit(mOffset + offset, buffer, std::min(size, mSize));
+}
+
+D3D12_GPU_DESCRIPTOR_HANDLE Renderer::ConstantBuffer::getHandle() const
+{
+	return mView.gpu;
 }

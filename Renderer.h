@@ -2,7 +2,7 @@
 #include "Common.h"
 
 
-#if WINVER  >= _WIN32_WINNT_WIN10
+#if WINVER  < _WIN32_WINNT_WIN10
 	#define D3D12ON7
 	#include "D3D12Downlevel.h"
 #endif
@@ -237,13 +237,50 @@ public:
 
 	};
 
-	class ConstantBuffer final: public Resource
+	class ConstantBufferAllocator:public Interface<ConstantBufferAllocator>
+	{
+	static const UINT64 num_consts = 1024;
+	static const UINT64 cache_size = num_consts * 256;
+
+	public:
+		ConstantBufferAllocator();
+		UINT64 alloc(UINT64 size);
+		void dealloc(UINT64 address, UINT64 size);
+
+		D3D12_GPU_VIRTUAL_ADDRESS getGPUVirtualAddress();
+		void blit(UINT64 offset, const void* buffer, UINT64 size);
+		void sync();
+	private:
+		Resource::Ref mResource;
+		std::array<char,cache_size> mCache;
+		std::vector< std::vector<UINT64>> mFree;
+		char* mEnd;
+		bool mRefresh = false;
+	};
+
+	class ConstantBuffer 
 	{
 	public:
-		using Resource::Resource;
-		void init(size_t size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
+		using Ptr = std::shared_ptr<ConstantBuffer>;
+
+		ConstantBuffer(size_t size, ConstantBufferAllocator::Ref allocator);
+		~ConstantBuffer();
+
+		void blit(const void* buffer,UINT64 offset = 0, UINT64 size = -1);
+		D3D12_GPU_DESCRIPTOR_HANDLE getHandle()const;
 	private:
-		DescriptorHandle createView() override;
+		enum
+		{
+			CT_32BIT,
+			CT_ROOT_CONST,
+			CT_ROOT_DESCTABLE,
+		};
+	private:
+		size_t mType;
+		UINT64 mSize;
+		UINT64 mOffset;
+		DescriptorHandle mView;
+		ConstantBufferAllocator::Ref mAllocator;
 	};
 
 	class Texture final: public Resource , public Interface<Texture>
@@ -500,8 +537,7 @@ public:
 		{
 			UINT slot;
 			UINT size;
-			MemoryData cpubuffer;
-			Resource::Ref gpubuffer;
+			ConstantBuffer::Ptr buffer;
 			bool needrefesh;
 		};
 
@@ -595,6 +631,7 @@ public:
 	ID3D12CommandQueue* getCommandQueue();
 	CommandList::Ref getCommandList();
 	ResourceView::Ref getBackBuffer();
+	ConstantBufferAllocator::Ref getConstantBufferAllocator();
 	void flushCommandQueue();
 	void updateResource(Resource::Ref res, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref )>& copy);
 	//void updateBuffer(Resource::Ref res, const void* buffer, size_t size);
@@ -607,7 +644,7 @@ public:
 	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	Texture::Ref createTexture(const std::wstring& filename);
 	Buffer::Ptr createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
-	Resource::Ref createConstantBuffer(UINT size);
+	ConstantBuffer::Ptr createConstantBuffer(UINT size);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs, const std::vector<RootParameter>& rootparams);
 	ResourceView::Ptr createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERSISTENT);
 	Profile::Ref createProfile();
@@ -623,6 +660,7 @@ private:
 	void initCommands();
 	void initDescriptorHeap();
 	void initProfile();
+	void initResources();
 
 	std::wstring findFile(const std::wstring& filename);
 
@@ -670,6 +708,7 @@ private:
 	std::vector<Profile::Ptr> mProfiles;
 	Resource::Ref mProfileReadBack;
 	CommandAllocator::Ptr mProfileCmdAlloc;
+	ConstantBufferAllocator::Ptr mConstantBufferAllocator;
 
 	bool mVSync = true;
 
