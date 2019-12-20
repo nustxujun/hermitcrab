@@ -35,21 +35,7 @@ int main()
 				auto vs = renderer->compileShader(L"shaders/shaders.hlsl", L"VSMain", L"vs_5_0");
 				auto ps = renderer->compileShader(L"shaders/shaders.hlsl", L"PSMain", L"ps_5_0");
 				std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
-				std::vector<Renderer::RootParameter> rootparams = {D3D12_SHADER_VISIBILITY_PIXEL};
-				rootparams[0].srv(0);
-				ps->registerStaticSampler({
-					D3D12_FILTER_MIN_MAG_MIP_POINT,
-					D3D12_TEXTURE_ADDRESS_MODE_BORDER,
-					D3D12_TEXTURE_ADDRESS_MODE_BORDER,
-					D3D12_TEXTURE_ADDRESS_MODE_BORDER,
-					0,0,
-					D3D12_COMPARISON_FUNC_NEVER,
-					D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
-					0,
-					D3D12_FLOAT32_MAX,
-					0,0,
-					D3D12_SHADER_VISIBILITY_PIXEL
-					});
+
 
 				Renderer::RenderState rs = Renderer::RenderState::Default;
 				rs.setInputLayout({
@@ -57,7 +43,7 @@ int main()
 					{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 					});
 
-				pso = renderer->createPipelineState(shaders, rs, rootparams);
+				pso = renderer->createPipelineState(shaders, rs);
 
 				std::pair<Vector3, Vector4> triangleVertices[] =
 				{

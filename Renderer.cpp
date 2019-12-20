@@ -493,9 +493,9 @@ void Renderer::destroyResource(Resource::Ref res)
 	}
 }
 
-Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs, const std::vector<RootParameter>& rootparams)
+Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs)
 {
-	auto pso = PipelineState::create(rs, shaders, rootparams);
+	auto pso = PipelineState::create(rs, shaders);
 	mPipelineStates.push_back(pso);
 	return pso;
 }
@@ -1453,11 +1453,9 @@ void Renderer::CommandList::setRenderTargets(const std::vector<ResourceView::Ref
 void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
 {
 	//ps->refreshConstantBuffer();
-
+	mCurrentPipelineState = ps;
 	mCmdList->SetPipelineState(ps->get());
 	mCmdList->SetGraphicsRootSignature(ps->getRootSignature());
-
-	ps->setRootDescriptorTable(this);
 }
 
 void Renderer::CommandList::setVertexBuffer(const std::vector<Buffer::Ptr>& vertices)
@@ -1508,6 +1506,8 @@ void Renderer::CommandList::set32BitConstants(UINT slot, UINT num, const void * 
 
 void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, UINT startVertex, UINT startInstance)
 {
+	mCurrentPipelineState->setRootDescriptorTable(this);
+
 	debugInfoCurrent.drawcallCount++;
 	debugInfoCurrent.primitiveCount+= vertexCount / 3 * instanceCount;
 	mCmdList->DrawInstanced(vertexCount, instanceCount, startVertex, startInstance);
@@ -1515,6 +1515,8 @@ void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, 
 
 void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount, UINT startIndex, INT startVertex, UINT startInstance)
 {
+	mCurrentPipelineState->setRootDescriptorTable(this);
+
 	debugInfoCurrent.drawcallCount++;
 	debugInfoCurrent.primitiveCount += indexCountPerInstance / 3 * instanceCount;
 	mCmdList->DrawIndexedInstanced(indexCountPerInstance, instanceCount, startIndex,startVertex,startInstance);
@@ -1788,7 +1790,7 @@ void Renderer::Shader::createRootParameters()
 
 }
 
-Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector<Shader::Ptr>& shaders, const std::vector<RootParameter>& rootparams)
+Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector<Shader::Ptr>& shaders)
 {
 	auto device = Renderer::getSingleton()->getDevice();
 
@@ -1860,7 +1862,6 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	
 	CHECK(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&mPipelineState)));
 
-	createConstantBuffer();
 }
 
 Renderer::PipelineState::~PipelineState()
@@ -1886,58 +1887,70 @@ void Renderer::PipelineState::setPSResource( const std::string & name, const D3D
 	setResource(Shader::ST_PIXEL, name, handle);
 }
 
-void Renderer::PipelineState::setConstant(Shader::ShaderType type, const std::string & name, const void * data)
+void Renderer::PipelineState::setConstant(Shader::ShaderType type, const std::string & name, const ConstantBuffer::Ptr& c)
 {
 	auto& cbuffers = mSemanticsMap[type].cbuffers;
-	for (auto& cb : cbuffers)
-	{
-		if (cb.first == name)
-		{
-			auto& cbuff = mCBuffers[type][cb.first];
-			cbuff.buffer->blit(data);
-			cbuff.needrefesh = true;
-			return;
-		}
-		else
-		{
-			auto ret = cb.second.variables.find(name);
-			if (ret == cb.second.variables.end())
-				continue;
+	auto ret = cbuffers.find(name);
+	ASSERT(ret != cbuffers.end(), "cannot find specify cbuffer at setConstant");
 
-			auto& cbuff = mCBuffers[type][cb.first];
-			cbuff.buffer->blit(data, ret->second.offset, ret->second.size);
-			cbuff.needrefesh = true;
-			return;
-		}
-	}
+	mCBuffers[type][ret->second.slot] = c->getHandle();
+	//for (auto& cb : cbuffers)
+	//{
+	//	if (cb.first == name)
+	//	{
+	//		auto& cbuff = mCBuffers[type][cb.first];
+	//		cbuff.buffer->blit(data);
+	//		cbuff.needrefesh = true;
+	//		return;
+	//	}
+	//	else
+	//	{
+	//		auto ret = cb.second.variables.find(name);
+	//		if (ret == cb.second.variables.end())
+	//			continue;
 
-	ASSERT(0, "specify variable name is not existed.");
+	//		auto& cbuff = mCBuffers[type][cb.first];
+	//		cbuff.buffer->blit(data, ret->second.offset, ret->second.size);
+	//		cbuff.needrefesh = true;
+	//		return;
+	//	}
+	//}
+
+	//ASSERT(0, "specify variable name is not existed.");
 }
 
-void Renderer::PipelineState::setVSConstant(const std::string & name, const void * data)
+void Renderer::PipelineState::setVSConstant(const std::string & name, const ConstantBuffer::Ptr& c)
 {
-	setConstant(Shader::ST_VERTEX, name, data);
+	setConstant(Shader::ST_VERTEX, name, c);
 }
 
-void Renderer::PipelineState::setPSConstant(const std::string & name, const void * data)
+void Renderer::PipelineState::setPSConstant(const std::string & name, const ConstantBuffer::Ptr& c)
 {
-	setConstant(Shader::ST_PIXEL, name, data);
+	setConstant(Shader::ST_PIXEL, name, c);
 }
 
-void Renderer::PipelineState::createConstantBuffer()
+Renderer::ConstantBuffer::Ptr Renderer::PipelineState::createConstantBuffer(Shader::ShaderType type,const std::string& name)
 {
 	auto renderer = Renderer::getSingleton();
-	for (auto& s : mSemanticsMap)
-	{
-		auto& cbuffers = mCBuffers[s.first];
-		for (auto& cb : s.second.cbuffers)
-		{
-			auto& c= cbuffers[cb.first];
-			c.size = cb.second.size;
-			c.slot = cb.second.slot + s.second.offset;
-			c.buffer = renderer->createConstantBuffer(cb.second.size);
-		}
-	}
+
+	auto shader = mSemanticsMap.find(type);
+	ASSERT(shader != mSemanticsMap.end(), "cannot find specify shader");
+	
+	auto& cbuffers = shader->second.cbuffers;
+	auto cbuffer = cbuffers.find(name);
+	if (cbuffer == cbuffers.end())
+		return {};
+	auto cb = renderer->createConstantBuffer(cbuffer->second.size);
+	cb->setReflection(cbuffer->second.variables);
+	return cb;
+	//auto& cbuffers = mCBuffers[s.first];
+	//for (auto& cb : s.second.cbuffers)
+	//{
+	//	auto& c= cbuffers[cb.first];
+	//	c.size = cb.second.size;
+	//	c.slot = cb.second.slot + s.second.offset;
+	//	c.buffer = renderer->createConstantBuffer(cb.second.size);
+	//}
 }
 
 void Renderer::PipelineState::refreshConstantBuffer()
@@ -1971,7 +1984,7 @@ void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
 	{
 		for (auto& cb : cbs.second)
 		{
-			cmdlist->setRootDescriptorTable(cb.second.slot, cb.second.buffer->getHandle());
+			cmdlist->setRootDescriptorTable(cb.first, cb.second);
 		}
 	}
 }
@@ -2071,6 +2084,7 @@ UINT64 Renderer::ConstantBufferAllocator::alloc(UINT64 size)
 
 	auto free = mEnd;
 	mEnd += count * 256;
+	ASSERT(mEnd <= mCache.data() + mCache.size(), "not enough constant buffer space");
 	return free - mCache.data() ;
 }
 
@@ -2127,6 +2141,20 @@ Renderer::ConstantBuffer::ConstantBuffer(size_t size, ConstantBufferAllocator::R
 Renderer::ConstantBuffer::~ConstantBuffer()
 {
 	mAllocator->dealloc(mOffset, mSize);
+}
+
+void Renderer::ConstantBuffer::setReflection(const std::map<std::string, Shader::Variable>& rft)
+{
+	mVariables = rft;
+}
+
+void Renderer::ConstantBuffer::setVariable(const std::string& name, void* data)
+{
+	auto ret = mVariables.find(name);
+	if (ret == mVariables.end())
+		return;
+
+	blit(data, ret->second.offset, ret->second.size );
 }
 
 void Renderer::ConstantBuffer::blit(const void * buffer, UINT64 offset , UINT64 size)

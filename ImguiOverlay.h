@@ -33,6 +33,7 @@ private:
 	Renderer::PipelineState::Ref mPipelineState;
 	Renderer::Buffer::Ptr mVertexBuffer;
 	Renderer::Buffer::Ptr mIndexBuffer;
+	Renderer::ConstantBuffer::Ptr mConstant;
 	Renderer::Texture::Ref mFonts;
 	int mWidth = 0;
 	int mHeight = 0;

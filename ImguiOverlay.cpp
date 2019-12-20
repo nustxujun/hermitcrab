@@ -60,10 +60,6 @@ void ImGuiPass::initRendering()
 		D3D12_SHADER_VISIBILITY_PIXEL
 		});
 	
-	std::vector<Renderer::RootParameter> rootparams = { D3D12_SHADER_VISIBILITY_PIXEL ,D3D12_SHADER_VISIBILITY_VERTEX };
-	rootparams[0].srv(0, 0);
-	rootparams[1].cbv32(0,0,16);
-
 
 	Renderer::RenderState rs = Renderer::RenderState::Default;
 	rs.setInputLayout({
@@ -115,7 +111,8 @@ void ImGuiPass::initRendering()
 		rs.setDepthStencil(desc);
 	}
 
-	mPipelineState = renderer->createPipelineState(shaders, rs, rootparams);
+	mPipelineState = renderer->createPipelineState(shaders, rs);
+	mConstant = mPipelineState->createConstantBuffer(Renderer::Shader::ST_VERTEX,"vertexBuffer");
 }
 
 
@@ -158,13 +155,6 @@ void ImGuiPass::draw(ImDrawData* data)
 	float R = data->DisplayPos.x + data->DisplaySize.x;
 	float T = data->DisplayPos.y;
 	float B = data->DisplayPos.y + data->DisplaySize.y;
-	//float mvp[4][4] =
-	//{
-	//	{ 2.0f / (R - L),   0.0f,           0.0f,       0.0f },
-	//	{ 0.0f,         2.0f / (T - B),     0.0f,       0.0f },
-	//	{ 0.0f,         0.0f,           0.5f,       0.0f },
-	//	{ (R + L) / (L - R),  (T + B) / (B - T),    0.5f,       1.0f },
-	//};
 
 	float mvp[4][4] =
 	{
@@ -176,8 +166,11 @@ void ImGuiPass::draw(ImDrawData* data)
 
 	auto cmdlist = renderer->getCommandList();
 
-	mPipelineState->setVSConstant("ProjectionMatrix", mvp);
 	cmdlist->setPipelineState(mPipelineState);
+
+	mConstant->blit(mvp);
+	mPipelineState->setVSConstant("vertexBuffer", mConstant);
+
 	//cmdlist->set32BitConstants(1,16,mvp,0);
 
 	D3D12_VIEWPORT vp = {0};

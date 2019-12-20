@@ -258,31 +258,6 @@ public:
 		bool mRefresh = false;
 	};
 
-	class ConstantBuffer 
-	{
-	public:
-		using Ptr = std::shared_ptr<ConstantBuffer>;
-
-		ConstantBuffer(size_t size, ConstantBufferAllocator::Ref allocator);
-		~ConstantBuffer();
-
-		void blit(const void* buffer,UINT64 offset = 0, UINT64 size = -1);
-		D3D12_GPU_DESCRIPTOR_HANDLE getHandle()const;
-	private:
-		enum
-		{
-			CT_32BIT,
-			CT_ROOT_CONST,
-			CT_ROOT_DESCTABLE,
-		};
-	private:
-		size_t mType;
-		UINT64 mSize;
-		UINT64 mOffset;
-		DescriptorHandle mView;
-		ConstantBufferAllocator::Ref mAllocator;
-	};
-
 	class Texture final: public Resource , public Interface<Texture>
 	{
 	public:
@@ -435,22 +410,6 @@ public:
 
 			ST_MAX_NUM
 		};
-	public:
-		Shader(const MemoryData& data, ShaderType type);
-		void registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc);
-
-	private:
-		D3D12_SHADER_VISIBILITY getShaderVisibility()const;
-		D3D12_DESCRIPTOR_RANGE_TYPE getRangeType(D3D_SHADER_INPUT_TYPE type)const;
-		void createRootParameters();
-	private:
-		ShaderType mType;
-		MemoryData mCodeBlob;
-
-		ComPtr<ShaderReflection> mReflection;
-		std::vector< D3D12_STATIC_SAMPLER_DESC> mStaticSamplers;
-		std::vector<D3D12_ROOT_PARAMETER> mRootParameters;
-		std::vector<D3D12_DESCRIPTOR_RANGE> mRanges;
 
 		struct Variable
 		{
@@ -473,8 +432,56 @@ public:
 			std::map<std::string, UINT> uavs;
 		};
 
+	public:
+		Shader(const MemoryData& data, ShaderType type);
+		void registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc);
+
+	private:
+		D3D12_SHADER_VISIBILITY getShaderVisibility()const;
+		D3D12_DESCRIPTOR_RANGE_TYPE getRangeType(D3D_SHADER_INPUT_TYPE type)const;
+		void createRootParameters();
+	private:
+		ShaderType mType;
+		MemoryData mCodeBlob;
+
+		ComPtr<ShaderReflection> mReflection;
+		std::vector< D3D12_STATIC_SAMPLER_DESC> mStaticSamplers;
+		std::vector<D3D12_ROOT_PARAMETER> mRootParameters;
+		std::vector<D3D12_DESCRIPTOR_RANGE> mRanges;
+
+
 		Reflection mSemanticsMap;
 	};
+
+
+	class ConstantBuffer
+	{
+	public:
+		using Ptr = std::shared_ptr<ConstantBuffer>;
+
+		ConstantBuffer(size_t size, ConstantBufferAllocator::Ref allocator);
+		~ConstantBuffer();
+
+		void setReflection(const std::map<std::string, Shader::Variable>& rft);
+		void setVariable(const std::string& name, void* data);
+		void blit(const void* buffer, UINT64 offset = 0, UINT64 size = -1);
+		D3D12_GPU_DESCRIPTOR_HANDLE getHandle()const;
+	private:
+		enum
+		{
+			CT_32BIT,
+			CT_ROOT_CONST,
+			CT_ROOT_DESCTABLE,
+		};
+	private:
+		size_t mType;
+		UINT64 mSize;
+		UINT64 mOffset;
+		DescriptorHandle mView;
+		ConstantBufferAllocator::Ref mAllocator;
+		std::map<std::string, Shader::Variable> mVariables;
+	};
+
 
 	class RenderState
 	{
@@ -508,7 +515,7 @@ public:
 	{
 		friend class Renderer;
 	public:
-		PipelineState(const RenderState& rs, const std::vector<Shader::Ptr>& shaders, const std::vector<RootParameter>& params);
+		PipelineState(const RenderState& rs, const std::vector<Shader::Ptr>& shaders);
 		~PipelineState();
 
 		ID3D12PipelineState* get(){return mPipelineState.Get();}
@@ -518,12 +525,13 @@ public:
 		void setVSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void setPSResource( const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 
-		void setConstant(Shader::ShaderType type, const std::string& name, const void* data);
-		void setVSConstant(const std::string& name, const void* data);
-		void setPSConstant(const std::string& name, const void* data);
+		void setConstant(Shader::ShaderType type, const std::string& name,const ConstantBuffer::Ptr& c);
+		void setVSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
+		void setPSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
+
+		ConstantBuffer::Ptr createConstantBuffer(Shader::ShaderType type, const std::string& name);
 
 	private:
-		void createConstantBuffer();
 		void refreshConstantBuffer();
 		void setRootDescriptorTable(CommandList* cmdlist);
 	private:
@@ -532,16 +540,7 @@ public:
 
 		std::map<Shader::ShaderType, Shader::Reflection> mSemanticsMap;
 		std::map<Shader::ShaderType, std::map<UINT, D3D12_GPU_DESCRIPTOR_HANDLE>> mTextures;
-
-		struct CBuffer
-		{
-			UINT slot;
-			UINT size;
-			ConstantBuffer::Ptr buffer;
-			bool needrefesh;
-		};
-
-		std::map<Shader::ShaderType, std::map<std::string, CBuffer>> mCBuffers;
+		std::map<Shader::ShaderType, std::map<UINT, D3D12_GPU_DESCRIPTOR_HANDLE>> mCBuffers;
 	};
 
 	class Profile:public Interface<Profile>
@@ -607,6 +606,7 @@ public:
 		void endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx);
 	private:
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
+		PipelineState::Ref mCurrentPipelineState;
 		std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
 	};
 
@@ -645,7 +645,7 @@ public:
 	Texture::Ref createTexture(const std::wstring& filename);
 	Buffer::Ptr createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	ConstantBuffer::Ptr createConstantBuffer(UINT size);
-	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs, const std::vector<RootParameter>& rootparams);
+	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
 	ResourceView::Ptr createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERSISTENT);
 	Profile::Ref createProfile();
 	ComPtr<ID3D12QueryHeap> getTimeStampQueryHeap();
