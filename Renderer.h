@@ -2,10 +2,10 @@
 #include "Common.h"
 
 
-#if WINVER  < _WIN32_WINNT_WIN10
+//#if WINVER  < _WIN32_WINNT_WIN10
 	#define D3D12ON7
 	#include "D3D12Downlevel.h"
-#endif
+//#endif
 
 
 class Renderer
@@ -532,7 +532,6 @@ public:
 		ConstantBuffer::Ptr createConstantBuffer(Shader::ShaderType type, const std::string& name);
 
 	private:
-		void refreshConstantBuffer();
 		void setRootDescriptorTable(CommandList* cmdlist);
 	private:
 		ComPtr<ID3D12PipelineState> mPipelineState;

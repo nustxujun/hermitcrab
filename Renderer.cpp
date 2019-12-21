@@ -76,6 +76,9 @@ void Renderer::initialize(HWND window)
 	initDescriptorHeap();
 	initProfile();
 	initResources();
+
+	resetCommands();
+	
 }
 
 void Renderer::resize(int width, int height)
@@ -140,10 +143,15 @@ void Renderer::resize(int width, int height)
 void Renderer::beginFrame()
 {
 	debugInfoCurrent = {};
-	resetCommands();
+	//resetCommands();
+
+
+	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+
 
 	auto heap = mDescriptorHeaps[DHT_CBV_SRV_UAV]->get();
 	mCommandList->get()->SetDescriptorHeaps(1, &heap);
+
 }
 
 void Renderer::endFrame()
@@ -151,6 +159,12 @@ void Renderer::endFrame()
 	commitCommands();
 
 	present();
+
+	mCurrentCommandAllocator->signal();
+	recycleCommandAllocator(mCurrentCommandAllocator);
+	mCurrentCommandAllocator = allocCommandAllocator();
+
+	resetCommands();
 
 	updateTimeStamp();
 
@@ -707,9 +721,6 @@ void Renderer::commitCommands()
 
 void Renderer::resetCommands()
 {
-	mCurrentCommandAllocator->signal();
-	recycleCommandAllocator(mCurrentCommandAllocator);
-	mCurrentCommandAllocator = allocCommandAllocator();
 
 	mCurrentCommandAllocator->reset();
 
@@ -721,7 +732,7 @@ void Renderer::resetCommands()
 	mCurrentFrame = mCurrentFrame >= NUM_BACK_BUFFERS - 1?  0: mCurrentFrame + 1;
 #endif
 
-	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+
 }
 
 void Renderer::syncFrame()
@@ -1040,8 +1051,9 @@ Renderer::CommandAllocator::CommandAllocator()
 	
 	static int i = 0;
 	std::wstringstream ss;
-	ss << i++;
+	ss << L"Command Allocator"<<i++;
 	auto str = ss.str();
+	mAllocator->SetName(str.c_str());
 }
 
 Renderer::CommandAllocator::~CommandAllocator()
@@ -1312,7 +1324,7 @@ void Renderer::Fence::wait()
 	auto constexpr infinity = 0xffffffff; // same macros INFINITY in other headers
 	auto ret = WaitForSingleObject(mFenceEvent, infinity);
 
-	if (!completed())
+	if (mFence->GetCompletedValue() != mFenceValue)
 		abort();
 }
 
@@ -1943,29 +1955,6 @@ Renderer::ConstantBuffer::Ptr Renderer::PipelineState::createConstantBuffer(Shad
 	auto cb = renderer->createConstantBuffer(cbuffer->second.size);
 	cb->setReflection(cbuffer->second.variables);
 	return cb;
-	//auto& cbuffers = mCBuffers[s.first];
-	//for (auto& cb : s.second.cbuffers)
-	//{
-	//	auto& c= cbuffers[cb.first];
-	//	c.size = cb.second.size;
-	//	c.slot = cb.second.slot + s.second.offset;
-	//	c.buffer = renderer->createConstantBuffer(cb.second.size);
-	//}
-}
-
-void Renderer::PipelineState::refreshConstantBuffer()
-{
-	//for (auto& cbs : mCBuffers)
-	//{
-	//	for (auto& cb : cbs.second)
-	//	{
-	//		if (!cb.second.needrefesh)
-	//			continue;
-	//		auto& buffer = cb.second.cpubuffer;
-	//		cb.second.gpubuffer->blit(buffer->data(), buffer->size());
-	//		cb.second.needrefesh = false;
-	//	}
-	//}
 }
 
 void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
