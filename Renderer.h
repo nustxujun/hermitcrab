@@ -376,24 +376,6 @@ public:
 	};
 
 	class PipelineState;
-	class RootParameter
-	{
-	public:
-		RootParameter(D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
-
-		void cbv(UINT start, UINT space = 0, UINT num = 1 );
-		void cbv32(UINT start, UINT space = 0, UINT num = 1);
-		void srv(UINT start, UINT space = 0, UINT num = 1);
-		void uav(UINT start, UINT space = 0, UINT num = 1);
-
-		D3D12_ROOT_PARAMETER genParameter()const;
-	private:
-		void record(UINT start, UINT space , UINT num);
-	private:
-		D3D12_SHADER_VISIBILITY mVisibility = D3D12_SHADER_VISIBILITY_ALL;
-		D3D12_ROOT_PARAMETER_TYPE mType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		D3D12_DESCRIPTOR_RANGE mRange = {};
-	};
 	class Shader
 	{
 		friend class Renderer::PipelineState;
@@ -642,6 +624,8 @@ public:
 	void destroyResource(Resource::Ref res);
 	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	Texture::Ref createTexture(const std::wstring& filename);
+	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format ,const void* data);
+
 	Buffer::Ptr createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	ConstantBuffer::Ptr createConstantBuffer(UINT size);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);

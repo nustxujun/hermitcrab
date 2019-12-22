@@ -467,6 +467,15 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	return tex;
 }
 
+Renderer::Texture::Ref Renderer::createTexture(int width, int height, DXGI_FORMAT format, const void * data)
+{
+	auto tex = createTexture(width, height, format,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_FLAG_NONE);
+	updateResource(tex, data, width * height * D3DHelper::sizeof_DXGI_FORMAT(format), [dst = tex](auto cmdlist, auto src) {
+		cmdlist->copyTexture(dst, 0, { 0,0,0 }, src, 0, nullptr);
+		});
+	return tex;
+}
+
 Renderer::Buffer::Ptr Renderer::createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* buffer, size_t count)
 {
 	auto vert = Buffer::Ptr(new Buffer(size, stride, type));
@@ -1636,61 +1645,6 @@ Renderer::RenderState::RenderState(std::function<void(RenderState&self)> initial
 	initializer(*this);
 }
 
-D3D12_ROOT_PARAMETER Renderer::RootParameter::genParameter()const
-{
-	D3D12_ROOT_PARAMETER rp;
-	rp.ParameterType = mType;
-	rp.ShaderVisibility = mVisibility;
-
-	switch (mType)
-	{
-		case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE:
-			{
-				rp.DescriptorTable.NumDescriptorRanges = 1;
-				rp.DescriptorTable.pDescriptorRanges = &mRange;
-			}
-			break;
-		case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS:
-			rp.Constants = { mRange.BaseShaderRegister , mRange.RegisterSpace, mRange.NumDescriptors };
-			break;
-		case D3D12_ROOT_PARAMETER_TYPE_CBV:
-		case D3D12_ROOT_PARAMETER_TYPE_SRV:
-		case D3D12_ROOT_PARAMETER_TYPE_UAV:
-			rp.Descriptor = { mRange.BaseShaderRegister , mRange.RegisterSpace };
-			break;
-	}
-
-	return rp;
-}
-
-void Renderer::RootParameter::record(UINT start, UINT space, UINT num)
-{
-	mRange.BaseShaderRegister = start;
-	mRange.RegisterSpace = space;
-	mRange.NumDescriptors = num;
-	mRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-}
-
-void Renderer::RootParameter::srv(UINT start, UINT space, UINT num)
-{
-	record(start, space, num);
-	mType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	mRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-
-}
-
-Renderer::RootParameter::RootParameter(D3D12_SHADER_VISIBILITY visibility):
-	mVisibility(visibility)
-{
-}
-
-void Renderer::RootParameter::cbv32(UINT num, UINT start, UINT space)
-{
-	record(num, start, space);
-	mType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-
-}
-
 Renderer::Shader::Shader(const MemoryData& data, ShaderType type) :
 	mCodeBlob(data), mType(type)
 {
@@ -1884,7 +1838,9 @@ void Renderer::PipelineState::setResource(Shader::ShaderType type, const std::st
 {
 	auto& textures = mSemanticsMap[type].textures;
 	auto ret = textures.find(name);
-	ASSERT(ret != textures.end(), "specify texture name is not existed.");
+	//ASSERT(ret != textures.end(), "specify texture name is not existed.");
+	if (ret == textures.end())
+		return;
 
 	mTextures[type][ret->second + mSemanticsMap[type].offset] = handle;
 }

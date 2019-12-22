@@ -1,5 +1,5 @@
 
-cbuffer Constant: register(b0)
+cbuffer VSConstant: register(b0)
 {
 	matrix world;
 	matrix view; 
