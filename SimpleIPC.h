@@ -13,7 +13,7 @@ public:
 		void open(const std::string& name);
 		void close();
 
-		bool write(const void* data, size_t size);
+		size_t write(const void* data, size_t size);
 		size_t read(void* data, size_t size);
 	private:
 		void map();
@@ -25,7 +25,6 @@ public:
 		char* mMemory = 0;
 		char* mData = 0;
 		unsigned int* mCount = 0;
-		char* mEnd = 0;
 	};
 
 	~SimpleIPC();
@@ -34,11 +33,13 @@ public:
 	void close();
 
 	void send(const void* buffer, size_t size);
-	size_t receive(void* buffer, size_t size);
-
+	void receive(void* buffer, size_t size);
+private:
+	size_t try_receive(void* buffer, size_t size);
 private:
 	Channal mReceiver;
 	Channal mSender;
-
-	std::list<std::function<bool(void)>> mSendQueue;
+	HANDLE mSendWaiter;
+	HANDLE mReceiveWaiter;
+	std::list<std::vector<char>> mSendQueue;
 };
