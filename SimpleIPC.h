@@ -34,6 +34,18 @@ public:
 
 	void send(const void* buffer, size_t size);
 	void receive(void* buffer, size_t size);
+
+	template<class T>
+	SimpleIPC& operator << (T&& v)
+	{
+		send(&v, sizeof(T));
+	}
+
+	template<class T>
+	SimpleIPC& operator >> (T& v)
+	{
+		send(&v, sizeof(T));
+	}
 private:
 	size_t try_receive(void* buffer, size_t size);
 private:
