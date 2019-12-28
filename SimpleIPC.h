@@ -39,12 +39,44 @@ public:
 	SimpleIPC& operator << (T&& v)
 	{
 		send(&v, sizeof(T));
+
+		return *this;
+	}
+
+	template<>
+	SimpleIPC& operator << (char*&& str)
+	{
+		unsigned int len = (unsigned int)::strlen(str);
+		send(&len, sizeof(len));
+		send(str, len);
+		return *this;
+	}
+
+	template<>
+	SimpleIPC& operator << (std::string&& str)
+	{
+		unsigned int len = (unsigned int)str.size();
+		send(&len, sizeof(len));
+		send(str.c_str(), len);
+		return *this;
 	}
 
 	template<class T>
 	SimpleIPC& operator >> (T& v)
 	{
-		send(&v, sizeof(T));
+		receive(&v, sizeof(T));
+
+		return *this;
+	}
+
+	template<>
+	SimpleIPC& operator >> (std::string& str)
+	{
+		unsigned int len;
+		*this >> len;
+		str.resize(len);
+		receive(&str[0], str.size());
+		return *this;
 	}
 private:
 	size_t try_receive(void* buffer, size_t size);

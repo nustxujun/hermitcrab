@@ -2,6 +2,8 @@
 
 RenderContext* RenderContext::instance = nullptr;
 
+
+
 void RenderContext::resize(int width, int height)
 {
 	mCamera->setViewport(0,0,(float)width, (float)height);

@@ -93,14 +93,10 @@ void SimpleIPC::Channal::create(const std::string& name)
 		max_size,
 		(name + "_sm").c_str());
 
-	if (::GetLastError() != 0)
-	{
-		open(name);
-	}
-	else	
-	//Common::checkResult();
-	//Common::Assert(mHandle != NULL, "faild to create file mapping");
-		map();
+
+	Common::checkResult(::GetLastError());
+	Common::Assert(mHandle != NULL, "faild to create file mapping");
+	map();
 
 
 }
