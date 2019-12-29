@@ -34,16 +34,22 @@ RenderCommand::~RenderCommand()
 	mIPC.close();
 }
 
-bool RenderCommand::createMesh(
+void RenderCommand::done()
+{
+	mIPC << "done";
+}
+
+
+void RenderCommand::createMesh(
 	const std::string & name, 
 	const void * vertices, 
-	size_t bytesofvertices, 
-	size_t numvertices, 
-	size_t vertexStride,
+	UINT32 bytesofvertices, 
+	UINT32 numvertices, 
+	UINT32 vertexStride,
 	const void * indices, 
-	size_t bytesofindices, 
-	size_t numindices,
-	size_t indexStride)
+	UINT32 bytesofindices, 
+	UINT32 numindices,
+	UINT32 indexStride)
 {
 	mIPC << "createMesh";
 	
@@ -59,36 +65,48 @@ bool RenderCommand::createMesh(
 	mIPC << indexStride;
 	mIPC.send(indices, bytesofindices);
 
-	bool ret;
-	mIPC >> ret;
-	return ret;
+
 }
 
-bool RenderCommand::createTexture(const std::string & name, int width, int height, DXGI_FORMAT format, const void * data)
+void RenderCommand::createTexture(const std::string & name, int width, int height, DXGI_FORMAT format, const void * data)
 {
 	mIPC << "createTexture";
 
-	size_t size = D3DHelper::sizeof_DXGI_FORMAT(format) * width * height;
+	UINT32 size = D3DHelper::sizeof_DXGI_FORMAT(format) * width * height;
 	mIPC << name << width << height << format << size;
 	mIPC.send(data, size);
-
-	bool ret;
-	mIPC >> ret;
-	return ret;
 }
 
-bool RenderCommand::createModel(const std::string & name, const std::vector<std::string> meshs, const Matrix & transform)
+void RenderCommand::createModel(const std::string & name, const std::vector<std::string> meshs, const Matrix & transform, const std::string& materialName)
 {
 	mIPC << "createModel";
-	auto size = meshs.size();
+	mIPC << name;
+	UINT32 size = meshs.size();
 	mIPC << size;
 	for (auto& m : meshs)
 		mIPC << m;
 
-	mIPC << transform;
-	bool ret;
-	mIPC >> ret;
-	return ret;
+	mIPC << transform << materialName;
+
+}
+
+void RenderCommand::createCamera(const std::string & name, const Matrix & view, const Matrix & proj, const D3D12_VIEWPORT & vp)
+{
+	mIPC << "createCamera" << name<< view << proj << vp;
+
+}
+
+void RenderCommand::createMaterial(const std::string & name, const std::string & vs, const std::string & ps, const std::map<std::string, Vector4>& consts, const std::map<std::string, std::string>& textures)
+{
+	mIPC << "createMaterial" << name << vs << ps;
+	mIPC << (UINT32)consts.size();
+	for (auto& c: consts)
+		mIPC << c.first << c.second;
+
+	mIPC << (UINT32)textures.size();
+	for (auto& t: textures)
+		mIPC << t.first << t.second;
+
 }
 
 
@@ -97,7 +115,7 @@ void RenderCommand::record()
 	std::map<std::string, std::function<bool(void)>> processors;
 
 	processors["createMesh"] = [&ipc = mIPC]() {
-		size_t numBytesVertices, numBytesIndices, numVertices, numIndices, verticesStride, indicesStride;
+		UINT32 numBytesVertices, numBytesIndices, numVertices, numIndices, verticesStride, indicesStride;
 		std::vector<char> vertices, indices;
 		
 		std::string name;
@@ -122,7 +140,7 @@ void RenderCommand::record()
 
 	processors["createTexture"] = [&ipc = mIPC]() {
 		std::vector<char> data;
-		size_t width, height, size;
+		UINT32 width, height, size;
 		DXGI_FORMAT fmt;
 		std::string name;
 		ipc >> name >> ipc >> width >> height >> fmt >> size;
@@ -141,9 +159,9 @@ void RenderCommand::record()
 		ipc >> name;
 		auto model = context->createObject<Model>(name);
 
-		size_t meshcount;
+		UINT32 meshcount;
 		ipc >> meshcount;
-		for (size_t i = 0; i < meshcount; ++i)
+		for (UINT32 i = 0; i < meshcount; ++i)
 		{
 			std::string meshname;
 			ipc >> meshname;
