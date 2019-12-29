@@ -1,7 +1,7 @@
 #include "RenderCommand.h"
 #include "RenderContext.h"
 #include "D3DHelper.h"
-
+#include <iostream>
 
 RenderCommand* RenderCommand::instance = 0;
 
@@ -37,13 +37,13 @@ RenderCommand::~RenderCommand()
 bool RenderCommand::createMesh(
 	const std::string & name, 
 	const void * vertices, 
-	size_t bytesofvertices, 
-	size_t numvertices, 
-	size_t vertexStride,
+	UINT32 bytesofvertices, 
+	UINT32 numvertices, 
+	UINT32 vertexStride,
 	const void * indices, 
-	size_t bytesofindices, 
-	size_t numindices,
-	size_t indexStride)
+	UINT32 bytesofindices, 
+	UINT32 numindices,
+	UINT32 indexStride)
 {
 	mIPC << "createMesh";
 	
@@ -68,13 +68,11 @@ bool RenderCommand::createTexture(const std::string & name, int width, int heigh
 {
 	mIPC << "createTexture";
 
-	size_t size = D3DHelper::sizeof_DXGI_FORMAT(format) * width * height;
+	UINT32 size = D3DHelper::sizeof_DXGI_FORMAT(format) * width * height;
 	mIPC << name << width << height << format << size;
 	mIPC.send(data, size);
 
-	bool ret;
-	mIPC >> ret;
-	return ret;
+	return true;
 }
 
 bool RenderCommand::createModel(const std::string & name, const std::vector<std::string> meshs, const Matrix & transform)
@@ -86,9 +84,8 @@ bool RenderCommand::createModel(const std::string & name, const std::vector<std:
 		mIPC << m;
 
 	mIPC << transform;
-	bool ret;
-	mIPC >> ret;
-	return ret;
+
+	return true;
 }
 
 
@@ -97,7 +94,7 @@ void RenderCommand::record()
 	std::map<std::string, std::function<bool(void)>> processors;
 
 	processors["createMesh"] = [&ipc = mIPC]() {
-		size_t numBytesVertices, numBytesIndices, numVertices, numIndices, verticesStride, indicesStride;
+		UINT32 numBytesVertices, numBytesIndices, numVertices, numIndices, verticesStride, indicesStride;
 		std::vector<char> vertices, indices;
 		
 		std::string name;
@@ -108,24 +105,23 @@ void RenderCommand::record()
 		ipc.receive(vertices.data(), numBytesVertices);
 
 		ipc >> numBytesIndices >> numIndices >> indicesStride;
-		vertices.resize(numBytesIndices);
+		indices.resize(numBytesIndices);
 		ipc.receive(indices.data(), numBytesIndices);
 
-		std::string texname;
-		ipc >> texname;
 		
 		auto context = RenderContext::getSingleton();
-		auto texture = context->getObject<Texture>(texname);
 		auto mesh = context->createObject<Mesh>(name);
+
+		mesh->init(vertices,indices,verticesStride, indicesStride, numIndices);
 		return true;
 	};
 
 	processors["createTexture"] = [&ipc = mIPC]() {
 		std::vector<char> data;
-		size_t width, height, size;
+		UINT32 width, height, size;
 		DXGI_FORMAT fmt;
 		std::string name;
-		ipc >> name >> ipc >> width >> height >> fmt >> size;
+		ipc >> name >>  width >> height >> fmt >> size;
 		data.resize(size);
 		ipc.receive(data.data(), size);
 
@@ -141,9 +137,9 @@ void RenderCommand::record()
 		ipc >> name;
 		auto model = context->createObject<Model>(name);
 
-		size_t meshcount;
+		UINT32 meshcount;
 		ipc >> meshcount;
-		for (size_t i = 0; i < meshcount; ++i)
+		for (UINT32 i = 0; i < meshcount; ++i)
 		{
 			std::string meshname;
 			ipc >> meshname;
@@ -152,8 +148,59 @@ void RenderCommand::record()
 		}
 		
 		ipc >> model->transform;
+		std::string matname;
+		ipc >> matname;
+		//model->material = context->getObject<Material>(matname);
+		model->init(context->getObject<Material>(matname));
+		context->addToRenderList(model);
+		return true;
+	};
+
+	processors["createMaterial"] = [&ipc = mIPC]() {
+		auto context = RenderContext::getSingleton();
+		std::string name;
+		ipc >> name;
+		auto material = context->createObject<Material>(name);
+		std::string vs, ps;
+		ipc >> vs >> ps;
+
+		UINT32 count;
+		ipc >> count;
+		for (UINT32 i = 0; i < count; ++i)
+		{
+			std::string pn;
+			Vector4 p;
+			ipc >> pn >> p;
+			material->parameters[pn] = p;
+		}
+
+		ipc >> count;
+		for (UINT32 i = 0; i < count; ++i)
+		{
+			std::string semantic, texname;
+			ipc >> semantic >> texname;
+
+			material->textures[semantic] = context->getObject<Texture>(texname);
+		}
+
+		material->init(vs, ps);
+		return true;
+	};
+
+	processors["createCamera"] = [&ipc = mIPC]() {
+		auto context = RenderContext::getSingleton();
+		std::string name;
+		ipc >> name;
+		auto cam = context->createObject<Camera>(name);
+		ipc >> cam->view >> cam->proj >> cam->viewport;
 
 		return true;
+	};
+
+
+
+	processors["done"] = []() {
+		return false;
 	};
 
 	while (true)

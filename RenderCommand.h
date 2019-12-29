@@ -17,13 +17,13 @@ public:
 	bool createMesh(
 		const std::string& name, 
 		const void* vertices, 
-		size_t bytesofvertices, 
-		size_t numvertices,
-		size_t vertexStride,
+		UINT32 bytesofvertices, 
+		UINT32 numvertices,
+		UINT32 vertexStride,
 		const void* indices,
-		size_t bytesofindices,
-		size_t numindices,
-		size_t indexStride);
+		UINT32 bytesofindices,
+		UINT32 numindices,
+		UINT32 indexStride);
 
 	bool createTexture(
 		const std::string& name,

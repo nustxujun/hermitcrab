@@ -166,7 +166,7 @@ void Renderer::endFrame()
 
 	resetCommands();
 
-	updateTimeStamp();
+	//updateTimeStamp();
 
 	debugInfoCache = debugInfoCurrent;
 }

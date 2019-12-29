@@ -2,6 +2,7 @@
 
 #include "Common.h"
 #include "Renderer.h"
+#include <iostream>
 
 
 struct Object
@@ -14,18 +15,10 @@ class Camera : public Object
 {
 public:
 	using Ptr = std::shared_ptr<Camera>;
-public:
-	void setViewMatrix(const Matrix& v);
-	void setProjectionMatrix(const Matrix& v);
-	void setViewport(float left, float top, float width, float height);
-
-	const Matrix& getViewMatrix()const {return mView;}
-	const Matrix& getProjectionMatrix()const {return mProjection;}
-	const D3D12_VIEWPORT getViewport()const{return mViewport;}
-private:
-	Matrix mView;
-	Matrix mProjection;
-	D3D12_VIEWPORT mViewport;
+	
+	Matrix view;
+	Matrix proj;
+	D3D12_VIEWPORT viewport;
 };
 
 struct Texture: public Object
@@ -48,11 +41,64 @@ struct Mesh : public Object
 	Renderer::Buffer::Ptr indices;
 	size_t numIndices;
 
-	void init(const std::vector<char>& vs, const std::vector<char>& is, size_t vsstride, size_t isstride)
+	void init(const std::vector<char>& vs, const std::vector<char>& is, size_t vsstride, size_t isstride, size_t ni)
 	{
 		vertices = Renderer::getSingleton()->createBuffer(vs.size(),vsstride, D3D12_HEAP_TYPE_DEFAULT, vs.data(), vs.size());
 		indices = Renderer::getSingleton()->createBuffer(is.size(), isstride, D3D12_HEAP_TYPE_DEFAULT, is.data(), is.size());
+		numIndices = ni;
+	}
+};
 
+struct Material: public Object
+{
+	using Ptr = std::shared_ptr<Material>;
+
+	Renderer::PipelineState::Ref pipelineState;
+	std::map<std::string, Vector4> parameters;
+	std::map<std::string, Texture::Ptr > textures;
+
+	void apply(const Renderer::ConstantBuffer::Ptr& vscbuffer, const Renderer::ConstantBuffer::Ptr& pscbuffer)
+	{
+		if (vscbuffer)
+			pipelineState->setVSConstant("VSConstant", vscbuffer);
+		if (pscbuffer)
+		{
+			for (auto& p : parameters)
+				pscbuffer->setVariable(p.first, &p.second);
+
+			pipelineState->setPSConstant("PSConstant", pscbuffer);
+		}
+		if (textures.find("albedo") != textures.end())
+			pipelineState->setPSResource("albedo", textures["albedo"]->texture->getHandle());
+	}
+
+	void init(const std::string & vsname, const std::string& psname)
+	{
+		auto renderer = Renderer::getSingleton();
+
+		auto vs = renderer->compileShader(M2U(vsname), L"vs", L"vs_5_0");
+		auto ps = renderer->compileShader(M2U(psname), L"ps", L"ps_5_0");
+		std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
+		ps->registerStaticSampler({
+				D3D12_FILTER_MIN_LINEAR_MAG_MIP_POINT,
+				D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+				D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+				D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+				0,0,
+				D3D12_COMPARISON_FUNC_NEVER,
+				D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+				0,
+				D3D12_FLOAT32_MAX,
+				0,0,
+				D3D12_SHADER_VISIBILITY_PIXEL
+			});
+		Renderer::RenderState rs = Renderer::RenderState::GeneralSolid;
+		rs.setInputLayout({
+			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+			});
+
+		pipelineState = renderer->createPipelineState(shaders, rs);
 	}
 };
 
@@ -62,6 +108,17 @@ struct Model : public Object
 
 	std::vector<Mesh::Ptr> meshs;
 	Matrix transform;
+	Material::Ptr material;
+	Renderer::ConstantBuffer::Ptr vcbuffer;
+	Renderer::ConstantBuffer::Ptr pcbuffer;
+
+	void init(Material::Ptr m)
+	{
+		material = m;
+		vcbuffer = m->pipelineState->createConstantBuffer(Renderer::Shader::ST_VERTEX,"VSConstant");
+		pcbuffer = m->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL, "PSConstant");
+
+	}
 };
 
 class RenderContext
@@ -74,6 +131,11 @@ public:
 	template<class T>
 	std::shared_ptr<T> createObject(const std::string& name)
 	{
+		auto ret = getObject<T>(name);
+		if (ret)
+			return ret;
+
+		std::cout << "create object: " << name << std::endl;
 		auto o = std::shared_ptr<T>(new T());
 		o->name = name;
 		mObjects[name] = o;
@@ -85,7 +147,11 @@ public:
 	{
 		auto ret = mObjects.find(name);
 		if (ret == mObjects.end())
+		{
+			//Common::Assert(false, "cannot find object: " + name);
+			//std::cout << "cannot find " << name << std::endl;
 			return {};
+		}
 		else
 			return std::static_pointer_cast<T>(ret->second);
 
@@ -98,7 +164,7 @@ public:
 	{
 		instance = this;
 
-		mCamera = Camera::Ptr(new Camera());
+		mCamera = createObject<Camera>("main");
 	}
 
 	virtual ~RenderContext()
@@ -110,7 +176,10 @@ public:
 	{
 		return instance;
 	}
-private:
+
+	void addToRenderList(Model::Ptr model);
+protected:
 	Camera::Ptr mCamera;
 	std::map<std::string, Object::Ptr> mObjects;
+	std::vector<Model::Ptr> mRenderList;
 };

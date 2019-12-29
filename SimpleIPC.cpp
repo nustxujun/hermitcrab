@@ -17,8 +17,8 @@ void SimpleIPC::listen(const std::string& name)
 
 void SimpleIPC::connect(const std::string& name)
 {
-	mSender.create(name + "_receive");
-	mReceiver.create(name + "_send");
+	mSender.open(name + "_receive");
+	mReceiver.open(name + "_send");
 
 	mReceiveWaiter = CreateSemaphoreA(NULL, 0, 1, (name + "_send_waiter").c_str());
 	mSendWaiter = CreateSemaphoreA(NULL, 0, 1, (name + "_receive_waiter").c_str());

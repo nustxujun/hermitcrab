@@ -7,6 +7,9 @@
 #include "RenderContext.h"
 #include "ImGuiOverlay.h"
 #include <sstream>
+#include "SimpleIPC.h"
+#include <thread>
+#include "RenderCommand.h"
 
 #if defined(NO_UE4) || defined(_CONSOLE)
 
@@ -20,6 +23,7 @@ struct End
 
 int main()
 {
+
 	{
 
 		class Frame : public Framework, public RenderContext
@@ -31,31 +35,14 @@ int main()
 			DefaultPipeline pipeline;
 			void init()
 			{
-				auto renderer = Renderer::getSingleton();
-				auto vs = renderer->compileShader(L"shaders/shaders.hlsl", L"VSMain", L"vs_5_0");
-				auto ps = renderer->compileShader(L"shaders/shaders.hlsl", L"PSMain", L"ps_5_0");
-				std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
+				RenderCommand::init(false);
+				RenderCommand::getSingleton()->record();
 
+				char start;
+				std::cin >> start;
+				auto cam = getObject<Camera>("main");
 
-				Renderer::RenderState rs = Renderer::RenderState::Default;
-				rs.setInputLayout({
-					{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-					{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
-					});
-
-				pso = renderer->createPipelineState(shaders, rs);
-
-				std::pair<Vector3, Vector4> triangleVertices[] =
-				{
-					{ { 0.0f, 0.25f , 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
-					{ { 0.25f, -0.25f , 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
-					{ { -0.25f, -0.25f , 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
-				};
-
-				vertices = renderer->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
-
-				//tex = renderer->createTexture(L"test.jpg");
-				//tex = renderer->createTexture(L"test.png");
+				Framework::resize(cam->viewport.Width, cam->viewport.Height);
 
 			}
 
@@ -93,22 +80,27 @@ int main()
 				auto bb = renderer->getBackBuffer();
 				auto cmdlist = renderer->getCommandList();
 
-				//pso->setPSResource("g_texture", tex->getHandle());
-				cmdlist->setPipelineState(pso);
 
-				//cmdlist->setTexture(0, tex);
+				cmdlist->setViewport(cam->viewport);
 
-
-				auto desc = bb->getTexture()->getDesc();
-				cmdlist->setViewport({
-					0.0f, 0.0f,(float) desc.Width,(float)desc.Height, 0.0f, 1.0f
-					});
-
-				cmdlist->setScissorRect({ 0,0, (LONG)desc.Width, (LONG)desc.Height });
+				cmdlist->setScissorRect({ 0,0, (LONG)cam->viewport.Width, (LONG)cam->viewport.Height });
 
 				cmdlist->setPrimitiveType();
-				cmdlist->setVertexBuffer(vertices);
-				cmdlist->drawInstanced(3);
+
+				for (auto& model : mRenderList)
+				{
+					cmdlist->setPipelineState(model->material->pipelineState);
+					model->vcbuffer->setVariable("view", &cam->view);
+					model->vcbuffer->setVariable("proj", &cam->proj);
+					model->vcbuffer->setVariable("world", &model->transform);
+					model->material->apply(model->vcbuffer, model->pcbuffer);
+					for (auto& mesh : model->meshs)
+					{
+						cmdlist->setVertexBuffer(mesh->vertices);
+						cmdlist->setIndexBuffer(mesh->indices);
+						cmdlist->drawIndexedInstanced(mesh->numIndices, 1);
+					}
+				}
 			}
 		} frame;
 
