@@ -34,7 +34,13 @@ RenderCommand::~RenderCommand()
 	mIPC.close();
 }
 
-bool RenderCommand::createMesh(
+void RenderCommand::done()
+{
+	mIPC << "done";
+}
+
+
+void RenderCommand::createMesh(
 	const std::string & name, 
 	const void * vertices, 
 	UINT32 bytesofvertices, 
@@ -59,33 +65,48 @@ bool RenderCommand::createMesh(
 	mIPC << indexStride;
 	mIPC.send(indices, bytesofindices);
 
-	bool ret;
-	mIPC >> ret;
-	return ret;
+
 }
 
-bool RenderCommand::createTexture(const std::string & name, int width, int height, DXGI_FORMAT format, const void * data)
+void RenderCommand::createTexture(const std::string & name, int width, int height, DXGI_FORMAT format, const void * data)
 {
 	mIPC << "createTexture";
 
 	UINT32 size = D3DHelper::sizeof_DXGI_FORMAT(format) * width * height;
 	mIPC << name << width << height << format << size;
 	mIPC.send(data, size);
-
-	return true;
 }
 
-bool RenderCommand::createModel(const std::string & name, const std::vector<std::string> meshs, const Matrix & transform)
+void RenderCommand::createModel(const std::string & name, const std::vector<std::string> meshs, const Matrix & transform, const std::string& materialName)
 {
 	mIPC << "createModel";
-	auto size = meshs.size();
+	mIPC << name;
+	UINT32 size = meshs.size();
 	mIPC << size;
 	for (auto& m : meshs)
 		mIPC << m;
 
-	mIPC << transform;
+	mIPC << transform << materialName;
 
-	return true;
+}
+
+void RenderCommand::createCamera(const std::string & name, const Matrix & view, const Matrix & proj, const D3D12_VIEWPORT & vp)
+{
+	mIPC << "createCamera" << name<< view << proj << vp;
+
+}
+
+void RenderCommand::createMaterial(const std::string & name, const std::string & vs, const std::string & ps, const std::map<std::string, Vector4>& consts, const std::map<std::string, std::string>& textures)
+{
+	mIPC << "createMaterial" << name << vs << ps;
+	mIPC << (UINT32)consts.size();
+	for (auto& c: consts)
+		mIPC << c.first << c.second;
+
+	mIPC << (UINT32)textures.size();
+	for (auto& t: textures)
+		mIPC << t.first << t.second;
+
 }
 
 

@@ -83,7 +83,6 @@ void SimpleIPC::Channal::unlock()
 
 void SimpleIPC::Channal::create(const std::string& name)
 {
-	mMutex = ::CreateMutexA(NULL,FALSE,(name + "_mutex").c_str() );
 	
 	mHandle = ::CreateFileMappingA(
 		INVALID_HANDLE_VALUE,
@@ -94,21 +93,27 @@ void SimpleIPC::Channal::create(const std::string& name)
 		(name + "_sm").c_str());
 
 
+	if (::GetLastError() == 0x000000b7)
+	{
+		mHandle = ::OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, (name + "_sm").c_str());
+	}
 	Common::checkResult(::GetLastError());
 	Common::Assert(mHandle != NULL, "faild to create file mapping");
 	map();
 
+	mMutex = ::CreateMutexA(NULL, FALSE, (name + "_mutex").c_str());
 
 }
 
 void SimpleIPC::Channal::open(const std::string& name)
 {
-	mMutex = ::CreateMutexA(NULL, FALSE, (name + "_mutex").c_str());
-
 	mHandle = ::OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, (name + "_sm").c_str());
 	Common::Assert(mHandle != NULL, "faild to create file mapping");
 
 	map();
+
+	mMutex = ::CreateMutexA(NULL, FALSE, (name + "_mutex").c_str());
+
 }
 
 void SimpleIPC::Channal::close()

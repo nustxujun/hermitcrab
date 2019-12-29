@@ -14,7 +14,7 @@ public:
 
 	void record();
 
-	bool createMesh(
+	void createMesh(
 		const std::string& name, 
 		const void* vertices, 
 		UINT32 bytesofvertices, 
@@ -25,18 +25,35 @@ public:
 		UINT32 numindices,
 		UINT32 indexStride);
 
-	bool createTexture(
+	void createTexture(
 		const std::string& name,
 		int width, int height, 
 		DXGI_FORMAT format,
 		const void*data
 		);
 
-	bool createModel(
+	void createModel(
 		const std::string& name,
 		const std::vector<std::string> meshs,
-		const Matrix& transform
+		const Matrix& transform,
+		const std::string& materialName
 	);
+
+	void createCamera(
+		const std::string& name,
+		const Matrix& view,
+		const Matrix& proj,
+		const D3D12_VIEWPORT& vp);
+
+	void createMaterial(
+		const std::string& name,
+		const std::string& vs,
+		const std::string& ps,
+		const std::map<std::string, Vector4>& consts,
+		const std::map<std::string, std::string>& textures);
+
+
+	void done();
 private:
 	static RenderCommand* instance;
 

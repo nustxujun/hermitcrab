@@ -43,8 +43,7 @@ public:
 		return *this;
 	}
 
-	template<>
-	SimpleIPC& operator << (char*&& str)
+	SimpleIPC& operator << (const char* str)
 	{
 		unsigned int len = (unsigned int)::strlen(str);
 		send(&len, sizeof(len));
@@ -52,8 +51,7 @@ public:
 		return *this;
 	}
 
-	template<>
-	SimpleIPC& operator << (std::string&& str)
+	SimpleIPC& operator << (const std::string& str)
 	{
 		unsigned int len = (unsigned int)str.size();
 		send(&len, sizeof(len));
