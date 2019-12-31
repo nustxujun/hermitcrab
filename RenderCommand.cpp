@@ -230,7 +230,7 @@ void RenderCommand::record()
 		auto light = context->createObject<Light>(name);
 		ipc >> light->type >> light->color >> light->transform;
 		return true;
-	}
+	};
 
 
 	processors["done"] = []() {
