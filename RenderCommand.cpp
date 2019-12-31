@@ -109,6 +109,11 @@ void RenderCommand::createMaterial(const std::string & name, const std::string &
 
 }
 
+void RenderCommand::createLight(const std::string& name, UINT32 type, const Color& color, const Matrix& transform)
+{
+	mIPC << "createLight" << name << type << color << transform;
+}
+
 
 void RenderCommand::record()
 {
@@ -218,6 +223,14 @@ void RenderCommand::record()
 		return true;
 	};
 
+	processors["createLight"] = [&ipc = mIPC]() {
+		auto context = RenderContext::getSingleton();
+		std::string name;
+		ipc >> name;
+		auto light = context->createObject<Light>(name);
+		ipc >> light->type >> light->color >> light->transform;
+		return true;
+	}
 
 
 	processors["done"] = []() {

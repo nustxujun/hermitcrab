@@ -52,6 +52,11 @@ public:
 		const std::map<std::string, Vector4>& consts,
 		const std::map<std::string, std::string>& textures);
 
+	void createLight(
+		const std::string& name, 
+		UINT32 type,
+		const Color& color,
+		const Matrix& transform);
 
 	void done();
 private:

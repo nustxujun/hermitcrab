@@ -121,6 +121,22 @@ struct Model : public Object
 	}
 };
 
+struct Light : public Object
+{
+	using Ptr = std::shared_ptr<Light>;
+	enum Type
+	{
+		LT_DIR,
+		LT_POINT,
+		LT_SPOT,
+	};
+
+	UINT32 type;
+	Color color;
+	Matrix transform;
+
+};
+
 class RenderContext
 {
 	static RenderContext* instance;
