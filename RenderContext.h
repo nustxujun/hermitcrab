@@ -43,8 +43,8 @@ struct Mesh : public Object
 
 	void init(const std::vector<char>& vs, const std::vector<char>& is, size_t vsstride, size_t isstride, size_t ni)
 	{
-		vertices = Renderer::getSingleton()->createBuffer(vs.size(),vsstride, D3D12_HEAP_TYPE_DEFAULT, vs.data(), vs.size());
-		indices = Renderer::getSingleton()->createBuffer(is.size(), isstride, D3D12_HEAP_TYPE_DEFAULT, is.data(), is.size());
+		vertices = Renderer::getSingleton()->createBuffer((UINT)vs.size(), (UINT)vsstride, D3D12_HEAP_TYPE_DEFAULT, vs.data(), (UINT)vs.size());
+		indices = Renderer::getSingleton()->createBuffer((UINT)is.size(), (UINT)isstride, D3D12_HEAP_TYPE_DEFAULT, is.data(), (UINT)is.size());
 		numIndices = ni;
 	}
 };
@@ -76,8 +76,8 @@ struct Material: public Object
 	{
 		auto renderer = Renderer::getSingleton();
 
-		auto vs = renderer->compileShader(M2U(vsname), L"vs", L"vs_5_0");
-		auto ps = renderer->compileShader(M2U(psname), L"ps", L"ps_5_0");
+		auto vs = renderer->compileShader(M2U(vsname), L"vs", SM_VS);
+		auto ps = renderer->compileShader(M2U(psname), L"ps", SM_PS);
 		std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
 		ps->registerStaticSampler({
 				D3D12_FILTER_MIN_LINEAR_MAG_MIP_POINT,

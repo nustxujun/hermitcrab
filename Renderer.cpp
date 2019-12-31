@@ -76,7 +76,7 @@ void Renderer::initialize(HWND window)
 	initDescriptorHeap();
 	initProfile();
 	initResources();
-
+	resize(1,1);
 	resetCommands();
 	
 }
@@ -1692,11 +1692,13 @@ void Renderer::Shader::createRootParameters()
 	ShaderDesc shaderdesc;
 	mReflection->GetDesc(&shaderdesc);
 	mRanges.resize(shaderdesc.BoundResources);
-
+	
 	for (UINT i = 0; i < shaderdesc.BoundResources; ++i)
 	{
 		ShaderInputBindDesc desc;
 		mReflection->GetResourceBindingDesc(i,&desc);
+
+
 		if (desc.Type == D3D_SIT_SAMPLER)
 			continue;
 
@@ -1715,11 +1717,11 @@ void Renderer::Shader::createRootParameters()
 		range.NumDescriptors = desc.BindCount;
 		range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-#ifdef D3D12ON7
-		range.RegisterSpace = 0;
-#else
-		range.RegisterSpace = desc.Space;
+		UINT space = 0;
+#ifndef D3D12ON7
+		space = desc.Space;
 #endif
+		range.RegisterSpace = space;
 
 		switch (range.RangeType)
 		{
@@ -1753,6 +1755,9 @@ void Renderer::Shader::createRootParameters()
 			break;
 		}
 	}
+
+
+
 
 }
 
@@ -1861,7 +1866,7 @@ void Renderer::PipelineState::setConstant(Shader::ShaderType type, const std::st
 	auto ret = cbuffers.find(name);
 	ASSERT(ret != cbuffers.end(), "cannot find specify cbuffer at setConstant");
 
-	mCBuffers[type][ret->second.slot] = c->getHandle();
+	mCBuffers[type][ret->second.slot + mSemanticsMap[type].offset] = c->getHandle();
 	//for (auto& cb : cbuffers)
 	//{
 	//	if (cb.first == name)

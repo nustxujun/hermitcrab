@@ -38,8 +38,6 @@ int main()
 				RenderCommand::init(false);
 				RenderCommand::getSingleton()->record();
 
-				char start;
-				std::cin >> start;
 				auto cam = getObject<Camera>("main");
 
 				Framework::resize(cam->viewport.Width, cam->viewport.Height);
@@ -98,7 +96,7 @@ int main()
 					{
 						cmdlist->setVertexBuffer(mesh->vertices);
 						cmdlist->setIndexBuffer(mesh->indices);
-						cmdlist->drawIndexedInstanced(mesh->numIndices, 1);
+						cmdlist->drawIndexedInstanced(mesh->numIndices, 1U);
 					}
 				}
 			}

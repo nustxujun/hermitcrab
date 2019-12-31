@@ -43,8 +43,8 @@ void ImGuiPass::initRendering()
 {
 	auto renderer = Renderer::getSingleton();
 
-	auto vs = renderer->compileShader(L"shaders/imgui.hlsl", L"vs", L"vs_5_0");
-	auto ps = renderer->compileShader(L"shaders/imgui.hlsl", L"ps", L"ps_5_0");
+	auto vs = renderer->compileShader(L"shaders/imgui.hlsl", L"vs", SM_VS);
+	auto ps = renderer->compileShader(L"shaders/imgui.hlsl", L"ps", SM_PS);
 	std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
 	ps->registerStaticSampler({
 		D3D12_FILTER_MIN_MAG_MIP_POINT,
