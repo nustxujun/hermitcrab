@@ -4,7 +4,8 @@
 
 class SimpleIPC
 {
-	static const auto max_size = 1024;
+	static const size_t max_size = 1024 ;
+	static const size_t max_use_size = max_size - sizeof(unsigned int);
 public:
 	class Channal
 	{

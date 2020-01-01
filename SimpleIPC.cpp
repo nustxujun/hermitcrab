@@ -10,9 +10,9 @@ void SimpleIPC::listen(const std::string& name)
 	mSender.create(name + "_send");
 	mReceiver.create(name + "_receive");
 
-	mSendWaiter = CreateSemaphoreA(NULL, 0,1, (name + "_send_waiter").c_str());
-	mReceiveWaiter = CreateSemaphoreA(NULL, 0,1, (name + "_receive_waiter").c_str());
-	::ReleaseSemaphore(mSendWaiter,1,0);
+	mSendWaiter = CreateSemaphoreA(NULL, 0, 1, (name + "_send_waiter").c_str());
+	mReceiveWaiter = CreateSemaphoreA(NULL, 0, 1, (name + "_receive_waiter").c_str());
+	::ReleaseSemaphore(mSendWaiter, 1, 0);
 }
 
 void SimpleIPC::connect(const std::string& name)
@@ -43,12 +43,12 @@ void SimpleIPC::send(const void* buffer, size_t size)
 		size -= writesize;
 		beg += writesize;
 	}
-	
+
 }
 
 void SimpleIPC::receive(void* buffer, size_t size)
 {
-	char* beg = (char*) buffer;
+	char* beg = (char*)buffer;
 	while (size > 0)
 	{
 		//::WaitForSingleObject(mReceiveWaiter, -1);
@@ -64,7 +64,7 @@ void SimpleIPC::receive(void* buffer, size_t size)
 void SimpleIPC::Channal::map()
 {
 	Common::Assert(mHandle != NULL, "ipc need init");
-	mMemory = (char*)::MapViewOfFile(mHandle, FILE_MAP_ALL_ACCESS,0,0,0);
+	mMemory = (char*)::MapViewOfFile(mHandle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
 	Common::Assert(mMemory != NULL, "fail to get shared memory");
 	mCount = (unsigned int*)mMemory;
 	mData = mMemory + sizeof(unsigned int);
@@ -83,10 +83,10 @@ void SimpleIPC::Channal::unlock()
 
 void SimpleIPC::Channal::create(const std::string& name)
 {
-	
+
 	mHandle = ::CreateFileMappingA(
 		INVALID_HANDLE_VALUE,
-		NULL, 
+		NULL,
 		PAGE_READWRITE,
 		0,
 		max_size,
@@ -138,16 +138,16 @@ void SimpleIPC::Channal::close()
 
 size_t SimpleIPC::Channal::write(const void* data, size_t size)
 {
-	size_t use =size_t( *mCount);
-	if (use == max_size)
+	size_t use = size_t(*mCount);
+	if (use == max_use_size)
 		return 0;
 
 	lock();
-	size = std::min(size, max_size - use);
+	size = std::min(size, max_use_size - use);
 	use = size_t(*mCount);
 
 	memcpy(mData + use, data, size);
-	*mCount +=(unsigned int)size;
+	*mCount += size;
 	unlock();
 	return size;
 }
@@ -162,9 +162,9 @@ size_t SimpleIPC::Channal::read(void* data, size_t size)
 	use = *mCount;
 	size = std::min(size, use);
 
-	memcpy(data, mData,  size);
+	memcpy(data, mData, size);
 
-	auto left = use - (unsigned int)size;
+	auto left = use - size;
 	*mCount = left;
 	memmove(mData, mData + size, left);
 
