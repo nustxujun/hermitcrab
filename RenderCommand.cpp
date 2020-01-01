@@ -5,21 +5,7 @@
 
 RenderCommand* RenderCommand::instance = 0;
 
-void RenderCommand::init(bool host )
-{
-	instance = new RenderCommand(host);
-}
 
-void RenderCommand::uninit()
-{
-	delete instance ;
-	instance = nullptr;
-}
-
-RenderCommand * RenderCommand::getSingleton()
-{
-	return instance;
-}
 
 RenderCommand::RenderCommand(bool host)
 {

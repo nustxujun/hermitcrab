@@ -5,10 +5,6 @@
 class RenderCommand
 {
 public:
-	static void init(bool host = false);
-	static void uninit();
-	static RenderCommand* getSingleton();
-
 	RenderCommand(bool host);
 	~RenderCommand();
 
