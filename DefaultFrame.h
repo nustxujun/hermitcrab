@@ -5,17 +5,25 @@
 #include "Pipeline.h"
 #include "RenderContext.h"
 #include "RenderCommand.h"
+#include "Renderer.h"
 
+#include <array>
 
 class DefaultFrame :public RenderContext, public Framework
 {
 	RenderCommand rendercmd = false;
 	std::shared_ptr<DefaultPipeline> pipeline;
-public:
-	DefaultFrame()
-	{
+	Renderer::ConstantBuffer::Ptr lightsConsts;
 
-	}
+	struct LightInfo
+	{
+		Vector4 pos; // pos and range
+		Vector4 dir;
+		Vector4 color;
+	};
+
+	std::vector<LightInfo> lights;
+public:
 	void init()
 	{
 		pipeline = decltype(pipeline)(new DefaultPipeline);
@@ -25,11 +33,23 @@ public:
 		auto cam = getObject<Camera>("main");
 
 		Framework::resize(cam->viewport.Width, cam->viewport.Height);
-
+		lightsConsts = Renderer::getSingleton()->createConstantBuffer(sizeof(LightInfo) * 4);
 	}
 
 	void renderScreen()
 	{
+	}
+
+	void updateLights()
+	{
+		struct {
+			LightInfo lights[4];
+			int numlights;
+		}infos;
+
+		memcpy(infos.lights, lights.data(), sizeof(LightInfo) * lights.size());
+
+		lightsConsts->blit(&infos,0, sizeof(infos));
 	}
 
 	void updateImpl()
@@ -52,6 +72,8 @@ public:
 			ss << history << "(" << 1000.0f / history << "ms)";
 			::SetWindowTextA(Renderer::getSingleton()->getWindow(), ss.str().c_str());
 		}
+
+		updateLights();
 		pipeline->update();
 
 	}
@@ -76,6 +98,7 @@ public:
 			model->vcbuffer->setVariable("proj", &cam->proj);
 			model->vcbuffer->setVariable("world", &model->transform);
 			model->material->apply(model->vcbuffer, model->pcbuffer);
+			model->material->pipelineState->setPSConstant("Lights", lightsConsts);
 			for (auto& mesh : model->meshs)
 			{
 				cmdlist->setVertexBuffer(mesh->vertices);
