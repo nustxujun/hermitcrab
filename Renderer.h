@@ -3,8 +3,8 @@
 
 
 //#if WINVER  < _WIN32_WINNT_WIN10
-//	#define D3D12ON7
-//	#include "D3D12Downlevel.h"
+	#define D3D12ON7
+	#include "D3D12Downlevel.h"
 //#endif
 
 #if defined(D3D12ON7)
@@ -591,7 +591,7 @@ public:
 		void setRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void set32BitConstants(UINT slot, UINT num, const void* data, UINT offset);
 		void drawInstanced(UINT vertexCount, UINT instanceCount = 1, UINT startVertex = 0, UINT startInstance = 0);
-		void drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount, UINT startIndex = 0, INT startVertex = 0, UINT startInstance = 0);
+		void drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount = 1U, UINT startIndex = 0, INT startVertex = 0, UINT startInstance = 0);
 		void endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx);
 	private:
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
