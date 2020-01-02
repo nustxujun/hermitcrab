@@ -13,16 +13,9 @@ class DefaultFrame :public RenderContext, public Framework
 {
 	RenderCommand rendercmd = false;
 	std::shared_ptr<DefaultPipeline> pipeline;
-	Renderer::ConstantBuffer::Ptr lightsConsts;
+	Renderer::ConstantBuffer::Ptr commonConsts;
 
-	struct LightInfo
-	{
-		Vector4 pos; // pos and range
-		Vector4 dir;
-		Vector4 color;
-	};
 
-	std::vector<LightInfo> lights;
 public:
 	void init()
 	{
@@ -33,23 +26,50 @@ public:
 		auto cam = getObject<Camera>("main");
 
 		Framework::resize(cam->viewport.Width, cam->viewport.Height);
-		lightsConsts = Renderer::getSingleton()->createConstantBuffer(sizeof(LightInfo) * 4);
+
+		commonConsts = mRenderList[0]->material->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL,"CommonConstants");
 	}
 
 	void renderScreen()
 	{
 	}
 
-	void updateLights()
+	void updateConsts()
 	{
 		struct {
-			LightInfo lights[4];
+			Vector4 campos;
+			Vector4 camdir;
+
+			struct 
+			{
+				Vector4 pos; // pos and range
+				Vector4 dir;
+				Vector4 color;
+			} lights[4];
 			int numlights;
-		}infos;
 
-		memcpy(infos.lights, lights.data(), sizeof(LightInfo) * lights.size());
+			Vector3 sundir;
+			Vector4 suncolor;
+		}infos = {};
 
-		lightsConsts->blit(&infos,0, sizeof(infos));
+		for (auto& l : mLights)
+		{
+			switch (l->type)
+			{
+			case Light::LT_DIR:{infos.sundir = l->dir; infos.suncolor = l->color;} break;
+			case Light::LT_POINT:
+			case Light::LT_SPOT:
+			default:
+				break;
+			}
+		}
+
+		auto cam = getObject<Camera>("main");
+		infos.camdir = { cam->dir[0],cam->dir[1],cam->dir[2],0 };
+		infos.campos = { cam->pos[0],cam->pos[1],cam->pos[2],0 };
+
+
+		commonConsts->blit(&infos,0, sizeof(infos));
 	}
 
 	void updateImpl()
@@ -73,7 +93,7 @@ public:
 			::SetWindowTextA(Renderer::getSingleton()->getWindow(), ss.str().c_str());
 		}
 
-		updateLights();
+		updateConsts();
 		pipeline->update();
 
 	}
@@ -98,7 +118,7 @@ public:
 			model->vcbuffer->setVariable("proj", &cam->proj);
 			model->vcbuffer->setVariable("world", &model->transform);
 			model->material->apply(model->vcbuffer, model->pcbuffer);
-			model->material->pipelineState->setPSConstant("LightConstants", lightsConsts);
+			model->material->pipelineState->setPSConstant("CommonConstants", commonConsts);
 			for (auto& mesh : model->meshs)
 			{
 				cmdlist->setVertexBuffer(mesh->vertices);

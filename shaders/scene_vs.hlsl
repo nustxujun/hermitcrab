@@ -1,5 +1,5 @@
 #include "common.hlsl"
-cbuffer VSConstant: register(b0)
+cbuffer VSConstant
 {
 	matrix world;
 	matrix view; 
@@ -21,6 +21,8 @@ PSInput vs(VSInput input)
 	PSInput result;
 
 	float4 worldpos = mul(float4(input.position,1), world);
+	result.worldPos = worldpos;
+
 	float4 viewpos = mul(worldpos,view );
 	result.position = mul(viewpos, proj);
 	result.uv = input.uv;
@@ -29,7 +31,6 @@ PSInput vs(VSInput input)
 	result.normal = mul(float4(input.normal, 0), world);
 	result.tangent = mul(float4(input.tangent, 0), world);
 	result.binormal = mul(float4(input.binormal, 0), world);
-
 	return result;
 }
 

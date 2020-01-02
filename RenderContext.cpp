@@ -14,8 +14,3 @@ Camera::Ptr RenderContext::getMainCamera() const
 	return mCamera;
 }
 
-void RenderContext::addToRenderList(Model::Ptr model)
-{
-	mRenderList.push_back(model);
-}
-

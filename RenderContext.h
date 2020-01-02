@@ -16,9 +16,13 @@ class Camera : public Object
 public:
 	using Ptr = std::shared_ptr<Camera>;
 	
+	Vector3 dir;
+	Vector3 pos;
 	Matrix view;
 	Matrix proj;
 	D3D12_VIEWPORT viewport;
+
+
 };
 
 struct Texture: public Object
@@ -68,8 +72,12 @@ struct Material: public Object
 
 			pipelineState->setPSConstant("PSConstant", pscbuffer);
 		}
-		if (textures.find("albedo") != textures.end())
-			pipelineState->setPSResource("albedo", textures["albedo"]->texture->getHandle());
+
+		for (auto& t : textures)
+		{
+			pipelineState->setPSResource(t.first, t.second->texture->getHandle());
+
+		}
 	}
 
 	void init(const std::string & vsname, const std::string& psname)
@@ -136,8 +144,7 @@ struct Light : public Object
 
 	UINT32 type;
 	Color color;
-	Matrix transform;
-
+	Vector3 dir;
 };
 
 class RenderContext
@@ -158,6 +165,7 @@ public:
 		auto o = std::shared_ptr<T>(new T());
 		o->name = name;
 		mObjects[name] = o;
+		process(o);
 		return o;
 	}
 
@@ -196,9 +204,25 @@ public:
 		return instance;
 	}
 
-	void addToRenderList(Model::Ptr model);
+	template<class T>
+	void process(const std::shared_ptr<T>& o)
+	{
+	}
+
+	template<>
+	void process(const Light::Ptr& l)
+	{
+		mLights.push_back(l);
+	}
+
+	template<>
+	void process(const  Model::Ptr& model)
+	{
+		mRenderList.push_back(model);
+	}
 protected:
 	Camera::Ptr mCamera;
 	std::map<std::string, Object::Ptr> mObjects;
+	std::vector<Light::Ptr> mLights;
 	std::vector<Model::Ptr> mRenderList;
 };

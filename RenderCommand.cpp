@@ -76,9 +76,9 @@ void RenderCommand::createModel(const std::string & name, const std::vector<std:
 
 }
 
-void RenderCommand::createCamera(const std::string & name, const Matrix & view, const Matrix & proj, const D3D12_VIEWPORT & vp)
+void RenderCommand::createCamera(const std::string & name, const Vector3& pos, const Vector3& dir, const Matrix & view, const Matrix & proj, const D3D12_VIEWPORT & vp)
 {
-	mIPC << "createCamera" << name<< view << proj << vp;
+	mIPC << "createCamera" <<  name<< pos << dir << view << proj << vp;
 
 }
 
@@ -95,9 +95,9 @@ void RenderCommand::createMaterial(const std::string & name, const std::string &
 
 }
 
-void RenderCommand::createLight(const std::string& name, UINT32 type, const Color& color, const Matrix& transform)
+void RenderCommand::createLight(const std::string& name, UINT32 type, const Color& color, const Vector3& dir)
 {
-	mIPC << "createLight" << name << type << color << transform;
+	mIPC << "createLight" << name << type << color << dir;
 }
 
 
@@ -164,7 +164,6 @@ void RenderCommand::record()
 		ipc >> matname;
 		//model->material = context->getObject<Material>(matname);
 		model->init(context->getObject<Material>(matname));
-		context->addToRenderList(model);
 		return true;
 	};
 
@@ -204,8 +203,7 @@ void RenderCommand::record()
 		std::string name;
 		ipc >> name;
 		auto cam = context->createObject<Camera>(name);
-		ipc >> cam->view >> cam->proj >> cam->viewport;
-
+		ipc >>cam->pos >> cam->dir >> cam->view >> cam->proj >> cam->viewport;
 		return true;
 	};
 
@@ -214,7 +212,7 @@ void RenderCommand::record()
 		std::string name;
 		ipc >> name;
 		auto light = context->createObject<Light>(name);
-		ipc >> light->type >> light->color >> light->transform;
+		ipc >> light->type >> light->color >> light->dir;
 		return true;
 	};
 

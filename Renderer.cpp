@@ -2092,7 +2092,8 @@ Renderer::ConstantBuffer::ConstantBuffer(size_t size, ConstantBufferAllocator::R
 
 Renderer::ConstantBuffer::~ConstantBuffer()
 {
-	mAllocator->dealloc(mOffset, mSize);
+	if (mAllocator)
+		mAllocator->dealloc(mOffset, mSize);
 }
 
 void Renderer::ConstantBuffer::setReflection(const std::map<std::string, Shader::Variable>& rft)

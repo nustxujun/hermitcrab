@@ -5,6 +5,8 @@ struct PSInput
 	float4 normal: NORMAL0;
 	float4 tangent: NORMAL1;
 	float4 binormal: NORMAL2;
+
+	float4 worldPos: COLOR0;
 };
 
 struct LightInfo
@@ -14,10 +16,19 @@ struct LightInfo
 	float4 color;
 };
 
-cbuffer LightConstants
+cbuffer CommonConstants
 {
+	// camera
+	float4 campos;
+	float4 camdir;
+
+	// lights
 	LightInfo lights[4];
 	int numlights;
+
+	// directional light
+	float3 sundir;
+	float4 suncolor;
 };
 
 half4 calNormal(

@@ -37,6 +37,8 @@ public:
 
 	void createCamera(
 		const std::string& name,
+		const Vector3& pos,
+		const Vector3& dir,
 		const Matrix& view,
 		const Matrix& proj,
 		const D3D12_VIEWPORT& vp);
@@ -52,7 +54,7 @@ public:
 		const std::string& name, 
 		UINT32 type,
 		const Color& color,
-		const Matrix& transform);
+		const Vector3& dir);
 
 	void done();
 private:
