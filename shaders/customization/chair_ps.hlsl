@@ -20,7 +20,8 @@ half4 ps(PSInput input) : SV_TARGET
 
 	half4 normal = calNormal(normalMap, linearSampler, input.uv,input.normal, input.tangent, input.binormal);
 	float roughness = lerp(lerp(0.5, 0.2, params.b), 0.4, params.g);
-	half3 color = directBRDF(roughness, params.g, F0_DEFAULT, albedo, normal,-sundir, campos - input.worldPos);
 
-	return half4(color, 1);
+	half3 color = directBRDF(roughness, params.g, F0_DEFAULT, albedo, normal,-sundir, campos - input.worldPos) ;
+
+	return half4(color, 1)* suncolor;
 }

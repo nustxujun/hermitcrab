@@ -68,8 +68,9 @@ public:
 		infos.camdir = { cam->dir[0],cam->dir[1],cam->dir[2],0 };
 		infos.campos = { cam->pos[0],cam->pos[1],cam->pos[2],0 };
 
-
-		commonConsts->blit(&infos,0, sizeof(infos));
+		infos.suncolor = { infos.suncolor[0] * 10,infos.suncolor[1] * 10,infos.suncolor[2] * 10 };
+		if (commonConsts)
+			commonConsts->blit(&infos,0, sizeof(infos));
 	}
 
 	void updateImpl()
@@ -118,7 +119,8 @@ public:
 			model->vcbuffer->setVariable("proj", &cam->proj);
 			model->vcbuffer->setVariable("world", &model->transform);
 			model->material->apply(model->vcbuffer, model->pcbuffer);
-			model->material->pipelineState->setPSConstant("CommonConstants", commonConsts);
+			if (commonConsts)
+				model->material->pipelineState->setPSConstant("CommonConstants", commonConsts);
 			for (auto& mesh : model->meshs)
 			{
 				cmdlist->setVertexBuffer(mesh->vertices);

@@ -40,5 +40,6 @@ half4 calNormal(
 	half4 binormal)
 {
 	half4 result = normalmap.Sample(linearsampler, uv);
+	result.xyz =result.xyz * 2.0f - 1.0f;
 	return half4(result.xxx * tangent.xyz + result.yyy * binormal.xyz + result.zzz * normal.xyz, 0);
 }
