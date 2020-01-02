@@ -1,13 +1,9 @@
+#include "Common.hlsl"
+
 cbuffer PSConstant:register(b0)
 {
 
 }
-
-struct PSInput
-{
-	float4 position : SV_POSITION;
-	float2 uv : TEXCOORD;
-};
 
 Texture2D albedo:register(t0);
 sampler linearSampler:register(s0);

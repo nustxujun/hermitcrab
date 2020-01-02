@@ -3,16 +3,16 @@
 
 
 //#if WINVER  < _WIN32_WINNT_WIN10
-	#define D3D12ON7
-	#include "D3D12Downlevel.h"
+	//#define D3D12ON7
+	//#include "D3D12Downlevel.h"
 //#endif
 
 #if defined(D3D12ON7)
 	#define SM_VS	L"vs_5_0"
 	#define SM_PS	L"ps_5_0"
 #else
-	#define SM_VS	L"vs_5_1"
-	#define SM_PS	L"ps_5_1"
+	#define SM_VS	L"vs_5_0"
+	#define SM_PS	L"ps_5_0"
 #endif
 
 class Renderer

@@ -346,7 +346,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & absfilepath, 
 
 
 
-	if (FAILED(D3DCompile(data.data(), size, U2M(path).c_str(), macros.data(), NULL, U2M(entry).c_str(), U2M(target).c_str(), compileFlags, 0, &blob, &err)))
+	if (FAILED(D3DCompile(data.data(), size, U2M(path).c_str(), macros.data(), D3D_COMPILE_STANDARD_FILE_INCLUDE, U2M(entry).c_str(), U2M(target).c_str(), compileFlags, 0, &blob, &err)))
 	{
 		::OutputDebugStringA((const char*)err->GetBufferPointer());
 		ASSERT(0, ((const char*)err->GetBufferPointer()));
@@ -1864,7 +1864,9 @@ void Renderer::PipelineState::setConstant(Shader::ShaderType type, const std::st
 {
 	auto& cbuffers = mSemanticsMap[type].cbuffers;
 	auto ret = cbuffers.find(name);
-	ASSERT(ret != cbuffers.end(), "cannot find specify cbuffer at setConstant");
+	if (ret == cbuffers.end())
+		return;
+	//ASSERT(ret != cbuffers.end(), "cannot find specify cbuffer at setConstant");
 
 	mCBuffers[type][ret->second.slot + mSemanticsMap[type].offset] = c->getHandle();
 	//for (auto& cb : cbuffers)

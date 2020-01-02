@@ -98,7 +98,7 @@ public:
 			model->vcbuffer->setVariable("proj", &cam->proj);
 			model->vcbuffer->setVariable("world", &model->transform);
 			model->material->apply(model->vcbuffer, model->pcbuffer);
-			model->material->pipelineState->setPSConstant("Lights", lightsConsts);
+			model->material->pipelineState->setPSConstant("LightConstants", lightsConsts);
 			for (auto& mesh : model->meshs)
 			{
 				cmdlist->setVertexBuffer(mesh->vertices);

@@ -1,4 +1,4 @@
-
+#include "common.hlsl"
 cbuffer VSConstant: register(b0)
 {
 	matrix world;
@@ -11,13 +11,9 @@ struct VSInput
 	float3 position : POSITION;
 	float2 uv : TEXCOORD;
 	float3 normal: NORMAL0;
-};
 
-struct PSInput
-{
-	float4 position : SV_POSITION;
-	float2 uv : TEXCOORD;
-	float4 normal: NORMAL0;
+	float3 tangent: NORMAL1;
+	float3 binormal: NORMAL2;
 };
 
 PSInput vs(VSInput input)
@@ -31,6 +27,9 @@ PSInput vs(VSInput input)
 
 
 	result.normal = mul(float4(input.normal, 0), world);
+	result.tangent = mul(float4(input.tangent, 0), world);
+	result.binormal = mul(float4(input.binormal, 0), world);
+
 	return result;
 }
 
