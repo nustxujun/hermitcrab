@@ -888,10 +888,10 @@ Renderer::DescriptorHeap::DescriptorHeap(UINT count, D3D12_DESCRIPTOR_HEAP_TYPE 
 
 UINT64 Renderer::DescriptorHeap::allocHeap()
 {
-	size_t stride = sizeof(int);
-	for (size_t i = 0; i < mUsed.size(); ++i)
+	UINT stride = 32;
+	for (UINT i = 0; i < mUsed.size(); ++i)
 	{
-		for (size_t j = 0; j < stride; ++j)
+		for (UINT j = 0; j < stride; ++j)
 		{
 			auto index = 1 << j;
 			if ((mUsed[i] & index) == 0)
@@ -924,10 +924,9 @@ void Renderer::DescriptorHeap::dealloc(DescriptorHandle& handle)
 
 void Renderer::DescriptorHeap::dealloc(UINT64 pos)
 {
-	pos = pos / mSize;
-	int stride = sizeof(int);
-	int i = int(pos / stride);
-	int j = pos % stride;
+	UINT stride = 32;
+	UINT i = UINT(pos / stride);
+	UINT j = pos % stride;
 
 	mUsed[i] &= ~(1 << j);
 }

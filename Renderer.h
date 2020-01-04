@@ -348,7 +348,7 @@ public:
 	private:
 		ComPtr<ID3D12DescriptorHeap> mHeap;
 		SIZE_T mSize;
-		std::vector<int> mUsed;
+		std::vector<UINT> mUsed;
 
 	};
 

@@ -106,7 +106,7 @@ void SimpleIPC::Channal::create(const std::string& name)
 void SimpleIPC::Channal::open(const std::string& name)
 {
 	mMutex = ::OpenMutexA(NULL, FALSE, (name + "_mutex").c_str());
-	if (::GetLastError() == 0x05);
+	if (::GetLastError() == 0x05)
 		mMutex = ::CreateMutexA(NULL, FALSE, (name + "_mutex").c_str());
 
 	mHandle = ::OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, (name + "_sm").c_str());
