@@ -10,7 +10,7 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::present()
 	auto pass = RenderGraph::LambdaRenderPass::Ptr{new  RenderGraph::LambdaRenderPass({},[res](auto* pass, const auto& inputs)mutable {
 			pass->read(inputs[0]->getRenderTarget());
 			res = (inputs[0]->getRenderTarget());
-		}, [res]()mutable
+		}, [res](auto srvs)mutable
 		{
 			auto renderer = Renderer::getSingleton();
 			auto device = renderer->getDevice();
@@ -37,11 +37,34 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::drawScene(Camera::Ptr cam, UINT fla
 		pass->write(inputs[0]->getRenderTarget());
 		pass->write(inputs[0]->getDepthStencil());
 
-		},[=](){
+		},[=](auto srvs){
 			RenderContext::getSingleton()->renderScene(cam,flags, mask);
 		} )};
 
 	pass->setName("draw scene pass");
+	return pass;
+}
+
+RenderGraph::LambdaRenderPass::Ptr Pipeline::postprocess(const std::string& ps, const std::function<void(Renderer::PipelineState::Ref)>& prepare)
+{
+	std::shared_ptr<Quad> quad = std::shared_ptr<Quad>(new Quad());
+	quad->init(ps);
+	auto pass = RenderGraph::LambdaRenderPass::Ptr{ new  RenderGraph::LambdaRenderPass({},[](auto* pass, const auto& inputs) {
+			pass->read(inputs[0]->getRenderTarget());
+			pass->write(ResourceHandle::clone(inputs[0]->getRenderTarget()));
+		}, [quad, prepare](auto srvs)
+		{
+			auto pso = quad->getPipelineState();
+			if (prepare)
+				prepare(pso);
+			for (UINT i = 0; i < srvs.size();++i)
+			{
+				if (srvs[i])
+					pso->setPSResource(i,srvs[i]->getView()->getHandle());
+			}
+			RenderContext::getSingleton()->renderScreen(quad.get());
+		}) };
+	pass->setName(ps);
 	return pass;
 }
 
@@ -65,6 +88,8 @@ DefaultPipeline::DefaultPipeline()
 {
 	mPresent = present();
 	mDrawScene = drawScene(RenderContext::getSingleton()->getMainCamera());
+	mColorGrading = postprocess("shaders/colorgrading.hlsl");
+
 	mProfileWindow = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("profile");
 	mDebugInfo = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("debuginfo");
 	mDebugInfo->drawCallback = [](ImGuiOverlay::ImGuiObject* gui) {
@@ -86,7 +111,7 @@ DefaultPipeline::DefaultPipeline()
 void DefaultPipeline::update()
 {
 	RenderGraph graph;
-	graph.begin() >> mDrawScene >> mGui >> mPresent;
+	graph.begin() >> mDrawScene >> mColorGrading >> mGui >> mPresent;
 
 	graph.setup();
 	graph.compile();

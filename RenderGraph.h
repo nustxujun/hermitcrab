@@ -17,6 +17,7 @@ public:
 	};
 
 	static ResourceHandle::Ptr create(Renderer::ViewType type, int w, int h, DXGI_FORMAT format);
+	static ResourceHandle::Ptr clone(ResourceHandle::Ptr res);
 
 	ResourceHandle(Renderer::ViewType t, int w, int h, DXGI_FORMAT format);
 
@@ -52,19 +53,12 @@ public:
 	class Resources
 	{
 	public:
-		//ResourceHandle::Ptr operator[](size_t index)const;
-		//ResourceHandle::Ptr operator[](const std::wstring& str)const;
-		//ResourceHandle::Ptr find(Renderer::ViewType type, size_t index = 0)const;
 		ResourceHandle::Ptr getRenderTarget(size_t index = 0) const;
 		ResourceHandle::Ptr getDepthStencil()const;
 
 		void add(ResourceHandle::Ptr res, UINT slot = 0);
 		void clear();
 		size_t getNumRenderTargets()const {return mRenderTargets.size();}
-		//size_t size()const{return mResources.size();}
-
-		//std::vector<ResourceHandle::Ptr>::iterator begin(){return mResources.begin(); }
-		//std::vector<ResourceHandle::Ptr>::iterator end() { return mResources.end(); }
 	private:
 		std::vector<ResourceHandle::Ptr> mRenderTargets;
 		ResourceHandle::Ptr mDepthStencil;
@@ -98,6 +92,7 @@ public:
 
 		void visitOutputs(const std::function<void(RenderPass*)> & visitor);
 		bool isPrepared()const;
+		void release();
 		void clear();
 		void setName(const std::string& name){mName = name;};
 		const std::string& getName()const{return mName;}
@@ -126,7 +121,7 @@ public:
 
 		using SetupFunc = std::function <void(RenderPass*)>;
 		using CompileFunc = std::function <void(RenderPass*, const Inputs&)>;
-		using ExecuteFunc = std::function <void(void)>;
+		using ExecuteFunc = std::function <void(const std::vector<ResourceHandle::Ptr>&)>;
 		LambdaRenderPass(const SetupFunc& setup, const CompileFunc& compile, const ExecuteFunc& exe);
 		
 		void setup() override;

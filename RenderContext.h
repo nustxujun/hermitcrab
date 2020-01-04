@@ -2,6 +2,7 @@
 
 #include "Common.h"
 #include "Renderer.h"
+#include "Quad.h"
 #include <iostream>
 
 
@@ -32,6 +33,7 @@ struct Texture: public Object
 	void init(int width, int height, DXGI_FORMAT format, const void* data)
 	{
 		texture = Renderer::getSingleton()->createTexture(width, height, format, data);
+		texture->setName(M2U("Texture " + name));
 	}
 	Renderer::Texture::Ref texture;
 };
@@ -50,6 +52,10 @@ struct Mesh : public Object
 		vertices = Renderer::getSingleton()->createBuffer((UINT)vs.size(), (UINT)vsstride, D3D12_HEAP_TYPE_DEFAULT, vs.data(), (UINT)vs.size());
 		indices = Renderer::getSingleton()->createBuffer((UINT)is.size(), (UINT)isstride, D3D12_HEAP_TYPE_DEFAULT, is.data(), (UINT)is.size());
 		numIndices = ni;
+
+		vertices->getResource()->setName(M2U("Vertex " + name));
+		indices->getResource()->setName(M2U("Index " + name ));
+
 	}
 };
 
@@ -110,6 +116,7 @@ struct Material: public Object
 		});
 
 		pipelineState = renderer->createPipelineState(shaders, rs);
+		pipelineState->get()->SetName(M2U("Material " + name).c_str());
 	}
 };
 
@@ -152,7 +159,7 @@ class RenderContext
 	static RenderContext* instance;
 public:
 	virtual void renderScene(Camera::Ptr cam, UINT flags = 0, UINT mask = 0xffffffff) = 0;
-	virtual void renderScreen() = 0;
+	virtual void renderScreen(const Quad* quad) ;
 
 	template<class T>
 	std::shared_ptr<T> createObject(const std::string& name)
@@ -192,6 +199,8 @@ public:
 		instance = this;
 
 		mCamera = createObject<Camera>("main");
+
+
 	}
 
 	virtual ~RenderContext()
@@ -225,4 +234,5 @@ protected:
 	std::map<std::string, Object::Ptr> mObjects;
 	std::vector<Light::Ptr> mLights;
 	std::vector<Model::Ptr> mRenderList;
+
 };

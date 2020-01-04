@@ -68,7 +68,7 @@ public:
 		infos.camdir = { cam->dir[0],cam->dir[1],cam->dir[2],0 };
 		infos.campos = { cam->pos[0],cam->pos[1],cam->pos[2],0 };
 
-		infos.suncolor = { infos.suncolor[0] * 10,infos.suncolor[1] * 10,infos.suncolor[2] * 10 };
+		infos.suncolor = { infos.suncolor[0] ,infos.suncolor[1] ,infos.suncolor[2]  };
 		if (commonConsts)
 			commonConsts->blit(&infos,0, sizeof(infos));
 	}

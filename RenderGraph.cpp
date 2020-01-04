@@ -7,6 +7,11 @@ ResourceHandle::Ptr ResourceHandle::create(Renderer::ViewType type, int w, int h
 	return std::make_shared<ResourceHandle>(type, w, h, format);
 }
 
+ResourceHandle::Ptr ResourceHandle::clone(ResourceHandle::Ptr res)
+{
+	return create(res->getType(),res->mWidth, res->mHeight,res->mFormat);
+}
+
 ResourceHandle::ResourceHandle(Renderer::ViewType t, int w, int h, DXGI_FORMAT format):
 	mType(t), mWidth(w), mHeight(h), mFormat(format)
 {
@@ -122,6 +127,7 @@ void RenderGraph::execute(const Visitor& prev, const Visitor& post)
 			if(prev) prev(p);
 			p->execute();
 			if (post) post(p);
+			p->release();
 			p->visitOutputs([&f](RenderPass* p ){
 				f(p);
 			});
@@ -183,15 +189,19 @@ bool RenderGraph::RenderPass::isPrepared() const
 	return true;
 }
 
-void RenderGraph::RenderPass::clear()
+void RenderGraph::RenderPass::release()
 {
-	mInputs.clear();
-	mOutputs.clear();
 	for (auto&i : mShaderResources)
 		if (i)
 			i->release();
 	mShaderResources.clear();
 	mResources.clear();
+}
+
+void RenderGraph::RenderPass::clear()
+{
+	mInputs.clear();
+	mOutputs.clear();
 }
 
 void RenderGraph::RenderPass::addInput(RenderPass * p)
@@ -345,7 +355,7 @@ void RenderGraph::LambdaRenderPass::compile(const Inputs & inputs)
 void RenderGraph::LambdaRenderPass::execute()
 {	
 	if (mExecute)
-		mExecute( );
+		mExecute(mShaderResources);
 }
 
 RenderGraph::BeginPass::BeginPass()

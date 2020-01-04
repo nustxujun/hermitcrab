@@ -418,6 +418,7 @@ public:
 			UINT offset = 0;
 			std::map<std::string, CBuffer> cbuffers;
 			std::map<std::string, UINT> textures;
+			std::map<UINT, UINT> texturesBySlot;
 			std::map<std::string, UINT> samplers;
 			std::map<std::string, UINT> uavs;
 		};
@@ -514,6 +515,10 @@ public:
 		void setResource(Shader::ShaderType type,const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void setVSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void setPSResource( const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
+
+		void setResource(Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
+		void setVSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
+		void setPSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 
 		void setConstant(Shader::ShaderType type, const std::string& name,const ConstantBuffer::Ptr& c);
 		void setVSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
@@ -701,6 +706,6 @@ private:
 	CommandAllocator::Ptr mProfileCmdAlloc;
 	ConstantBufferAllocator::Ptr mConstantBufferAllocator;
 
-	bool mVSync = true;
+	bool mVSync = false;
 
 };

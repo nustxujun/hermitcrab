@@ -140,7 +140,7 @@ private:
 	std::shared_ptr<T> mValue;
 };
 
-
+using Vector2 = std::array<float, 2>;
 using Vector3 = std::array<float, 3>;
 using Vector4 = std::array<float, 4>;
 using Color = std::array<float, 4>;

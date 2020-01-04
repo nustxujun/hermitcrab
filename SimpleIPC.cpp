@@ -27,8 +27,6 @@ void SimpleIPC::connect(const std::string& name)
 
 void SimpleIPC::close()
 {
-	mSender.close();
-	mReceiver.close();
 }
 
 void SimpleIPC::send(const void* buffer, size_t size)
@@ -84,6 +82,7 @@ void SimpleIPC::Channal::unlock()
 void SimpleIPC::Channal::create(const std::string& name)
 {
 
+	mMutex = ::CreateMutexA(NULL, FALSE, (name + "_mutex").c_str());
 	mHandle = ::CreateFileMappingA(
 		INVALID_HANDLE_VALUE,
 		NULL,
@@ -101,18 +100,20 @@ void SimpleIPC::Channal::create(const std::string& name)
 	Common::Assert(mHandle != NULL, "faild to create file mapping");
 	map();
 
-	mMutex = ::CreateMutexA(NULL, FALSE, (name + "_mutex").c_str());
 
 }
 
 void SimpleIPC::Channal::open(const std::string& name)
 {
+	mMutex = ::OpenMutexA(NULL, FALSE, (name + "_mutex").c_str());
+	if (::GetLastError() == 0x05);
+		mMutex = ::CreateMutexA(NULL, FALSE, (name + "_mutex").c_str());
+
 	mHandle = ::OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, (name + "_sm").c_str());
 	Common::Assert(mHandle != NULL, "faild to create file mapping");
 
 	map();
 
-	mMutex = ::CreateMutexA(NULL, FALSE, (name + "_mutex").c_str());
 
 }
 
@@ -133,6 +134,7 @@ void SimpleIPC::Channal::close()
 	if (mMutex)
 	{
 		::CloseHandle(mMutex);
+		mMutex = 0;
 	}
 }
 

@@ -166,7 +166,7 @@ void Renderer::endFrame()
 
 	resetCommands();
 
-	//updateTimeStamp();
+	updateTimeStamp();
 
 	debugInfoCache = debugInfoCurrent;
 }
@@ -1745,6 +1745,7 @@ void Renderer::Shader::createRootParameters()
 			break;
 		case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
 			mSemanticsMap.textures[desc.Name] = slot;
+			mSemanticsMap.texturesBySlot[desc.BindPoint] = slot;
 			break;
 		case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
 			mSemanticsMap.uavs[desc.Name] = slot;
@@ -1858,6 +1859,25 @@ void Renderer::PipelineState::setVSResource( const std::string & name, const D3D
 void Renderer::PipelineState::setPSResource( const std::string & name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
 {
 	setResource(Shader::ST_PIXEL, name, handle);
+}
+
+void Renderer::PipelineState::setResource(Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
+{
+	auto& textures = mSemanticsMap[type].texturesBySlot;
+	auto ret = textures.find(slot);
+	if (ret == textures.end())
+		return;
+	mTextures[type][ret->second + mSemanticsMap[type].offset] = handle;
+}
+
+void Renderer::PipelineState::setVSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
+{
+	return setResource(Shader::ST_VERTEX, slot, handle);
+}
+
+void Renderer::PipelineState::setPSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
+{
+	return setResource(Shader::ST_PIXEL, slot, handle);
 }
 
 void Renderer::PipelineState::setConstant(Shader::ShaderType type, const std::string & name, const ConstantBuffer::Ptr& c)
