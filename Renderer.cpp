@@ -24,7 +24,7 @@ Renderer::Ptr Renderer::instance;
 static Renderer::DebugInfo debugInfoCache;
 static Renderer::DebugInfo debugInfoCurrent;
 
-
+DXGI_FORMAT const Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
 
 
 Renderer::Ptr Renderer::create()
@@ -169,6 +169,13 @@ void Renderer::endFrame()
 	updateTimeStamp();
 
 	debugInfoCache = debugInfoCurrent;
+}
+
+std::array<LONG, 2> Renderer::getSize()
+{
+	RECT rect;
+	::GetClientRect(mWindow, &rect);
+	return {(LONG)rect.right, (LONG)rect.bottom};
 }
 
 void Renderer::setVSync(bool enable)
@@ -532,7 +539,7 @@ Renderer::ResourceView::Ptr Renderer::createResourceView(int width, int height, 
 		height = (int)desc.Height;
 	}
 	if (format == DXGI_FORMAT_UNKNOWN)
-		format = desc.Format;
+		format = FRAME_BUFFER_FORMAT;
 	auto view = ResourceView::create(vt,width, height, format, rt);
 	return view;
 }
@@ -738,7 +745,7 @@ void Renderer::resetCommands()
 #ifndef D3D12ON7
 	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
 #else
-	mCurrentFrame = mCurrentFrame >= NUM_BACK_BUFFERS - 1?  0: mCurrentFrame + 1;
+	mCurrentFrame = (mCurrentFrame + 1) % NUM_BACK_BUFFERS;
 #endif
 
 
@@ -996,12 +1003,7 @@ Renderer::ResourceView::~ResourceView()
 	Renderer::getSingleton()->destroyResource(mTexture);
 }
 
-const Renderer::DescriptorHandle& Renderer::ResourceView::getHandle() const
-{
-	return mHandle;
-}
-
-Renderer::ResourceView::operator const Renderer::DescriptorHandle& () const
+D3D12_CPU_DESCRIPTOR_HANDLE Renderer::ResourceView::getCPUHandle() const
 {
 	return mHandle;
 }
@@ -1245,7 +1247,7 @@ size_t Renderer::Resource::hash()
 	return mHashValue;
 }
 
-const Renderer::DescriptorHandle& Renderer::Resource::getHandle()
+D3D12_GPU_DESCRIPTOR_HANDLE Renderer::Resource::getGPUHandle()
 {
 	return mHandle;
 }
@@ -1420,22 +1422,22 @@ void Renderer::CommandList::discardResource(const ResourceView::Ref & rt)
 
 void Renderer::CommandList::clearRenderTarget(const ResourceView::Ref & rt, const Color & color)
 {
-	mCmdList->ClearRenderTargetView(rt->getHandle(), color.data(),0, nullptr);
+	mCmdList->ClearRenderTargetView(rt->getCPUHandle(), color.data(),0, nullptr);
 }
 
 void Renderer::CommandList::clearDepth(const ResourceView::Ref& rt, float depth)
 {
-	mCmdList->ClearDepthStencilView(rt->getHandle(), D3D12_CLEAR_FLAG_DEPTH,depth, 0,0, 0);
+	mCmdList->ClearDepthStencilView(rt->getCPUHandle(), D3D12_CLEAR_FLAG_DEPTH,depth, 0,0, 0);
 }
 
 void Renderer::CommandList::clearStencil(const ResourceView::Ref & rt, UINT8 stencil)
 {
-	mCmdList->ClearDepthStencilView(rt->getHandle(), D3D12_CLEAR_FLAG_STENCIL, 1.0f, stencil, 0, 0);
+	mCmdList->ClearDepthStencilView(rt->getCPUHandle(), D3D12_CLEAR_FLAG_STENCIL, 1.0f, stencil, 0, 0);
 }
 
 void Renderer::CommandList::clearDepthStencil(const ResourceView::Ref & rt, float depth, UINT8 stencil)
 {
-	mCmdList->ClearDepthStencilView(rt->getHandle(), D3D12_CLEAR_FLAG_STENCIL | D3D12_CLEAR_FLAG_DEPTH, depth, stencil, 0, 0);
+	mCmdList->ClearDepthStencilView(rt->getCPUHandle(), D3D12_CLEAR_FLAG_STENCIL | D3D12_CLEAR_FLAG_DEPTH, depth, stencil, 0, 0);
 }
 
 void Renderer::CommandList::setViewport(const D3D12_VIEWPORT& vp)
@@ -1452,19 +1454,19 @@ void Renderer::CommandList::setRenderTarget(const ResourceView::Ref& rt, const R
 {
 	const D3D12_CPU_DESCRIPTOR_HANDLE* dshandle = 0;
 	if (ds)
-		dshandle = & (ds->getHandle().cpu);
-	mCmdList->OMSetRenderTargets(1, &rt->getHandle().cpu,FALSE, dshandle);
+		dshandle = & (ds->getCPUHandle());
+	mCmdList->OMSetRenderTargets(1, &rt->getCPUHandle(),FALSE, dshandle);
 }
 
 void Renderer::CommandList::setRenderTargets(const std::vector<ResourceView::Ref>& rts, const ResourceView::Ref & ds)
 {
 	const D3D12_CPU_DESCRIPTOR_HANDLE* dshandle = 0;
 	if (ds)
-		dshandle = &(ds->getHandle().cpu);
+		dshandle = &(ds->getCPUHandle());
 
 	std::vector< D3D12_CPU_DESCRIPTOR_HANDLE> rtvs = {};
 	for (auto& rt: rts)
-		rtvs.push_back(rt->getHandle().cpu);
+		rtvs.push_back(rt->getCPUHandle());
 
 	mCmdList->OMSetRenderTargets((UINT)rtvs.size(), rtvs.data(), FALSE, dshandle);
 
@@ -1506,7 +1508,7 @@ void Renderer::CommandList::setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type)
 
 void Renderer::CommandList::setTexture(UINT slot, Texture::Ref tex)
 {
-	setTexture(slot, tex->getHandle());
+	setTexture(slot, tex->getGPUHandle());
 }
 
 void Renderer::CommandList::setTexture(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
@@ -1585,14 +1587,14 @@ const Renderer::RenderState Renderer::RenderState::Default([](Renderer::RenderSt
 		D3D12_DEFAULT_DEPTH_BIAS,
 		D3D12_DEFAULT_DEPTH_BIAS_CLAMP,
 		D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS,
-		TRUE,
+		FALSE,
 		FALSE,
 		FALSE,
 		0,
 		D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF
 	});
 
-	self.setRenderTargetFormat({ DXGI_FORMAT_R8G8B8A8_UNORM });
+	self.setRenderTargetFormat({ FRAME_BUFFER_FORMAT });
 	self.setSample(1,0);
 });
 
@@ -1634,7 +1636,7 @@ const Renderer::RenderState Renderer::RenderState::GeneralSolid([](Renderer::Ren
 		D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF
 		});
 
-	self.setRenderTargetFormat({ DXGI_FORMAT_R8G8B8A8_UNORM });
+	self.setRenderTargetFormat({ FRAME_BUFFER_FORMAT });
 	self.setSample(1, 0);
 });
 

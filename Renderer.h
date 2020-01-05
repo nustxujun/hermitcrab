@@ -42,6 +42,7 @@ class Renderer
 	static auto const NUM_MAX_RENDER_TARGET_VIEWS = 8 * 1024;
 	static auto const NUM_MAX_DEPTH_STENCIL_VIEWS = 4 * 1024;
 	static auto const NUM_MAX_CBV_SRV_UAVS = 32 * 1024;
+	static DXGI_FORMAT const FRAME_BUFFER_FORMAT;
 
 	enum DescriptorHeapType
 	{
@@ -231,7 +232,7 @@ public:
 		static size_t hash(const D3D12_RESOURCE_DESC& desc);
 		size_t hash();
 		UINT64 getSize()const{return mDesc.Width;}
-		const DescriptorHandle& getHandle();
+		D3D12_GPU_DESCRIPTOR_HANDLE getGPUHandle();
 	protected:
 		virtual DescriptorHandle createView();
 	private:
@@ -295,8 +296,7 @@ public:
 		ResourceView(ViewType type, UINT width, UINT height, DXGI_FORMAT format, Resource::ResourceType rt = Resource::RT_PERSISTENT);
 		~ResourceView();
 
-		const DescriptorHandle& getHandle()const;
-		operator const DescriptorHandle& ()const;
+		D3D12_CPU_DESCRIPTOR_HANDLE getCPUHandle()const;
 
 		const Texture::Ref& getTexture()const;
 		ViewType getType()const{return mType;};
@@ -617,6 +617,7 @@ public:
 	void beginFrame();
 	void endFrame();
 
+	std::array<LONG,2> getSize();
 	void setVSync(bool enable);
 	void addSearchPath(const std::wstring& path);
 	const DebugInfo& getDebugInfo()const;

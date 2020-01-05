@@ -9,6 +9,8 @@ void RenderContext::renderScreen(const Quad* quad)
 	auto renderer = Renderer::getSingleton();
 	auto cmdlist = renderer->getCommandList();
 
+	auto size = renderer->getSize();
+	cmdlist->setScissorRect({0,0, size[0], size[1]});
 	cmdlist->setPipelineState(quad->getPipelineState());
 
 	cmdlist->setVertexBuffer(quad->getSharedVertices());

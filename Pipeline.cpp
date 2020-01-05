@@ -6,25 +6,39 @@
 
 RenderGraph::LambdaRenderPass::Ptr Pipeline::present()
 {
-	UpValue<ResourceHandle::Ptr> res;
-	auto pass = RenderGraph::LambdaRenderPass::Ptr{new  RenderGraph::LambdaRenderPass({},[res](auto* pass, const auto& inputs)mutable {
+	Quad::Ptr quad = Quad::Ptr(new Quad());
+	auto rs = Renderer::RenderState::Default;
+	rs.setRenderTargetFormat({DXGI_FORMAT_R8G8B8A8_UNORM});
+	quad->init("shaders/drawtexture.hlsl",rs);
+	auto pass = RenderGraph::LambdaRenderPass::Ptr{new  RenderGraph::LambdaRenderPass({},[](auto* pass, const auto& inputs)mutable {
 			pass->read(inputs[0]->getRenderTarget());
-			res = (inputs[0]->getRenderTarget());
-		}, [res](auto srvs)mutable
+		}, [quad](auto srvs)mutable
 		{
 			auto renderer = Renderer::getSingleton();
-			auto device = renderer->getDevice();
 			auto cmdlist = renderer->getCommandList();
 			auto bb = renderer->getBackBuffer();
-			auto src = res.get()->getView()->getTexture();
-			//cmdlist->copyTexture(bb->getTexture(),0,{0,0,0},src,0,nullptr);
-			cmdlist->transitionTo(bb->getTexture(), D3D12_RESOURCE_STATE_COPY_DEST);
-			//cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_COPY_SOURCE);
-			cmdlist->get()->CopyResource(bb->getTexture()->get(), src->get());
-			cmdlist->transitionTo(bb->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
-			cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_RENDER_TARGET);
+			cmdlist->setRenderTarget(bb);
 
+			for (UINT i = 0; i < srvs.size(); ++i)
+			{
+				if (srvs[i])
+					quad->setResource(i, srvs[i]->getView()->getTexture()->getGPUHandle());
+			}
+			RenderContext::getSingleton()->renderScreen(quad.get());
+
+
+			//auto renderer = Renderer::getSingleton();
+			//auto device = renderer->getDevice();
+			//auto cmdlist = renderer->getCommandList();
+			//auto bb = renderer->getBackBuffer();
+			//auto src = srvs[0]->getView()->getTexture();
+			////cmdlist->copyTexture(bb->getTexture(),0,{0,0,0},src,0,nullptr);
+			//cmdlist->transitionTo(bb->getTexture(), D3D12_RESOURCE_STATE_COPY_DEST);
+			////cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_RENDER_TARGET);
+			//cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_COPY_SOURCE);
+			//cmdlist->get()->CopyResource(bb->getTexture()->get(), src->get());
+			//cmdlist->transitionTo(bb->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+			//cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 		})};
 	pass->setName("present pass");
@@ -48,10 +62,12 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::drawScene(Camera::Ptr cam, UINT fla
 RenderGraph::LambdaRenderPass::Ptr Pipeline::postprocess(const std::string& ps, const std::function<void(Renderer::PipelineState::Ref)>& prepare)
 {
 	std::shared_ptr<Quad> quad = std::shared_ptr<Quad>(new Quad());
-	quad->init(ps);
-	auto pass = RenderGraph::LambdaRenderPass::Ptr{ new  RenderGraph::LambdaRenderPass({},[](auto* pass, const auto& inputs) {
+	auto rs = Renderer::RenderState::Default;
+	quad->init(ps,rs);
+
+	auto pass = RenderGraph::LambdaRenderPass::Ptr{ new  RenderGraph::LambdaRenderPass({},[=](auto* pass, const auto& inputs) {
 			pass->read(inputs[0]->getRenderTarget());
-			pass->write(ResourceHandle::clone(inputs[0]->getRenderTarget()));
+			pass->write(ResourceHandle::create(Renderer::VT_RENDERTARGET, 0, 0, DXGI_FORMAT_R8G8B8A8_UNORM));
 		}, [quad, prepare](auto srvs)
 		{
 			auto pso = quad->getPipelineState();
@@ -60,8 +76,9 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::postprocess(const std::string& ps, 
 			for (UINT i = 0; i < srvs.size();++i)
 			{
 				if (srvs[i])
-					pso->setPSResource(i,srvs[i]->getView()->getHandle());
+					pso->setPSResource(i,srvs[i]->getView()->getTexture()->getGPUHandle());
 			}
+			//pso->setPSResource("frame",srvs[0]->getView()->getHandle());
 			RenderContext::getSingleton()->renderScreen(quad.get());
 		}) };
 	pass->setName(ps);

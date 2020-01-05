@@ -7,17 +7,22 @@ RenderCommand* RenderCommand::instance = 0;
 
 
 
-RenderCommand::RenderCommand(bool host)
+RenderCommand::RenderCommand()
 {
-	if (host)
-		mIPC.listen("renderstation");
-	else
-		mIPC.connect("renderstation");
+
 }
 
 RenderCommand::~RenderCommand()
 {
 	mIPC.close();
+}
+
+void RenderCommand::init(bool host)
+{
+	if (host)
+		mIPC.listen("renderstation");
+	else
+		mIPC.connect("renderstation");
 }
 
 void RenderCommand::done()

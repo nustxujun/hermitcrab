@@ -11,7 +11,7 @@
 
 class DefaultFrame :public RenderContext, public Framework
 {
-	RenderCommand rendercmd = false;
+	RenderCommand rendercmd ;
 	std::shared_ptr<DefaultPipeline> pipeline;
 	Renderer::ConstantBuffer::Ptr commonConsts;
 
@@ -21,13 +21,14 @@ public:
 	{
 		pipeline = decltype(pipeline)(new DefaultPipeline);
 
+		rendercmd.init(false);
 		rendercmd.record();
+		commonConsts = mRenderList[0]->material->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL,"CommonConstants");
 
 		auto cam = getObject<Camera>("main");
 
 		Framework::resize(cam->viewport.Width, cam->viewport.Height);
 
-		commonConsts = mRenderList[0]->material->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL,"CommonConstants");
 	}
 
 	void renderScreen()
@@ -102,7 +103,6 @@ public:
 	void renderScene(Camera::Ptr cam, UINT, UINT)
 	{
 		auto renderer = Renderer::getSingleton();
-		auto bb = renderer->getBackBuffer();
 		auto cmdlist = renderer->getCommandList();
 
 

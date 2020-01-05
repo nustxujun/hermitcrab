@@ -152,8 +152,8 @@ struct ImGuiWindow: public ImGuiObject
 		if (ImGui::Begin(text.c_str(), &visible, flags) && (!drawCallback || drawCallback(this)))
 		{
 			ImGuiObject::update();
-			ImGui::End();
 		}
+		ImGui::End();
 	}
 
 	enum {

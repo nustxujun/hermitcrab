@@ -1,6 +1,6 @@
 #include "Quad.h"
 
-void Quad::init(const std::string & psname)
+void Quad::init(const std::string & psname, const Renderer::RenderState& settingrs)
 {
 	auto renderer = Renderer::getSingleton();
 	auto vs = renderer->compileShader(L"shaders/quad_vs.hlsl", L"vs", SM_VS);
@@ -21,10 +21,10 @@ void Quad::init(const std::string & psname)
 			D3D12_SHADER_VISIBILITY_PIXEL
 		});
 
-	Renderer::RenderState rs = Renderer::RenderState::Default;
+	Renderer::RenderState rs = settingrs;
 	rs.setInputLayout({
-		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+		{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 		});
 
 	mPipelineState = renderer->createPipelineState(shaders,rs);
@@ -53,17 +53,17 @@ Renderer::Buffer::Ptr Quad::getSharedVertices() const
 	static Renderer::Buffer::Ptr vertices;
 	if (!vertices)
 	{
-		std::pair<Vector3, Vector4> triangleVertices[] =
+		std::pair<Vector2, Vector2> triangleVertices[] =
 		{
-			{ { 1.0f, 1.0f , 0.0f }, { 1.0f, 0.0f,0,0 }},
-			{ { 1.0, -1.0f , 0.0f }, { 1.0f, 1.0f,0,0 }},
-			{ { -1.0f, -1.0f , 0.0f }, { 0.0f, 1.0f,0,0}},
+			{ { 1.0f, 1.0f  }, { 1.0f, 0.0f }},
+			{ { 1.0, -1.0f  }, { 1.0f, 1.0f }},
+			{ { -1.0f, -1.0f  }, { 0.0f, 1.0f}},
 
-			{ { 1.0f, 1.0f , 0.0f }, { 1.0f, 0.0f,0,0 }},
-			{ { -1.0f, -1.0f , 0.0f }, { 0.0f, 1.0f,0,0}},
-			{ { -1.0f, 1.0f , 0.0f }, { 0.0f, 0.0f,0,0}}
+			{ { 1.0f, 1.0f }, { 1.0f, 0.0f }},
+			{ { -1.0f, -1.0f  }, { 0.0f, 1.0f}},
+			{ { -1.0f, 1.0f  }, { 0.0f, 0.0f}}
 		};
-		vertices = Renderer::getSingleton()->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector3, Vector4>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
+		vertices = Renderer::getSingleton()->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector2, Vector2>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
 	}
 	return vertices;
 }

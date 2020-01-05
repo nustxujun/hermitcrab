@@ -5,7 +5,9 @@
 class Quad
 {
 public:
-	void init(const std::string& psname);
+	using Ptr = std::shared_ptr<Quad>;
+
+	void init(const std::string& psname, const Renderer::RenderState& rs = Renderer::RenderState::Default);
 	Renderer::PipelineState::Ref getPipelineState()const;
 
 	void setResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);

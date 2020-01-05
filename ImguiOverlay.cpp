@@ -281,6 +281,6 @@ void ImGuiPass::initFonts()
 		cmdlist->copyTexture(dst, 0, { 0,0,0 }, src, 0, nullptr);
 	});
 
-	static_assert(sizeof(ImTextureID) >= sizeof(mFonts->getHandle().gpu.ptr), "Can't pack descriptor handle into TexID, 32-bit not supported yet.");
-	io.Fonts->TexID = (ImTextureID)mFonts->getHandle().gpu.ptr;
+	static_assert(sizeof(ImTextureID) >= sizeof(mFonts->getGPUHandle().ptr), "Can't pack descriptor handle into TexID, 32-bit not supported yet.");
+	io.Fonts->TexID = (ImTextureID)mFonts->getGPUHandle().ptr;
 }

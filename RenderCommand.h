@@ -5,9 +5,9 @@
 class RenderCommand
 {
 public:
-	RenderCommand(bool host);
+	RenderCommand();
 	~RenderCommand();
-
+	void init(bool host);
 	void record();
 
 	void createMesh(
