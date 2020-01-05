@@ -47,9 +47,9 @@ Renderer::Ptr Renderer::getSingleton()
 Renderer::Renderer()
 {
 	mFileSearchPaths = {
-		L"",
-		L"../Engine/",
-		L"Engine/",
+		"",
+		"../Engine/",
+		"Engine/",
 	};
 }
 
@@ -183,7 +183,7 @@ void Renderer::setVSync(bool enable)
 	mVSync = enable;
 }
 
-void Renderer::addSearchPath(const std::wstring & path)
+void Renderer::addSearchPath(const std::string & path)
 {
 	mFileSearchPaths.push_back(path);
 }
@@ -277,7 +277,23 @@ void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size
 	recycleCommandAllocator(allocator);
 }
 
-Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & absfilepath, const std::wstring & entry, const std::wstring & target, const std::vector<D3D_SHADER_MACRO>& macros)
+Renderer::Shader::Ptr Renderer::compileShaderFromFile(const std::string & absfilepath, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros)
+{
+	auto path = findFile(absfilepath);
+
+	std::fstream file(path, std::ios::in | std::ios::binary);
+	ASSERT(!!file, "fail to open shader file");
+
+	file.seekg(0,std::ios::end);
+	size_t size = file.tellg();
+	file.seekg(0,std::ios::beg);
+	std::string context;
+	context.resize(size);
+	file.read(&context[0], size);
+	return compileShader(absfilepath,context,entry,target,  macros);
+}
+
+Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std::string & context, const std::string & entry, const std::string & target,const std::vector<D3D_SHADER_MACRO>& macros)
 {
 	Shader::ShaderType type = Shader::ST_MAX_NUM;
 	switch (target[0])
@@ -290,24 +306,39 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & absfilepath, 
 		break;
 	}
 
-	auto path = findFile(absfilepath);
-	struct _stat attrs;
-	if (_stat(U2M(path).c_str(), &attrs) != 0)
+	std::hash<std::string> hash;
+	auto hashcontext = context + entry + target;
+	for (auto& m: macros)
 	{
-		auto err = errno;
-		ASSERT(0, "fail to open shader file");
-		return {};
+		if (m.Name)
+		{
+			hashcontext += m.Name;
+		}
+		if(m.Definition)
+		{
+			hashcontext += m.Definition;
+		}
+	}
+	std::stringstream ss;
+	ss << std::hex << hash(hashcontext);
+	std::string cachefilename = "cache/" + ss.str();
+	{
+		std::fstream cachefile(cachefilename, std::ios::in | std::ios::binary);
+
+		if (cachefile)
+		{
+			unsigned int size;
+			cachefile >> size;
+			auto buffer = createMemoryData(size);
+			cachefile.read(buffer->data(), size);
+
+			return Shader::Ptr(new Shader(buffer, type));
+		}
 	}
 
-	auto time = attrs.st_mtime;
 
-	std::wregex p(std::wstring(L"^.+[/\\\\](.+\\..+)$"));
-	std::wsmatch match;
-	std::wstring filename = path;
-	if (std::regex_match(path, match, p))
-	{
-		filename = match[1];
-	}
+	ComPtr<ID3DBlob> blob;
+	ComPtr<ID3DBlob> err;
 
 #if defined(_DEBUG)
 	// Enable better shader debugging with the graphics debugging tools.
@@ -315,46 +346,36 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & absfilepath, 
 #else
 	UINT compileFlags = 0;
 #endif
-	std::hash<std::wstring> hash;
-	std::wstringstream ss;
-	ss << std::hex << hash(path + entry + target);
-	std::wstring cachefilename = L"cache/" + ss.str();
-	{
-		std::fstream cachefile(cachefilename, std::ios::in | std::ios::binary);
 
-		if (cachefile)
+	struct Include : public ID3DInclude
+	{
+		STDMETHOD(Open)(THIS_ D3D_INCLUDE_TYPE IncludeType, LPCSTR pFileName, LPCVOID pParentData, LPCVOID *ppData, UINT *pBytes)
 		{
-			__time64_t lasttime;
-			cachefile.read((char*)&lasttime, sizeof(lasttime));
-
-			if (lasttime == time)
-			{
-				unsigned int size ;
-				cachefile >> size;
-				auto buffer = createMemoryData(size);
-				cachefile.read(buffer->data(), size);
-
-				return Shader::Ptr(new Shader(buffer, type));
-
-			}
+			std::fstream file(Renderer::getSingleton()->findFile(pFileName), std::ios::in | std::ios::binary);
+			Common::Assert(!!file, std::string("cannot find file ") + pFileName );
+			file.seekg(0,std::ios::end);
+			size_t size = file.tellg();
+			file.seekg(0,std::ios::beg);
+			
+			char* data = new char(size);
+			file.read(data, size);
+			(*ppData) = data;
+			(*pBytes) = size;
+			return S_OK;
 		}
-	}
+		STDMETHOD(Close)(THIS_ LPCVOID pData)
+		{
+			delete pData;
+			return S_OK;
+		}
 
-	std::fstream file(path, std::ios::in | std::ios::binary);
-	file.seekg(0,std::ios::end);
-	size_t size = (size_t)file.tellg();
-	file.seekg(0);
-	std::vector<char> data(size);
-	file.read(data.data(), size);
-	file.close();
-
-	ComPtr<ID3DBlob> blob;
-	ComPtr<ID3DBlob> err;
-
-
-
-	if (FAILED(D3DCompile(data.data(), size, U2M(path).c_str(), macros.data(), D3D_COMPILE_STANDARD_FILE_INCLUDE, U2M(entry).c_str(), U2M(target).c_str(), compileFlags, 0, &blob, &err)))
+	}include;
+	
+	if (FAILED(D3DCompile(context.data(), context.size(), name.c_str(), macros.data(),&include, (entry).c_str(), (target).c_str(), compileFlags, 0, &blob, &err)))
 	{
+		::OutputDebugStringA(context.c_str());
+
+
 		::OutputDebugStringA((const char*)err->GetBufferPointer());
 		ASSERT(0, ((const char*)err->GetBufferPointer()));
 		return {};
@@ -365,11 +386,10 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::wstring & absfilepath, 
 
 	{
 		std::fstream cachefile(cachefilename, std::ios::out | std::ios::binary);
-		cachefile.write((const char*)&time, sizeof(time));
-		//cachefile << time;
 		cachefile << (unsigned int)result->size();
 		cachefile.write(result->data(), result->size());
 	}
+
 
 	return Shader::Ptr(new Shader(result, type));
 }
@@ -451,7 +471,7 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	void* data = 0;
 	int width, height, nrComponents;
 
-	std::string fn = U2M(findFile(filename));
+	std::string fn = (findFile(U2M(filename)));
 	if (stbi_is_hdr(fn.c_str()))
 	{
 		format = DXGI_FORMAT_R32G32B32A32_FLOAT;
@@ -676,13 +696,13 @@ void Renderer::initResources()
 	mConstantBufferAllocator = ConstantBufferAllocator::create();
 }
 
-std::wstring Renderer::findFile(const std::wstring & filename)
+std::string Renderer::findFile(const std::string & filename)
 {
 	for (auto& p : mFileSearchPaths)
 	{
 		auto path = p + filename;
 		struct _stat attrs;
-		if (_stat(U2M(path).c_str(), &attrs) == 0)
+		if (_stat(path.c_str(), &attrs) == 0)
 		{
 			return path;
 		}
@@ -1003,9 +1023,9 @@ Renderer::ResourceView::~ResourceView()
 	Renderer::getSingleton()->destroyResource(mTexture);
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE Renderer::ResourceView::getCPUHandle() const
+const D3D12_CPU_DESCRIPTOR_HANDLE& Renderer::ResourceView::getCPUHandle() const
 {
-	return mHandle;
+	return mHandle.cpu;
 }
 
 const Renderer::Texture::Ref& Renderer::ResourceView::getTexture() const
@@ -1815,7 +1835,7 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	ComPtr<ID3D10Blob> err;
 	if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1,&blob,&err)))
 	{
-		//ASSERT(false,((const char*)err->GetBufferPointer()));
+		ASSERT(false,((const char*)err->GetBufferPointer()));
 	}
 	CHECK(device->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(), IID_PPV_ARGS(&mRootSignature)));
 	

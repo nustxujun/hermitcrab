@@ -8,11 +8,11 @@
 //#endif
 
 #if defined(D3D12ON7)
-	#define SM_VS	L"vs_5_0"
-	#define SM_PS	L"ps_5_0"
+	#define SM_VS	"vs_5_0"
+	#define SM_PS	"ps_5_0"
 #else
-	#define SM_VS	L"vs_5_0"
-	#define SM_PS	L"ps_5_0"
+	#define SM_VS	"vs_5_0"
+	#define SM_PS	"ps_5_0"
 #endif
 
 class Renderer
@@ -296,7 +296,7 @@ public:
 		ResourceView(ViewType type, UINT width, UINT height, DXGI_FORMAT format, Resource::ResourceType rt = Resource::RT_PERSISTENT);
 		~ResourceView();
 
-		D3D12_CPU_DESCRIPTOR_HANDLE getCPUHandle()const;
+		const D3D12_CPU_DESCRIPTOR_HANDLE& getCPUHandle()const;
 
 		const Texture::Ref& getTexture()const;
 		ViewType getType()const{return mType;};
@@ -616,10 +616,11 @@ public:
 	void resize(int width, int height);
 	void beginFrame();
 	void endFrame();
+	std::string findFile(const std::string& filename);
 
 	std::array<LONG,2> getSize();
 	void setVSync(bool enable);
-	void addSearchPath(const std::wstring& path);
+	void addSearchPath(const std::string& path);
 	const DebugInfo& getDebugInfo()const;
 	HWND getWindow()const;
 	ID3D12Device* getDevice();
@@ -632,7 +633,8 @@ public:
 	//void updateBuffer(Resource::Ref res, const void* buffer, size_t size);
 	//void updateTexture(Resource::Ref res,const void* buffer, size_t numRows, size_t rowSize);
 
-	Shader::Ptr compileShader(const std::wstring& path, const std::wstring& entry, const std::wstring& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
+	Shader::Ptr compileShaderFromFile(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
+	Shader::Ptr compileShader(const std::string& name, const std::string& context, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 	Fence::Ptr createFence();
 	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	void destroyResource(Resource::Ref res);
@@ -659,7 +661,7 @@ private:
 	void initProfile();
 	void initResources();
 
-	std::wstring findFile(const std::wstring& filename);
+
 
 	CommandAllocator::Ptr allocCommandAllocator();
 	void recycleCommandAllocator(CommandAllocator::Ptr ca);
@@ -679,7 +681,7 @@ private:
 	static Renderer::Ptr instance;
 
 	HWND mWindow;
-	std::vector<std::wstring> mFileSearchPaths;
+	std::vector<std::string> mFileSearchPaths;
 
 	ComPtr<ID3D12Device> mDevice;
 	ComPtr<IDXGISwapChain3> mSwapChain;

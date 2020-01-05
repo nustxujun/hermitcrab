@@ -23,6 +23,6 @@ public:
 private:
 	Renderer::PipelineState::Ref mPipelineState;
 	Renderer::ConstantBuffer::Ptr mConstant;
-
+	Renderer::Buffer::Ptr mVertices;
 };
 

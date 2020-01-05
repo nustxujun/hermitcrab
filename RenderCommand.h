@@ -47,8 +47,8 @@ public:
 		const std::string& name,
 		const std::string& vs,
 		const std::string& ps,
-		const std::map<std::string, Vector4>& consts,
-		const std::map<std::string, std::string>& textures);
+		const std::string& pscontent,
+		const std::set<std::string>& textures);
 
 	void createLight(
 		const std::string& name, 

@@ -86,12 +86,12 @@ struct Material: public Object
 		}
 	}
 
-	void init(const std::string & vsname, const std::string& psname)
+	void init(const std::string & vsname, const std::string& psname, const std::string& pscontent)
 	{
 		auto renderer = Renderer::getSingleton();
 
-		auto vs = renderer->compileShader(M2U(vsname), L"vs", SM_VS);
-		auto ps = renderer->compileShader(M2U(psname), L"ps", SM_PS);
+		auto vs = renderer->compileShaderFromFile(vsname, "vs", SM_VS);
+		auto ps = renderer->compileShader(psname, pscontent, "ps", SM_PS);
 		std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
 		ps->registerStaticSampler({
 				D3D12_FILTER_MIN_LINEAR_MAG_MIP_POINT,

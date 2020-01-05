@@ -87,16 +87,13 @@ void RenderCommand::createCamera(const std::string & name, const Vector3& pos, c
 
 }
 
-void RenderCommand::createMaterial(const std::string & name, const std::string & vs, const std::string & ps, const std::map<std::string, Vector4>& consts, const std::map<std::string, std::string>& textures)
+void RenderCommand::createMaterial(const std::string & name, const std::string & vs, const std::string & ps, const std::string& pscontent, const std::set< std::string>& textures)
 {
-	mIPC << "createMaterial" << name << vs << ps;
-	mIPC << (UINT32)consts.size();
-	for (auto& c: consts)
-		mIPC << c.first << c.second;
+	mIPC << "createMaterial" << name << vs << ps << pscontent;
 
 	mIPC << (UINT32)textures.size();
 	for (auto& t: textures)
-		mIPC << t.first << t.second;
+		mIPC << t;
 
 }
 
@@ -177,29 +174,20 @@ void RenderCommand::record()
 		std::string name;
 		ipc >> name;
 		auto material = context->createObject<Material>(name);
-		std::string vs, ps;
-		ipc >> vs >> ps;
+		std::string vs, ps, pscontent;
+		ipc >> vs >> ps >> pscontent;
 
 		UINT32 count;
 		ipc >> count;
 		for (UINT32 i = 0; i < count; ++i)
 		{
-			std::string pn;
-			Vector4 p;
-			ipc >> pn >> p;
-			material->parameters[pn] = p;
+			std::string texname;
+			ipc >>  texname;
+
+			material->textures[texname] = context->getObject<Texture>(texname);
 		}
 
-		ipc >> count;
-		for (UINT32 i = 0; i < count; ++i)
-		{
-			std::string semantic, texname;
-			ipc >> semantic >> texname;
-
-			material->textures[semantic] = context->getObject<Texture>(texname);
-		}
-
-		material->init(vs, ps);
+		material->init(vs, ps, pscontent);
 		return true;
 	};
 

@@ -37,15 +37,12 @@ cbuffer CommonConstants
 	float4 suncolor;
 };
 
-half4 calNormal(
-	Texture2D normalmap, 
-	sampler linearsampler, 
-	half2 uv,
-	half4 normal, 
-	half4 tangent,
-	half4 binormal)
+half3 calNormal(
+	half3 normalmap,
+	half3 normal, 
+	half3 tangent,
+	half3 binormal)
 {
-	half4 result = normalmap.Sample(linearsampler, uv);
-	result.xyz =result.xyz * 2.0f - 1.0f;
-	return half4(result.xxx * tangent.xyz + result.yyy * binormal.xyz + result.zzz * normal.xyz, 0);
+	normalmap.xyz = normalmap.xyz * 2.0f - 1.0f;
+	return half3(normalmap.xxx * tangent.xyz + normalmap.yyy * binormal.xyz + normalmap.zzz * normal.xyz);
 }

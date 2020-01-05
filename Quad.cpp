@@ -2,9 +2,30 @@
 
 void Quad::init(const std::string & psname, const Renderer::RenderState& settingrs)
 {
+	{
+		static std::weak_ptr<Renderer::Buffer> vertices;
+		if (vertices.expired())
+		{
+			std::pair<Vector2, Vector2> triangleVertices[] =
+			{
+				{ { 1.0f, 1.0f  }, { 1.0f, 0.0f }},
+				{ { 1.0, -1.0f  }, { 1.0f, 1.0f }},
+				{ { -1.0f, -1.0f  }, { 0.0f, 1.0f}},
+
+				{ { 1.0f, 1.0f }, { 1.0f, 0.0f }},
+				{ { -1.0f, -1.0f  }, { 0.0f, 1.0f}},
+				{ { -1.0f, 1.0f  }, { 0.0f, 0.0f}}
+			};
+			mVertices = Renderer::getSingleton()->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector2, Vector2>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
+			vertices = mVertices;
+		}
+		else
+			mVertices = vertices.lock();
+	}
+
 	auto renderer = Renderer::getSingleton();
-	auto vs = renderer->compileShader(L"shaders/quad_vs.hlsl", L"vs", SM_VS);
-	auto ps = renderer->compileShader(M2U(psname), L"ps", SM_PS);
+	auto vs = renderer->compileShaderFromFile("shaders/quad_vs.hlsl", "vs", SM_VS);
+	auto ps = renderer->compileShaderFromFile((psname), "ps", SM_PS);
 	std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
 
 	ps->registerStaticSampler({
@@ -50,21 +71,6 @@ void Quad::setResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
 
 Renderer::Buffer::Ptr Quad::getSharedVertices() const
 {
-	static Renderer::Buffer::Ptr vertices;
-	if (!vertices)
-	{
-		std::pair<Vector2, Vector2> triangleVertices[] =
-		{
-			{ { 1.0f, 1.0f  }, { 1.0f, 0.0f }},
-			{ { 1.0, -1.0f  }, { 1.0f, 1.0f }},
-			{ { -1.0f, -1.0f  }, { 0.0f, 1.0f}},
-
-			{ { 1.0f, 1.0f }, { 1.0f, 0.0f }},
-			{ { -1.0f, -1.0f  }, { 0.0f, 1.0f}},
-			{ { -1.0f, 1.0f  }, { 0.0f, 0.0f}}
-		};
-		vertices = Renderer::getSingleton()->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector2, Vector2>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
-	}
-	return vertices;
+	return mVertices;
 }
 
