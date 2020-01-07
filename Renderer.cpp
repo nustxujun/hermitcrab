@@ -24,7 +24,7 @@ Renderer::Ptr Renderer::instance;
 static Renderer::DebugInfo debugInfoCache;
 static Renderer::DebugInfo debugInfoCurrent;
 
-DXGI_FORMAT const Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
+DXGI_FORMAT const Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
 
 
 Renderer::Ptr Renderer::create()
@@ -50,6 +50,7 @@ Renderer::Renderer()
 		"",
 		"../Engine/",
 		"Engine/",
+		"Engine/Shaders/"
 	};
 }
 
@@ -352,19 +353,21 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 		STDMETHOD(Open)(THIS_ D3D_INCLUDE_TYPE IncludeType, LPCSTR pFileName, LPCVOID pParentData, LPCVOID *ppData, UINT *pBytes)
 		{
 			std::fstream file(Renderer::getSingleton()->findFile(pFileName), std::ios::in | std::ios::binary);
-			Common::Assert(!!file, std::string("cannot find file ") + pFileName );
+			Common::Assert(!!file, std::string("cannot find included file ") + pFileName );
 			file.seekg(0,std::ios::end);
 			size_t size = file.tellg();
 			file.seekg(0,std::ios::beg);
 			
-			char* data = new char(size);
+			char* data = new char[size];
 			file.read(data, size);
 			(*ppData) = data;
 			(*pBytes) = size;
+			std::cout<< (void*)data << std::endl;
 			return S_OK;
 		}
 		STDMETHOD(Close)(THIS_ LPCVOID pData)
 		{
+			std::cout << pData << std::endl;
 			delete pData;
 			return S_OK;
 		}
