@@ -14,6 +14,7 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::present()
 			pass->read(inputs[0]->getRenderTarget());
 		}, [quad](auto srvs)mutable
 		{
+
 			auto renderer = Renderer::getSingleton();
 			auto cmdlist = renderer->getCommandList();
 			auto bb = renderer->getBackBuffer();
@@ -22,7 +23,9 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::present()
 			for (UINT i = 0; i < srvs.size(); ++i)
 			{
 				if (srvs[i])
+				{
 					quad->setResource(i, srvs[i]->getView()->getTexture()->getGPUHandle());
+				}
 			}
 			RenderContext::getSingleton()->renderScreen(quad.get());
 
@@ -67,7 +70,7 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::postprocess(const std::string& ps, 
 
 	auto pass = RenderGraph::LambdaRenderPass::Ptr{ new  RenderGraph::LambdaRenderPass({},[=](auto* pass, const auto& inputs) {
 			pass->read(inputs[0]->getRenderTarget());
-			pass->write(ResourceHandle::create(Renderer::VT_RENDERTARGET, 0, 0, DXGI_FORMAT_R8G8B8A8_UNORM));
+			pass->write(ResourceHandle::create(Renderer::VT_RENDERTARGET, 0, 0, DXGI_FORMAT_UNKNOWN));
 		}, [quad, prepare](auto srvs)
 		{
 			auto pso = quad->getPipelineState();
@@ -128,7 +131,7 @@ DefaultPipeline::DefaultPipeline()
 void DefaultPipeline::update()
 {
 	RenderGraph graph;
-	graph.begin() >> mDrawScene >> mColorGrading >> mGui >> mPresent;
+	graph.begin() >> mDrawScene >> mColorGrading    >> mGui >> mPresent;
 
 	graph.setup();
 	graph.compile();

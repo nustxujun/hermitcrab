@@ -24,7 +24,7 @@ Renderer::Ptr Renderer::instance;
 static Renderer::DebugInfo debugInfoCache;
 static Renderer::DebugInfo debugInfoCurrent;
 
-DXGI_FORMAT const Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
+DXGI_FORMAT const Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
 
 
 Renderer::Ptr Renderer::create()
@@ -49,6 +49,7 @@ Renderer::Renderer()
 	mFileSearchPaths = {
 		"",
 		"../Engine/",
+		"../Engine/Shaders/",
 		"Engine/",
 		"Engine/Shaders/"
 	};
