@@ -262,81 +262,128 @@ void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size
 	else
 		ASSERT(0,"unsupported resource.");
 
-	auto allocator = allocCommandAllocator();
-	allocator->reset();
-	mResourceCommandList->reset(allocator);
+	executeResourceCommands([&](CommandList::Ref cmdlist){
+		cmdlist->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST);
+		copy(cmdlist, src);
+	});
+}
 
-	auto state = res->getState();
-	mResourceCommandList->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST);
-	copy(mResourceCommandList, src);
+void Renderer::executeResourceCommands(const std::function<void(CommandList::Ref)>& dofunc, Renderer::CommandAllocator::Ptr alloc)
+{
+	bool recycle = false;
+	if (!alloc)
+	{
+		alloc = allocCommandAllocator();
+		recycle = true;
+	}
+
+	mResourceCommandList->reset(alloc);
+
+	dofunc(mResourceCommandList);
+
 	mResourceCommandList->close();
-
 	ID3D12CommandList* ppCommandLists[] = { mResourceCommandList->get() };
 	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
-	allocator->signal();
-	allocator->wait();
-	recycleCommandAllocator(allocator);
+	alloc->signal();
+	alloc->wait();
+
+	if (recycle)
+		recycleCommandAllocator(alloc);
 }
 
 Renderer::Shader::Ptr Renderer::compileShaderFromFile(const std::string & absfilepath, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros)
 {
 	auto path = findFile(absfilepath);
-
 	std::fstream file(path, std::ios::in | std::ios::binary);
 	ASSERT(!!file, "fail to open shader file");
 
-	file.seekg(0,std::ios::end);
+	file.seekg(0, std::ios::end);
 	size_t size = file.tellg();
-	file.seekg(0,std::ios::beg);
+	file.seekg(0, std::ios::beg);
 	std::string context;
 	context.resize(size);
 	file.read(&context[0], size);
 	return compileShader(absfilepath,context,entry,target,  macros);
 }
 
-Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std::string & context, const std::string & entry, const std::string & target,const std::vector<D3D_SHADER_MACRO>& macros)
+Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std::string & context, const std::string & entry, const std::string & target,const std::vector<D3D_SHADER_MACRO>& macros, const std::string& cachename)
 {
-	Shader::ShaderType type = Shader::ST_MAX_NUM;
-	switch (target[0])
-	{
-	case 'v': type = Shader::ST_VERTEX; break;
-	case 'p': type = Shader::ST_PIXEL; break;
-	case 'c': type = Shader::ST_COMPUTE; break;
-	default:
-		ASSERT(false, "unsupported!");
-		break;
-	}
+	Shader::ShaderType type = mapShaderType(target);
 
-	std::hash<std::string> hash;
-	auto hashcontext = context + entry + target;
-	for (auto& m: macros)
-	{
-		if (m.Name)
+
+	auto gethash = [this](const std::string& context, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros) {
+		std::hash<std::string> hash;
+		auto hashcontext = context + entry + target;
+		for (auto& m : macros)
 		{
-			hashcontext += m.Name;
+			if (m.Name)
+			{
+				hashcontext += m.Name;
+			}
+			if (m.Definition)
+			{
+				hashcontext += m.Definition;
+			}
 		}
-		if(m.Definition)
-		{
-			hashcontext += m.Definition;
-		}
-	}
+		std::stringstream ss;
+		return hash(hashcontext);
+	};
+
+	auto hash = gethash(context, entry, target, macros);
+
 	std::stringstream ss;
-	ss << std::hex << hash(hashcontext);
+	ss << hash;
 	std::string cachefilename = "cache/" + ss.str();
 	{
 		std::fstream cachefile(cachefilename, std::ios::in | std::ios::binary);
-
+		auto read = [&](auto& val) {
+			cachefile.read((char*)&val, sizeof(val));
+		};
 		if (cachefile)
 		{
-			unsigned int size;
-			cachefile >> size;
-			auto buffer = createMemoryData(size);
-			cachefile.read(buffer->data(), size);
+			bool fail = false;
+			UINT32 numincludes;
+			read(numincludes);
+			for (UINT32 i = 0; i < numincludes; ++i)
+			{
+				UINT32 numstr;
+				std::string include;
+				read(numstr);
 
-			return Shader::Ptr(new Shader(buffer, type));
+				include.resize(numstr);
+				cachefile.read(&include[0], numstr);
+				size_t oldhash;
+				read(oldhash);
+				
+				std::fstream file(findFile(include), std::ios::in | std::ios::binary);
+				file.seekg(0, std::ios::end);
+				size_t size = file.tellg();
+				file.seekg(0, std::ios::beg);
+				std::string context;
+				context.resize(size);
+				file.read(&context[0], size);
+
+				auto hash = gethash(context,{}, target, macros);
+				if (hash != oldhash)
+				{
+					fail = true;
+					break;
+				}
+			}
+
+			if (!fail)
+			{
+				unsigned int size;
+				read(size);
+				auto buffer = createMemoryData(size);
+				cachefile.read(buffer->data(), size);
+
+				return std::make_shared<Shader>(buffer, mapShaderType(target));
+			}
 		}
 	}
+
 
 
 	ComPtr<ID3DBlob> blob;
@@ -351,6 +398,9 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 
 	struct Include : public ID3DInclude
 	{
+		std::string target;
+		const std::vector<D3D_SHADER_MACRO>* macros;
+		std::vector<std::pair<std::string, size_t>> includes;
 		STDMETHOD(Open)(THIS_ D3D_INCLUDE_TYPE IncludeType, LPCSTR pFileName, LPCVOID pParentData, LPCVOID *ppData, UINT *pBytes)
 		{
 			std::fstream file(Renderer::getSingleton()->findFile(pFileName), std::ios::in | std::ios::binary);
@@ -363,18 +413,34 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 			file.read(data, size);
 			(*ppData) = data;
 			(*pBytes) = size;
-			std::cout<< (void*)data << std::endl;
+
+			std::hash<std::string> hash;
+			std::string hashcontext = std::string(data, size) + "" +target;
+			for (auto& m: *macros)
+			{
+				if (m.Name)
+				{
+					hashcontext += m.Name;
+				}
+				if (m.Definition)
+				{
+					hashcontext += m.Definition;
+				}
+			}
+			includes.push_back({pFileName, hash(hashcontext)});
 			return S_OK;
 		}
 		STDMETHOD(Close)(THIS_ LPCVOID pData)
 		{
-			std::cout << pData << std::endl;
+			
 			delete pData;
 			return S_OK;
 		}
 
 	}include;
-	
+	include.target = target;
+	include.macros = &macros;
+
 	if (FAILED(D3DCompile(context.data(), context.size(), name.c_str(), macros.data(),&include, (entry).c_str(), (target).c_str(), compileFlags, 0, &blob, &err)))
 	{
 		::OutputDebugStringA(context.c_str());
@@ -389,8 +455,22 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 	memcpy(result->data(), blob->GetBufferPointer(), result->size());
 
 	{
+		
 		std::fstream cachefile(cachefilename, std::ios::out | std::ios::binary);
-		cachefile << (unsigned int)result->size();
+		auto write = [&](auto val)
+		{
+			cachefile.write((const char*)&val, sizeof(val));
+		};
+		
+		write(UINT32(include.includes.size()));
+		for (auto& i: include.includes)
+		{
+			write(UINT32(i.first.size()));
+			cachefile.write(i.first.data(), i.first.size());
+			write(i.second);
+		}
+
+		write( (unsigned int)result->size());
 		cachefile.write(result->data(), result->size());
 	}
 
@@ -554,6 +634,13 @@ Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Sha
 	return pso;
 }
 
+Renderer::PipelineState::Ref Renderer::createComputePipelineState(const Shader::Ptr & shader)
+{
+	auto pso = PipelineState::create(shader);
+	mPipelineStates.push_back(pso);
+	return pso;
+}
+
 Renderer::ResourceView::Ptr Renderer::createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt)
 {
 	auto desc = mBackbuffers[0]->getTexture()->getDesc();
@@ -698,6 +785,24 @@ void Renderer::initProfile()
 void Renderer::initResources()
 {
 	mConstantBufferAllocator = ConstantBufferAllocator::create();
+
+	auto shader = compileShaderFromFile("shaders/gen_mips.hlsl","main", SM_CS);
+	mMipmapGen = createComputePipelineState(shader);
+}
+
+Renderer::Shader::ShaderType Renderer::mapShaderType(const std::string & target)
+{
+	Shader::ShaderType type = {};
+	switch (target[0])
+	{
+	case 'v': type = Shader::ST_VERTEX; break;
+	case 'p': type = Shader::ST_PIXEL; break;
+	case 'c': type = Shader::ST_COMPUTE; break;
+	default:
+		ASSERT(false, "unsupported!");
+		break;
+	}
+	return type;
 }
 
 std::string Renderer::findFile(const std::string & filename)
@@ -1498,10 +1603,13 @@ void Renderer::CommandList::setRenderTargets(const std::vector<ResourceView::Ref
 
 void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
 {
-	//ps->refreshConstantBuffer();
 	mCurrentPipelineState = ps;
 	mCmdList->SetPipelineState(ps->get());
-	mCmdList->SetGraphicsRootSignature(ps->getRootSignature());
+
+	if (ps->getType() == PipelineState::PST_Graphic)
+		mCmdList->SetGraphicsRootSignature(ps->getRootSignature());
+	else
+		mCmdList->SetComputeRootSignature(ps->getRootSignature());
 }
 
 void Renderer::CommandList::setVertexBuffer(const std::vector<Buffer::Ptr>& vertices)
@@ -1530,24 +1638,14 @@ void Renderer::CommandList::setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type)
 	mCmdList->IASetPrimitiveTopology(type);
 }
 
-void Renderer::CommandList::setTexture(UINT slot, Texture::Ref tex)
-{
-	setTexture(slot, tex->getGPUHandle());
-}
-
-void Renderer::CommandList::setTexture(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
-{
-	mCmdList->SetGraphicsRootDescriptorTable(slot, handle);
-}
-
 void Renderer::CommandList::setRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
 {
 	mCmdList->SetGraphicsRootDescriptorTable(slot, handle);
 }
 
-void Renderer::CommandList::set32BitConstants(UINT slot, UINT num, const void * data, UINT offset)
+void Renderer::CommandList::setComputeRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
 {
-	mCmdList->SetGraphicsRoot32BitConstants(slot, num,data,offset);
+	mCmdList->SetComputeRootDescriptorTable(slot, handle);
 }
 
 void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, UINT startVertex, UINT startInstance)
@@ -1568,9 +1666,58 @@ void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UIN
 	mCmdList->DrawIndexedInstanced(indexCountPerInstance, instanceCount, startIndex,startVertex,startInstance);
 }
 
+void Renderer::CommandList::dispatch(UINT x, UINT y, UINT z)
+{
+	mCurrentPipelineState->setRootDescriptorTable(this);
+
+	mCmdList->Dispatch(x,y,z);
+}
+
 void Renderer::CommandList::endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx)
 {
 	mCmdList->EndQuery(queryheap.Get(),type, queryidx);
+}
+
+void Renderer::CommandList::generateMips(Texture::Ref texture)
+{
+	auto renderer = Renderer::getSingleton();
+	auto pso = renderer->mMipmapGen;
+	auto desc = texture->getDesc();
+
+	std::vector<Texture::Ref> mips(desc.MipLevels);
+	mips.push_back(texture);
+
+	UINT width =(UINT)desc.Width;
+	UINT height = (UINT)desc.Height;
+
+	for (size_t i = 1; i < desc.MipLevels; ++i)
+	{
+		width >>= 1;
+		height >>= 1;
+		mips.push_back(renderer->createTexture(
+			width, 
+			height,
+			desc.Format,
+			D3D12_HEAP_TYPE_DEFAULT,
+			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+			Renderer::Resource::RT_TRANSIENT
+		));
+	}
+
+	renderer->executeResourceCommands([&](CommandList::Ref cmdlist) {
+		cmdlist->setPipelineState(pso);
+		for (auto i = 0; i < desc.MipLevels - 1; ++i)
+		{
+			auto src = mips[i];
+			auto dst = mips[i + 1];
+
+			//pso->setResource()
+			//cmdlist->dispatch();
+		}
+
+	});
+
+
 }
 
 void Renderer::CommandList::close()
@@ -1665,7 +1812,7 @@ const Renderer::RenderState Renderer::RenderState::GeneralSolid([](Renderer::Ren
 });
 
 
-Renderer::RenderState::RenderState(std::function<void(RenderState&self)> initializer)
+Renderer::RenderState::RenderState(std::function<void(RenderState&)> initializer)
 {
 	initializer(*this);
 }
@@ -1690,6 +1837,7 @@ D3D12_SHADER_VISIBILITY Renderer::Shader::getShaderVisibility() const
 	case Shader::ST_DOMAIN: return D3D12_SHADER_VISIBILITY_DOMAIN;
 	case Shader::ST_GEOMETRY: return D3D12_SHADER_VISIBILITY_GEOMETRY;
 	case Shader::ST_PIXEL: return D3D12_SHADER_VISIBILITY_PIXEL; 
+	case Shader::ST_COMPUTE: break;
 	default:
 		ASSERT(0,"unknown type");
 		break;
@@ -1704,6 +1852,7 @@ D3D12_DESCRIPTOR_RANGE_TYPE Renderer::Shader::getRangeType(D3D_SHADER_INPUT_TYPE
 	case D3D_SIT_CBUFFER: return D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
 	case D3D_SIT_TEXTURE: return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 	case D3D_SIT_SAMPLER: return D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+	case D3D_SIT_UAV_RWTYPED: return D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
 	default:
 		ASSERT(0, "unsupported shader input type");
 		return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -1777,7 +1926,6 @@ void Renderer::Shader::createRootParameters()
 			break;
 		case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
 			mSemanticsMap.samplers[desc.Name] = slot;
-			auto var = mReflection->GetVariableByName(desc.Name);
 			break;
 		}
 	}
@@ -1789,6 +1937,7 @@ void Renderer::Shader::createRootParameters()
 
 Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector<Shader::Ptr>& shaders)
 {
+	mType = PST_Graphic;
 	auto device = Renderer::getSingleton()->getDevice();
 
 	D3D12_ROOT_SIGNATURE_DESC rsd = {};
@@ -1861,6 +2010,36 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 
 }
 
+Renderer::PipelineState::PipelineState(const Shader::Ptr & shader)
+{
+	mType = PST_Compute;
+	auto device = Renderer::getSingleton()->getDevice();
+
+	D3D12_COMPUTE_PIPELINE_STATE_DESC desc = {0};
+	D3D12_ROOT_SIGNATURE_DESC rsd = {};
+
+	rsd.NumParameters = (UINT)shader->mRootParameters.size();
+	if (rsd.NumParameters > 0)
+		rsd.pParameters = shader->mRootParameters.data();
+	rsd.NumStaticSamplers = (UINT)shader->mStaticSamplers.size();
+	if (rsd.NumStaticSamplers > 0)
+		rsd.pStaticSamplers = shader->mStaticSamplers.data();
+
+	ComPtr<ID3D10Blob> blob;
+	ComPtr<ID3D10Blob> err;
+	if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &err)))
+	{
+		ASSERT(false, ((const char*)err->GetBufferPointer()));
+	}
+
+	CHECK(device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&mRootSignature)));
+	
+	desc.pRootSignature = mRootSignature.Get();
+	desc.CS = { shader->mCodeBlob->data(), (UINT)shader->mCodeBlob->size() };
+	
+	CHECK(device->CreateComputePipelineState(&desc, IID_PPV_ARGS(&mPipelineState)));
+}
+
 Renderer::PipelineState::~PipelineState()
 {
 }
@@ -1871,9 +2050,15 @@ void Renderer::PipelineState::setResource(Shader::ShaderType type, const std::st
 	auto ret = textures.find(name);
 	//ASSERT(ret != textures.end(), "specify texture name is not existed.");
 	if (ret == textures.end())
-		return;
-
-	mTextures[type][ret->second + mSemanticsMap[type].offset] = handle;
+	{ 
+		auto& uavs = mSemanticsMap[type].uavs;
+		auto ret = uavs.find(name);
+		if (ret == uavs.end())
+			return;	
+		mTextures[type][ret->second + mSemanticsMap[type].offset] = handle;
+	}
+	else
+		mTextures[type][ret->second + mSemanticsMap[type].offset] = handle;
 }
 
 void Renderer::PipelineState::setVSResource( const std::string & name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
@@ -1967,11 +2152,17 @@ Renderer::ConstantBuffer::Ptr Renderer::PipelineState::createConstantBuffer(Shad
 
 void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
 {
+	using SetFunc = void(CommandList::*)(UINT, const D3D12_GPU_DESCRIPTOR_HANDLE&);
+	SetFunc setfunc;
+	if (mType == PST_Graphic)
+		setfunc = &CommandList::setRootDescriptorTable;
+	else
+		setfunc = &CommandList::setComputeRootDescriptorTable;
 	for (auto&texs : mTextures)
 	{
 		for (auto& t : texs.second)
 		{
-			cmdlist->setRootDescriptorTable(t.first,t.second);
+			(cmdlist->*setfunc)(t.first,t.second);
 		}
 	}
 
@@ -1981,7 +2172,7 @@ void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
 	{
 		for (auto& cb : cbs.second)
 		{
-			cmdlist->setRootDescriptorTable(cb.first, cb.second);
+			(cmdlist->*setfunc)(cb.first, cb.second);
 		}
 	}
 }

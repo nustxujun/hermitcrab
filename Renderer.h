@@ -10,9 +10,11 @@
 #if defined(D3D12ON7)
 	#define SM_VS	"vs_5_0"
 	#define SM_PS	"ps_5_0"
+	#define SM_CS	"cs_5_0"
 #else
 	#define SM_VS	"vs_5_0"
 	#define SM_PS	"ps_5_0"
+	#define SM_CS	"cs_5_0"
 #endif
 
 class Renderer
@@ -506,11 +508,20 @@ public:
 	{
 		friend class Renderer;
 	public:
+		enum Type
+		{
+			PST_Graphic,
+			PST_Compute,
+		};
+
 		PipelineState(const RenderState& rs, const std::vector<Shader::Ptr>& shaders);
+		PipelineState(const Shader::Ptr& computeShader);
 		~PipelineState();
 
 		ID3D12PipelineState* get(){return mPipelineState.Get();}
 		ID3D12RootSignature* getRootSignature(){return mRootSignature.Get();}
+		Type getType()const {return mType;}
+
 
 		void setResource(Shader::ShaderType type,const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void setVSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
@@ -529,6 +540,7 @@ public:
 	private:
 		void setRootDescriptorTable(CommandList* cmdlist);
 	private:
+		Type mType = PST_Graphic;
 		ComPtr<ID3D12PipelineState> mPipelineState;
 		ComPtr<ID3D12RootSignature> mRootSignature;
 
@@ -590,14 +602,15 @@ public:
 		void setVertexBuffer(const Buffer::Ptr& vertices);
 		void setIndexBuffer(const Buffer::Ptr& indices);
 		void setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		void setTexture(UINT slot, Texture::Ref tex );
-		void setTexture(UINT slot,const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 
 		void setRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		void set32BitConstants(UINT slot, UINT num, const void* data, UINT offset);
+		void setComputeRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
+
 		void drawInstanced(UINT vertexCount, UINT instanceCount = 1, UINT startVertex = 0, UINT startInstance = 0);
 		void drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount = 1U, UINT startIndex = 0, INT startVertex = 0, UINT startInstance = 0);
+		void dispatch(UINT x, UINT y , UINT z);
 		void endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx);
+		void generateMips(Texture::Ref texture);
 	private:
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
 		PipelineState::Ref mCurrentPipelineState;
@@ -630,11 +643,10 @@ public:
 	ConstantBufferAllocator::Ref getConstantBufferAllocator();
 	void flushCommandQueue();
 	void updateResource(Resource::Ref res, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref )>& copy);
-	//void updateBuffer(Resource::Ref res, const void* buffer, size_t size);
-	//void updateTexture(Resource::Ref res,const void* buffer, size_t numRows, size_t rowSize);
+	void executeResourceCommands(const std::function<void(CommandList::Ref)>& dofunc, Renderer::CommandAllocator::Ptr alloc = {});
 
 	Shader::Ptr compileShaderFromFile(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
-	Shader::Ptr compileShader(const std::string& name, const std::string& context, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
+	Shader::Ptr compileShader(const std::string& name, const std::string& context, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {}, const std::string& cachename = {});
 	Fence::Ptr createFence();
 	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	void destroyResource(Resource::Ref res);
@@ -645,9 +657,13 @@ public:
 	Buffer::Ptr createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	ConstantBuffer::Ptr createConstantBuffer(UINT size);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
+	PipelineState::Ref createComputePipelineState(const Shader::Ptr& shader);
+
 	ResourceView::Ptr createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERSISTENT);
 	Profile::Ref createProfile();
 	ComPtr<ID3D12QueryHeap> getTimeStampQueryHeap();
+
+
 private:
 	MemoryData createMemoryData(size_t size = 0)
 	{
@@ -660,7 +676,7 @@ private:
 	void initDescriptorHeap();
 	void initProfile();
 	void initResources();
-
+	Shader::ShaderType mapShaderType(const std::string& target);
 
 
 	CommandAllocator::Ptr allocCommandAllocator();
@@ -677,6 +693,7 @@ private:
 
 	void present();
 	void updateTimeStamp();
+
 private:
 	static Renderer::Ptr instance;
 
@@ -708,6 +725,7 @@ private:
 	Resource::Ref mProfileReadBack;
 	CommandAllocator::Ptr mProfileCmdAlloc;
 	ConstantBufferAllocator::Ptr mConstantBufferAllocator;
+	PipelineState::Ref mMipmapGen;
 
 	bool mVSync = false;
 

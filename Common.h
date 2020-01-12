@@ -1,5 +1,10 @@
 #pragma once
 
+// std::wstring_convert is deprecated in c++17, but there is no easy way to replace it. 
+// display warnings and remain using it
+#define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
+
+
 //stl 
 #include <string>
 #include <vector>
@@ -32,6 +37,7 @@
 
 // macros
 #define ALIGN(x,y) (((x + y - 1) & ~(y - 1)) )
+
 
 template<class T>
 using ComPtr = Microsoft::WRL::ComPtr<T>;
