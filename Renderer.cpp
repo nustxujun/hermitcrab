@@ -1528,7 +1528,7 @@ Renderer::CommandList::~CommandList()
 {
 }
 
-void Renderer::CommandList::transitionTo(Resource::Ref res, D3D12_RESOURCE_STATES  state)
+void Renderer::CommandList::transitionTo(Resource::Ref res, D3D12_RESOURCE_STATES  state, UINT subresource ,bool autoflush)
 {
 	const auto& cur = res->getState();
 	if (state == cur)
@@ -1541,11 +1541,12 @@ void Renderer::CommandList::transitionTo(Resource::Ref res, D3D12_RESOURCE_STATE
 	barrier.Transition.pResource = res->get();
 	barrier.Transition.StateBefore = cur;
 	barrier.Transition.StateAfter = state;
-	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+	barrier.Transition.Subresource = subresource;
 
 	res->mState = state;
 	addResourceBarrier(barrier);
-	flushResourceBarrier();
+	if (autoflush)
+		flushResourceBarrier();
 }
 
 void Renderer::CommandList::addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier)
