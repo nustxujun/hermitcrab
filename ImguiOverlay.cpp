@@ -276,7 +276,7 @@ void ImGuiPass::initFonts()
 	io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
 
 	auto renderer = Renderer::getSingleton();
-	mFonts = renderer->createTexture(width, height, DXGI_FORMAT_R8G8B8A8_UNORM);
+	mFonts = renderer->createTexture(width, height, 1,DXGI_FORMAT_R8G8B8A8_UNORM);
 	renderer->updateResource(mFonts, pixels, width * height * 4, [dst = mFonts](auto cmdlist, auto src) {
 		cmdlist->copyTexture(dst, 0, { 0,0,0 }, src, 0, nullptr);
 	});

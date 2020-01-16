@@ -32,7 +32,7 @@ struct Texture: public Object
 
 	void init(int width, int height, DXGI_FORMAT format, const void* data)
 	{
-		texture = Renderer::getSingleton()->createTexture(width, height, format, data);
+		texture = Renderer::getSingleton()->createTexture((UINT)width, (UINT)height, format,1, data);
 		texture->setName(M2U("Texture " + name));
 	}
 	Renderer::Texture::Ref texture;

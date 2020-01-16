@@ -3,8 +3,8 @@
 
 
 //#if WINVER  < _WIN32_WINNT_WIN10
-	#define D3D12ON7
-	#include "D3D12Downlevel.h"
+	//#define D3D12ON7
+	//#include "D3D12Downlevel.h"
 //#endif
 
 #if defined(D3D12ON7)
@@ -293,8 +293,7 @@ public:
 	{
 	public:
 
-
-		ResourceView(ViewType type, const Texture::Ref& res);
+		ResourceView(const Texture::Ref& res, bool autorelease = false);
 		ResourceView(ViewType type, UINT width, UINT height, DXGI_FORMAT format, Resource::ResourceType rt = Resource::RT_PERSISTENT);
 		~ResourceView();
 
@@ -303,13 +302,18 @@ public:
 		const Texture::Ref& getTexture()const;
 		ViewType getType()const{return mType;};
 
+		void createRenderTargetView(const D3D12_RENDER_TARGET_VIEW_DESC* desc);
+		void createDepthStencilView(const D3D12_DEPTH_STENCIL_VIEW_DESC* desc);
+		void createUnorderedAccessView(const D3D12_UNORDERED_ACCESS_VIEW_DESC* desc);
+
+
 	private:
-		void createView();
 		DescriptorHeapType matchDescriptorHeapType()const;
 	private:
 		DescriptorHandle mHandle;
 		Texture::Ref mTexture;
 		ViewType mType = VT_UNKNOWN;
+		bool mAutoRelease;
 	};
 
 
@@ -419,6 +423,7 @@ public:
 		{
 			UINT offset = 0;
 			std::map<std::string, CBuffer> cbuffers;
+			std::map<std::string, CBuffer> cbuffersBy32Bits;
 			std::map<std::string, UINT> textures;
 			std::map<UINT, UINT> texturesBySlot;
 			std::map<std::string, UINT> samplers;
@@ -535,6 +540,10 @@ public:
 		void setVSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
 		void setPSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
 
+		void setVariable(Shader::ShaderType type, const std::string& name, const void* data);
+		void setVSVariable(Shader::ShaderType type, const std::string& name, const void* data);
+		void setPSVariable(Shader::ShaderType type, const std::string& name, const void* data);
+
 		ConstantBuffer::Ptr createConstantBuffer(Shader::ShaderType type, const std::string& name);
 
 	private:
@@ -547,6 +556,7 @@ public:
 		std::map<Shader::ShaderType, Shader::Reflection> mSemanticsMap;
 		std::map<Shader::ShaderType, std::map<UINT, D3D12_GPU_DESCRIPTOR_HANDLE>> mTextures;
 		std::map<Shader::ShaderType, std::map<UINT, D3D12_GPU_DESCRIPTOR_HANDLE>> mCBuffers;
+		std::map<Shader::ShaderType, std::map<UINT, std::vector<char>>> mCBuffersBy32Bits;
 	};
 
 	class Profile:public Interface<Profile>
@@ -605,6 +615,8 @@ public:
 
 		void setRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void setComputeRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
+		void set32BitConstants(UINT slot, UINT num, const void* data, UINT offset);
+		void setCompute32BitConstants(UINT slot, UINT num, const void* data, UINT offset);
 
 		void drawInstanced(UINT vertexCount, UINT instanceCount = 1, UINT startVertex = 0, UINT startInstance = 0);
 		void drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount = 1U, UINT startIndex = 0, INT startVertex = 0, UINT startInstance = 0);
@@ -640,7 +652,6 @@ public:
 	ID3D12CommandQueue* getCommandQueue();
 	CommandList::Ref getCommandList();
 	ResourceView::Ref getBackBuffer();
-	ConstantBufferAllocator::Ref getConstantBufferAllocator();
 	void flushCommandQueue();
 	void updateResource(Resource::Ref res, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref )>& copy);
 	void executeResourceCommands(const std::function<void(CommandList::Ref)>& dofunc, Renderer::CommandAllocator::Ptr alloc = {});
@@ -650,16 +661,18 @@ public:
 	Fence::Ptr createFence();
 	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	void destroyResource(Resource::Ref res);
-	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
+	Texture::Ref createTexture(UINT width, UINT height, UINT depth, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	Texture::Ref createTexture(const std::wstring& filename);
-	Texture::Ref createTexture(int width, int height, DXGI_FORMAT format ,const void* data);
+	Texture::Ref createTexture(UINT width, UINT height, DXGI_FORMAT format , UINT nummips, const void* data);
 
 	Buffer::Ptr createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	ConstantBuffer::Ptr createConstantBuffer(UINT size);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
 	PipelineState::Ref createComputePipelineState(const Shader::Ptr& shader);
 
-	ResourceView::Ptr createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERSISTENT);
+	ResourceView::Ptr createResourceView(UINT width, UINT height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERSISTENT);
+	ResourceView::Ptr createResourceView(const Texture::Ref& tex, bool autorelease = false);
+
 	Profile::Ref createProfile();
 	ComPtr<ID3D12QueryHeap> getTimeStampQueryHeap();
 
@@ -725,8 +738,8 @@ private:
 	Resource::Ref mProfileReadBack;
 	CommandAllocator::Ptr mProfileCmdAlloc;
 	ConstantBufferAllocator::Ptr mConstantBufferAllocator;
-	PipelineState::Ref mMipmapGen;
-
+	std::array<PipelineState::Ref, 4> mGenMipsPSO;
+	ConstantBuffer::Ptr mGenMipsConsts;
 	bool mVSync = false;
 
 };

@@ -134,7 +134,9 @@ void Renderer::resize(int width, int height)
 		std::wstringstream ss;
 		ss << L"BackBuffer" << i;
 		res->setName(ss.str());
-		mBackbuffers[i] = ResourceView::create(VT_RENDERTARGET, res);
+		auto rt = ResourceView::create(res);
+		rt->createRenderTargetView(nullptr);
+		mBackbuffers[i] = rt;
 	}
 
 	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
@@ -218,11 +220,6 @@ Renderer::CommandList::Ref Renderer::getCommandList()
 Renderer::ResourceView::Ref Renderer::getBackBuffer()
 {
 	return mBackbuffers[mCurrentFrame];
-}
-
-Renderer::ConstantBufferAllocator::Ref Renderer::getConstantBufferAllocator()
-{
-	return mConstantBufferAllocator;
 }
 
 void Renderer::flushCommandQueue()
@@ -515,15 +512,15 @@ Renderer::Resource::Ref Renderer::createResource(size_t size, D3D12_HEAP_TYPE ty
 	return res;
 }
 
-Renderer::Texture::Ref Renderer::createTexture(int width, int height, DXGI_FORMAT format, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags, Resource::ResourceType restype)
+Renderer::Texture::Ref Renderer::createTexture(UINT width, UINT height, UINT depth,  DXGI_FORMAT format, UINT nummips, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags, Resource::ResourceType restype)
 {
 	D3D12_RESOURCE_DESC resdesc = {};
 	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 	resdesc.Alignment = 0;
 	resdesc.Width = width;
 	resdesc.Height = height;
-	resdesc.DepthOrArraySize = 1;
-	resdesc.MipLevels = 1;
+	resdesc.DepthOrArraySize = depth;
+	resdesc.MipLevels = nummips;
 	resdesc.Format = format;
 	resdesc.SampleDesc.Count = 1;
 	resdesc.SampleDesc.Quality = 0;
@@ -567,7 +564,7 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	}
 	ASSERT(data != nullptr,"cannot create texture");
 	
-	auto tex = createTexture(width, height, format);
+	auto tex = createTexture(width, height, 1, format);
 	updateResource(tex, data, width * height * D3DHelper::sizeof_DXGI_FORMAT(format), [dst = tex](auto cmdlist, auto src){
 		cmdlist->copyTexture(dst,0,{0,0,0},src,0,nullptr);
 	});
@@ -578,9 +575,9 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	return tex;
 }
 
-Renderer::Texture::Ref Renderer::createTexture(int width, int height, DXGI_FORMAT format, const void * data)
+Renderer::Texture::Ref Renderer::createTexture(UINT width, UINT height, DXGI_FORMAT format, UINT nummips, const void * data)
 {
-	auto tex = createTexture(width, height, format,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_FLAG_NONE);
+	auto tex = createTexture(width, height, 1, format, nummips,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_FLAG_NONE);
 	updateResource(tex, data, width * height * D3DHelper::sizeof_DXGI_FORMAT(format), [dst = tex](auto cmdlist, auto src) {
 		cmdlist->copyTexture(dst, 0, { 0,0,0 }, src, 0, nullptr);
 		});
@@ -641,18 +638,23 @@ Renderer::PipelineState::Ref Renderer::createComputePipelineState(const Shader::
 	return pso;
 }
 
-Renderer::ResourceView::Ptr Renderer::createResourceView(int width, int height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt)
+Renderer::ResourceView::Ptr Renderer::createResourceView(UINT width, UINT height,DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt)
 {
 	auto desc = mBackbuffers[0]->getTexture()->getDesc();
-	if (width == 0 || height == 0)
+	if (width == 0 || height == 0 )
 	{
-		width = (int)desc.Width;
-		height = (int)desc.Height;
+		width = (UINT)desc.Width;
+		height = (UINT)desc.Height;
 	}
 	if (format == DXGI_FORMAT_UNKNOWN)
 		format = FRAME_BUFFER_FORMAT;
 	auto view = ResourceView::create(vt,width, height, format, rt);
 	return view;
+}
+
+Renderer::ResourceView::Ptr Renderer::createResourceView(const Texture::Ref& tex, bool autorelease )
+{
+	return ResourceView::create(tex, autorelease);
 }
 
 Renderer::Profile::Ref Renderer::createProfile()
@@ -786,21 +788,30 @@ void Renderer::initResources()
 {
 	mConstantBufferAllocator = ConstantBufferAllocator::create();
 
-	auto shader = compileShaderFromFile("shaders/gen_mips.hlsl","main", SM_CS);
-	shader->registerStaticSampler({
-		D3D12_FILTER_MIN_MAG_MIP_POINT,
-		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-		0,0,
-		D3D12_COMPARISON_FUNC_NEVER,
-		D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
-		0,
-		D3D12_FLOAT32_MAX,
-		0,0,
-		D3D12_SHADER_VISIBILITY_ALL
-	});
-	mMipmapGen = createComputePipelineState(shader);
+
+
+	for (int i = 0; i < 4; ++i)
+	{
+		std::stringstream ss;
+		ss << i;
+		auto shader = compileShaderFromFile("shaders/gen_mips.hlsl", "main", SM_CS,{{"NON_OF_POWER", ss.str().c_str()},{NULL,NULL}});
+		shader->registerStaticSampler({
+			D3D12_FILTER_MIN_MAG_MIP_POINT,
+			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+			0,0,
+			D3D12_COMPARISON_FUNC_NEVER,
+			D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+			0,
+			D3D12_FLOAT32_MAX,
+			0,0,
+			D3D12_SHADER_VISIBILITY_ALL
+			});
+		mGenMipsPSO[i] = createComputePipelineState(shader);
+	}
+
+	mGenMipsConsts = mGenMipsPSO[0]->createConstantBuffer(Shader::ST_COMPUTE, "CB0");
 }
 
 Renderer::Shader::ShaderType Renderer::mapShaderType(const std::string & target)
@@ -1085,10 +1096,9 @@ ID3D12DescriptorHeap * Renderer::DescriptorHeap::get()
 	return mHeap.Get();
 }
 
-Renderer::ResourceView::ResourceView(ViewType type, const Texture::Ref& res):
-	mTexture(res), mType(type)
+Renderer::ResourceView::ResourceView(const Texture::Ref& res, bool autorelease):
+	mTexture(res), mType(VT_UNKNOWN), mAutoRelease(autorelease)
 {
-	createView();
 }
 
 Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXGI_FORMAT format, Resource::ResourceType rt):
@@ -1115,9 +1125,8 @@ Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXG
 	default:
 		flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
 	}
-	mTexture = renderer->createTexture(width, height, format, D3D12_HEAP_TYPE_DEFAULT, flags,rt);
-	
-
+	mTexture = renderer->createTexture(width, height,1, format,1, D3D12_HEAP_TYPE_DEFAULT, flags,rt);
+	mAutoRelease = true;
 	if (rt == Resource::RT_PERSISTENT)
 	{		
 		static size_t seqid = 0;
@@ -1134,30 +1143,6 @@ Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXG
 	}
 
 
-	createView();
-}
-
-Renderer::ResourceView::~ResourceView()
-{
-	auto heap = Renderer::getSingleton()->getDescriptorHeap(matchDescriptorHeapType());
-	heap->dealloc(mHandle);
-
-	Renderer::getSingleton()->destroyResource(mTexture);
-}
-
-const D3D12_CPU_DESCRIPTOR_HANDLE& Renderer::ResourceView::getCPUHandle() const
-{
-	return mHandle.cpu;
-}
-
-const Renderer::Texture::Ref& Renderer::ResourceView::getTexture() const
-{
-	return mTexture;
-}
-
-void Renderer::ResourceView::createView()
-{
-	auto renderer = Renderer::getSingleton();
 	auto device = renderer->getDevice();
 	auto heap = renderer->getDescriptorHeap(matchDescriptorHeapType());
 	mHandle = heap->alloc();
@@ -1172,10 +1157,50 @@ void Renderer::ResourceView::createView()
 		device->CreateDepthStencilView(res, nullptr, mHandle);
 		break;
 	case Renderer::VT_UNORDEREDACCESS:
-		//device->CreateUnorderedAccessView(res, nullptr, mHandle);
+		device->CreateUnorderedAccessView(res, nullptr,nullptr, mHandle);
 	default:
-		ASSERT(false,"unsupported");
+		ASSERT(false, "unsupported");
 	}
+}
+
+Renderer::ResourceView::~ResourceView()
+{
+	auto heap = Renderer::getSingleton()->getDescriptorHeap(matchDescriptorHeapType());
+	heap->dealloc(mHandle);
+
+	if (mAutoRelease)
+		Renderer::getSingleton()->destroyResource(mTexture);
+}
+
+const D3D12_CPU_DESCRIPTOR_HANDLE& Renderer::ResourceView::getCPUHandle() const
+{
+	return mHandle.cpu;
+}
+
+const Renderer::Texture::Ref& Renderer::ResourceView::getTexture() const
+{
+	return mTexture;
+}
+
+void Renderer::ResourceView::createRenderTargetView(const D3D12_RENDER_TARGET_VIEW_DESC* desc)
+{
+	ASSERT(mType == VT_UNKNOWN, "type invalid.");
+	mType = VT_RENDERTARGET;
+	Renderer::getSingleton()->getDevice()->CreateRenderTargetView(mTexture->get(), desc, mHandle);
+}
+
+void Renderer::ResourceView::createDepthStencilView(const D3D12_DEPTH_STENCIL_VIEW_DESC* desc)
+{
+	ASSERT(mType == VT_UNKNOWN, "type invalid.");
+	mType = VT_DEPTHSTENCIL;
+	Renderer::getSingleton()->getDevice()->CreateDepthStencilView(mTexture->get(), desc, mHandle);
+}
+
+void Renderer::ResourceView::createUnorderedAccessView(const D3D12_UNORDERED_ACCESS_VIEW_DESC* desc)
+{
+	ASSERT(mType == VT_UNKNOWN, "type invalid.");
+	mType = VT_UNORDEREDACCESS;
+	Renderer::getSingleton()->getDevice()->CreateUnorderedAccessView(mTexture->get(), nullptr,desc, mHandle);
 }
 
 Renderer::DescriptorHeapType Renderer::ResourceView::matchDescriptorHeapType() const
@@ -1661,6 +1686,16 @@ void Renderer::CommandList::setComputeRootDescriptorTable(UINT slot, const D3D12
 	mCmdList->SetComputeRootDescriptorTable(slot, handle);
 }
 
+void Renderer::CommandList::set32BitConstants(UINT slot, UINT num, const void* data, UINT offset)
+{
+	mCmdList->SetGraphicsRoot32BitConstants(slot, num, data, offset);
+}
+
+void Renderer::CommandList::setCompute32BitConstants(UINT slot, UINT num, const void* data, UINT offset)
+{
+	mCmdList->SetComputeRoot32BitConstants(slot, num, data, offset);
+}
+
 void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, UINT startVertex, UINT startInstance)
 {
 	mCurrentPipelineState->setRootDescriptorTable(this);
@@ -1694,41 +1729,61 @@ void Renderer::CommandList::endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QU
 void Renderer::CommandList::generateMips(Texture::Ref texture)
 {
 	auto renderer = Renderer::getSingleton();
-	auto pso = renderer->mMipmapGen;
+	auto pso = renderer->mGenMipsPSO[0];
 	auto desc = texture->getDesc();
 
-	std::vector<Texture::Ref> mips(desc.MipLevels);
-	mips.push_back(texture);
+	if (desc.MipLevels == 1)
+		return;
 
-	UINT width =(UINT)desc.Width;
-	UINT height = (UINT)desc.Height;
-
-	for (size_t i = 1; i < desc.MipLevels; ++i)
+	Texture::Ref dst;
+	if (desc.Flags | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)
 	{
-		width >>= 1;
-		height >>= 1;
-		mips.push_back(renderer->createTexture(
-			width, 
-			height,
+		dst = texture;
+	}
+	else
+	{
+		dst = renderer->createTexture(
+			desc.Width >> 1,
+			desc.Height >> 1, 
+			desc.DepthOrArraySize,
 			desc.Format,
-			D3D12_HEAP_TYPE_DEFAULT,
+			desc.MipLevels - 1,
+			D3D12_HEAP_TYPE_DEFAULT, 
 			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-			Renderer::Resource::RT_TRANSIENT
-		));
+			Resource::RT_TRANSIENT
+		);
 	}
 
-	renderer->executeResourceCommands([&](CommandList::Ref cmdlist) {
-		cmdlist->setPipelineState(pso);
-		for (auto i = 0; i < desc.MipLevels - 1; ++i)
-		{
-			auto src = mips[i];
-			auto dst = mips[i + 1];
+	std::vector<ResourceView::Ptr> rvs;
+	for (auto i = 1; i < desc.MipLevels; ++i)
+	{
+		auto rv = renderer->createResourceView(dst);
+		D3D12_UNORDERED_ACCESS_VIEW_DESC uavd = {};
+		uavd.Format = desc.Format;
+		uavd.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+		uavd.Texture2D.PlaneSlice = 0;
+		uavd.Texture2D.MipSlice = i;
 
-			//pso->setResource()
-			//cmdlist->dispatch();
-		}
+		rv->createUnorderedAccessView(&uavd);
+		rvs.push_back(rv);
+	}
 
-	});
+
+
+
+
+	//renderer->executeResourceCommands([&](CommandList::Ref cmdlist) {
+	//	cmdlist->setPipelineState(pso);
+	//	for (auto i = 0; i < desc.MipLevels - 1; ++i)
+	//	{
+	//		auto src = mips[i];
+	//		auto dst = mips[i + 1];
+
+	//		//pso->setResource()
+	//		//cmdlist->dispatch();
+	//	}
+
+	//});
 
 
 }
@@ -1889,7 +1944,7 @@ void Renderer::Shader::createRootParameters()
 		if (desc.Type == D3D_SIT_SAMPLER)
 			continue;
 
-		UINT slot = mRootParameters.size();
+		UINT slot = (UINT)mRootParameters.size();
 		mRootParameters.push_back({});
 		auto& rootparam = mRootParameters.back();
 		rootparam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -1918,16 +1973,23 @@ void Renderer::Shader::createRootParameters()
 				ShaderBufferDesc bd;
 				cbuffer->GetDesc(&bd);
 
-				auto& cbuffers = mSemanticsMap.cbuffers[bd.Name];
-				cbuffers.size = bd.Size;
-				cbuffers.slot = slot;
+				CBuffer* cbuffers;
+
+				if (bd.Size < 256)
+					cbuffers = &mSemanticsMap.cbuffersBy32Bits[bd.Name];
+				else
+					cbuffers = &mSemanticsMap.cbuffers[bd.Name];
+
+				cbuffers->size = bd.Size;
+				cbuffers->slot = slot;
 				for (UINT j = 0; j < bd.Variables; ++j)
 				{
 					auto var = cbuffer->GetVariableByIndex(j);
 					ShaderVariableDesc vd;
 					var->GetDesc(&vd);
-					cbuffers.variables[vd.Name] = {vd.StartOffset, vd.Size};
+					cbuffers->variables[vd.Name] = { vd.StartOffset, vd.Size };
 				}
+
 			}
 			break;
 		case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
@@ -1964,7 +2026,7 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 		samplers.insert(samplers.end(), s->mStaticSamplers.begin(), s->mStaticSamplers.end());
 		params.insert(params.end(), s->mRootParameters.begin(), s->mRootParameters.end());
 		s->mSemanticsMap.offset = offset;
-		offset += s->mRootParameters.size();
+		offset += (UINT)s->mRootParameters.size();
 		mSemanticsMap[s->mType] = s->mSemanticsMap;
 		switch (s->mType)
 		{
@@ -2051,6 +2113,8 @@ Renderer::PipelineState::PipelineState(const Shader::Ptr & shader)
 	desc.CS = { shader->mCodeBlob->data(), (UINT)shader->mCodeBlob->size() };
 	
 	CHECK(device->CreateComputePipelineState(&desc, IID_PPV_ARGS(&mPipelineState)));
+
+	mSemanticsMap[shader->mType] = shader->mSemanticsMap;
 }
 
 Renderer::PipelineState::~PipelineState()
@@ -2165,27 +2229,46 @@ Renderer::ConstantBuffer::Ptr Renderer::PipelineState::createConstantBuffer(Shad
 
 void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
 {
-	using SetFunc = void(CommandList::*)(UINT, const D3D12_GPU_DESCRIPTOR_HANDLE&);
-	SetFunc setfunc;
+	using SetRDT = void(CommandList::*)(UINT, const D3D12_GPU_DESCRIPTOR_HANDLE&);
+	SetRDT setrdt;
+	using Set32Bits = void(CommandList::*)(UINT, UINT, const void*, UINT);
+	Set32Bits set32bits;
 	if (mType == PST_Graphic)
-		setfunc = &CommandList::setRootDescriptorTable;
+	{
+		setrdt = &CommandList::setRootDescriptorTable;
+		set32bits = &CommandList::set32BitConstants;
+	}
 	else
-		setfunc = &CommandList::setComputeRootDescriptorTable;
+	{
+		setrdt = &CommandList::setComputeRootDescriptorTable;
+		set32bits = &CommandList::setCompute32BitConstants;
+	}
 	for (auto&texs : mTextures)
 	{
 		for (auto& t : texs.second)
 		{
-			(cmdlist->*setfunc)(t.first,t.second);
+			(cmdlist->*setrdt)(t.first,t.second);
 		}
 	}
 
-	Renderer::getSingleton()->getConstantBufferAllocator()->sync();
+	Renderer::getSingleton()->mConstantBufferAllocator->sync();
 
 	for (auto& cbs : mCBuffers)
 	{
 		for (auto& cb : cbs.second)
 		{
-			(cmdlist->*setfunc)(cb.first, cb.second);
+			(cmdlist->*setrdt)(cb.first, cb.second);
+		}
+	}
+
+	for (auto& cbs : mCBuffersBy32Bits)
+	{
+		for (auto& cb : cbs.second)
+		{
+			UINT size = (UINT)cb.second.size();
+			UINT count = size / 4;
+			if (count != 0)
+				(cmdlist->*set32bits)(cb.first, count, cb.second.data(),0);
 		}
 	}
 }
