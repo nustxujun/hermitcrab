@@ -150,7 +150,7 @@ void Renderer::beginFrame()
 	//resetCommands();
 
 
-	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET, -1, true);
 
 
 	auto heap = mDescriptorHeaps[DHT_CBV_SRV_UAV]->get();
@@ -260,7 +260,7 @@ void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size
 		ASSERT(0,"unsupported resource.");
 
 	executeResourceCommands([&](CommandList::Ref cmdlist){
-		cmdlist->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST);
+		cmdlist->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST, -1, true);
 		copy(cmdlist, src);
 	});
 }
@@ -879,7 +879,7 @@ void Renderer::recycleCommandAllocator(CommandAllocator::Ptr ca)
 
 void Renderer::commitCommands()
 {
-	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_PRESENT);
+	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_PRESENT, -1, true);
 
 #ifndef D3D12ON7
 	mCommandList->close();
@@ -1143,11 +1143,9 @@ Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXG
 	}
 
 
-	auto device = renderer->getDevice();
-	auto heap = renderer->getDescriptorHeap(matchDescriptorHeapType());
-	mHandle = heap->alloc();
+	allocHeap();
 	auto res = mTexture->get();
-
+	auto device = renderer->getDevice();
 	switch (mType)
 	{
 	case Renderer::VT_RENDERTARGET:
@@ -1186,6 +1184,7 @@ void Renderer::ResourceView::createRenderTargetView(const D3D12_RENDER_TARGET_VI
 {
 	ASSERT(mType == VT_UNKNOWN, "type invalid.");
 	mType = VT_RENDERTARGET;
+	allocHeap();
 	Renderer::getSingleton()->getDevice()->CreateRenderTargetView(mTexture->get(), desc, mHandle);
 }
 
@@ -1193,6 +1192,7 @@ void Renderer::ResourceView::createDepthStencilView(const D3D12_DEPTH_STENCIL_VI
 {
 	ASSERT(mType == VT_UNKNOWN, "type invalid.");
 	mType = VT_DEPTHSTENCIL;
+	allocHeap();
 	Renderer::getSingleton()->getDevice()->CreateDepthStencilView(mTexture->get(), desc, mHandle);
 }
 
@@ -1200,7 +1200,16 @@ void Renderer::ResourceView::createUnorderedAccessView(const D3D12_UNORDERED_ACC
 {
 	ASSERT(mType == VT_UNKNOWN, "type invalid.");
 	mType = VT_UNORDEREDACCESS;
+	allocHeap();
 	Renderer::getSingleton()->getDevice()->CreateUnorderedAccessView(mTexture->get(), nullptr,desc, mHandle);
+}
+
+void Renderer::ResourceView::allocHeap()
+{
+	auto renderer = Renderer::getSingleton();
+	auto device = renderer->getDevice();
+	auto heap = renderer->getDescriptorHeap(matchDescriptorHeapType());
+	mHandle = heap->alloc();
 }
 
 Renderer::DescriptorHeapType Renderer::ResourceView::matchDescriptorHeapType() const

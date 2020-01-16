@@ -308,6 +308,7 @@ public:
 
 
 	private:
+		void allocHeap();
 		DescriptorHeapType matchDescriptorHeapType()const;
 	private:
 		DescriptorHandle mHandle;
@@ -591,7 +592,7 @@ public:
 		void close();
 		void reset(const CommandAllocator::Ref& alloc);
 
-		void transitionTo( Resource::Ref res, D3D12_RESOURCE_STATES state, UINT subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool autoflush = true);
+		void transitionTo( Resource::Ref res, D3D12_RESOURCE_STATES state, UINT subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool autoflush = false);
 		void addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier);
 		void flushResourceBarrier();
 		void copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size );

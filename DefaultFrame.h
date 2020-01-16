@@ -21,8 +21,8 @@ public:
 	{
 		pipeline = decltype(pipeline)(new DefaultPipeline);
 
-		rendercmd.init(false);
-		rendercmd.record();
+		//rendercmd.init(false);
+		//rendercmd.record();
 		commonConsts = mRenderList[0]->material->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL,"CommonConstants");
 
 		auto cam = getObject<Camera>("main");
