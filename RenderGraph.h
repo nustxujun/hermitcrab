@@ -59,6 +59,7 @@ public:
 		void add(ResourceHandle::Ptr res, UINT slot = 0);
 		void clear();
 		size_t getNumRenderTargets()const {return mRenderTargets.size();}
+		bool check(const ResourceHandle::Ptr& res);
 	private:
 		std::vector<ResourceHandle::Ptr> mRenderTargets;
 		ResourceHandle::Ptr mDepthStencil;
