@@ -206,6 +206,7 @@ public:
 	class Resource: public Interface<Resource>
 	{
 		friend class Renderer::CommandList;
+		friend class Renderer;
 	public:
 		enum ResourceType
 		{
@@ -223,10 +224,11 @@ public:
 		void unmap(UINT sub);
 		
 
-		const D3D12_RESOURCE_STATES& getState()const;
+		const D3D12_RESOURCE_STATES& getState(UINT sub = 0)const;
 		// transition by cmdlist
 		//void setState(const D3D12_RESOURCE_STATES& s);
 		void setName(const std::wstring& name);
+		const std::wstring& getName()const{return mName;}
 
 		ID3D12Resource* get()const{return mResource.Get();}
 		const D3D12_RESOURCE_DESC& getDesc()const{return mDesc;}
@@ -240,7 +242,7 @@ public:
 	private:
 		ComPtr<ID3D12Resource> mResource;
 		D3D12_RESOURCE_DESC mDesc;
-		D3D12_RESOURCE_STATES mState;
+		std::vector<D3D12_RESOURCE_STATES> mState;
 		ResourceType mType = RT_PERSISTENT;
 		size_t mHashValue = 0;
 		std::wstring mName;
@@ -593,7 +595,7 @@ public:
 		void reset(const CommandAllocator::Ref& alloc);
 
 		void transitionTo( Resource::Ref res, D3D12_RESOURCE_STATES state, UINT subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool autoflush = false);
-		void addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier);
+		void addResourceTransition(const Resource::Ref& res, D3D12_RESOURCE_STATES state, UINT subresource);
 		void flushResourceBarrier();
 		void copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size );
 		void copyTexture(Resource::Ref dst, UINT dstSub, const std::array<UINT, 3>& dstStart, Resource::Ref src, UINT srcSub, const std::pair<std::array<UINT,3>, std::array<UINT, 3>>* srcBox );
@@ -627,7 +629,15 @@ public:
 	private:
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
 		PipelineState::Ref mCurrentPipelineState;
-		std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
+
+
+		struct Transition
+		{
+			Resource::Ref res;
+			D3D12_RESOURCE_STATES state;
+			UINT subresource;
+		};
+		std::map<ID3D12Resource*,Transition> mResourceTransitions;
 	};
 
 

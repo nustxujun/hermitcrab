@@ -216,8 +216,10 @@ void RenderGraph::RenderPass::addOutput(RenderPass * p)
 
 void RenderGraph::RenderPass::prepareResources()
 {
+
 	auto cmdlist = Renderer::getSingleton()->getCommandList();
 	std::vector<Renderer::ResourceView::Ref> rtvs;
+	std::vector<std::function<void(void)>> clears;
 	for (size_t i = 0; i < mResources.getNumRenderTargets(); ++i)
 	{
 		auto rt = mResources.getRenderTarget(i);
@@ -225,9 +227,11 @@ void RenderGraph::RenderPass::prepareResources()
 		switch (mInitialTypes[&(*rt)])
 		{
 		case IT_CLEAR: 
-			cmdlist->clearRenderTarget(rt->getView(), rt->getClearValue().color); 
+			clears.emplace_back([&](){cmdlist->clearRenderTarget(rt->getView(), rt->getClearValue().color); });
 			break;
-		case IT_DISCARD:cmdlist->discardResource(rt->getView()); break;
+		case IT_DISCARD: 
+			clears.emplace_back([&]() {cmdlist->discardResource(rt->getView());});
+			break;
 		}
 		
 		cmdlist->transitionTo(rt->getView()->getTexture(),D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -242,14 +246,18 @@ void RenderGraph::RenderPass::prepareResources()
 		const auto& clearvalue = ds->getClearValue();
 		switch (mInitialTypes[&(*ds)])
 		{
-		case IT_CLEAR: cmdlist->clearDepthStencil(ds->getView(), clearvalue.depth, clearvalue.stencil); break;
-		case IT_DISCARD: cmdlist->discardResource(ds->getView());
+		case IT_CLEAR: 
+			clears.emplace_back([&]() {cmdlist->clearDepthStencil(ds->getView(), clearvalue.depth, clearvalue.stencil);});
+			break;
+		case IT_DISCARD: 
+			
+			clears.emplace_back([&]() {cmdlist->discardResource(ds->getView()); });
+			break;
 		}
 
 		cmdlist->transitionTo(ds->getView()->getTexture(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
 		dsv = ds->getView();
 	}
-	cmdlist->setRenderTargets(rtvs,dsv);
 
 	for (auto& srv : mShaderResources)
 	{
@@ -257,34 +265,11 @@ void RenderGraph::RenderPass::prepareResources()
 	}
 
 	cmdlist->flushResourceBarrier();
+	cmdlist->setRenderTargets(rtvs, dsv);
+
+	for(auto&c: clears)
+		c();
 }
-
-//
-//ResourceHandle::Ptr RenderGraph::Resources::operator[](size_t index) const
-//{
-//	return mResources[index];
-//}
-//
-//ResourceHandle::Ptr RenderGraph::Resources::operator[](const std::wstring & str) const
-//{
-//	auto ret = mResourceMap.find(str);
-//	if (ret == mResourceMap.end())
-//		return {};
-//	else
-//		return ret->second;
-//}
-
-//ResourceHandle::Ptr RenderGraph::Resources::find(Renderer::ViewType type, size_t index) const
-//{
-//	for (auto& i : mResources)
-//	{
-//		if (i->getType() == type || index-- == 0)
-//		{
-//			return i;
-//		}
-//	}
-//	return {};
-//}
 
 ResourceHandle::Ptr RenderGraph::Resources::getRenderTarget(size_t index) const
 {
@@ -329,6 +314,16 @@ void RenderGraph::Resources::clear()
 		mDepthStencil->release();
 	mDepthStencil.reset();
 	mResourceMap.clear();
+}
+
+bool RenderGraph::Resources::check(const ResourceHandle::Ptr& res)
+{
+	for (auto& rt : mRenderTargets)
+	{
+		if (rt->getView() == res->getView())
+			return true;
+	}
+	return mDepthStencil && mDepthStencil->getView() == res->getView();
 }
 
 RenderGraph::LambdaRenderPass::LambdaRenderPass(LambdaRenderPass && lrp):

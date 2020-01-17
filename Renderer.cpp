@@ -19,6 +19,8 @@ Renderer::Ptr Renderer::instance;
 #define CHECK(x) Common::checkResult(x, Common::format(" file: ",__FILE__, " line: ", __LINE__ ))
 #undef ASSERT
 #define ASSERT(x,y) Common::Assert(x, Common::format(y, " file: ", __FILE__, " line: ", __LINE__ ))
+#undef LOG
+#define LOG Common::log
 
 
 static Renderer::DebugInfo debugInfoCache;
@@ -134,7 +136,7 @@ void Renderer::resize(int width, int height)
 		std::wstringstream ss;
 		ss << L"BackBuffer" << i;
 		res->setName(ss.str());
-		auto rt = ResourceView::create(res);
+		auto rt = ResourceView::create(res, true);
 		rt->createRenderTargetView(nullptr);
 		mBackbuffers[i] = rt;
 	}
@@ -150,7 +152,7 @@ void Renderer::beginFrame()
 	//resetCommands();
 
 
-	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET, -1, true);
+	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET, 0, true);
 
 
 	auto heap = mDescriptorHeaps[DHT_CBV_SRV_UAV]->get();
@@ -879,7 +881,7 @@ void Renderer::recycleCommandAllocator(CommandAllocator::Ptr ca)
 
 void Renderer::commitCommands()
 {
-	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_PRESENT, -1, true);
+	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_PRESENT, 0, true);
 
 #ifndef D3D12ON7
 	mCommandList->close();
@@ -1127,15 +1129,22 @@ Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXG
 	}
 	mTexture = renderer->createTexture(width, height,1, format,1, D3D12_HEAP_TYPE_DEFAULT, flags,rt);
 	mAutoRelease = true;
-	if (rt == Resource::RT_PERSISTENT)
+
+	std::wstringstream ss;
+
+	if (rt == Resource::RT_TRANSIENT)
+	{
+		ss << "transient ";
+	}
 	{		
 		static size_t seqid = 0;
-		std::wstringstream ss;
 		switch (type)
 		{
 		case VT_RENDERTARGET: ss << L"RenderTarget"; break;
 		case VT_DEPTHSTENCIL: ss << L"DepthStencil"; break;
 		case VT_UNORDEREDACCESS: ss << L"UnorderedAccess"; break;
+		default: 
+			ss << "Unknown";
 		}
 
 		ss << seqid++;
@@ -1159,6 +1168,7 @@ Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXG
 	default:
 		ASSERT(false, "unsupported");
 	}
+
 }
 
 Renderer::ResourceView::~ResourceView()
@@ -1275,9 +1285,10 @@ ID3D12CommandAllocator * Renderer::CommandAllocator::get()
 }
 
 Renderer::Resource::Resource(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES state):
-	mResource(res), mState(state)
+	mResource(res)
 {
 	mDesc = res->GetDesc();
+	mState.resize(mDesc.MipLevels, state);
 }
 
 Renderer::Resource::Resource(ResourceType type):
@@ -1307,17 +1318,18 @@ void Renderer::Resource::init(UINT64 size, D3D12_HEAP_TYPE heaptype, DXGI_FORMAT
 	init(resdesc, heaptype, D3D12_RESOURCE_STATE_COMMON);
 }
 
-void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate)
+void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES state)
 {
-	mState = ressate;
 	if (ht == D3D12_HEAP_TYPE_READBACK)
 	{
-		mState = D3D12_RESOURCE_STATE_COPY_DEST;
+		state = D3D12_RESOURCE_STATE_COPY_DEST;
 	}
 	else if (ht == D3D12_HEAP_TYPE_UPLOAD)
 	{
-		mState = D3D12_RESOURCE_STATE_GENERIC_READ;
+		state = D3D12_RESOURCE_STATE_GENERIC_READ;
 	}
+
+	mState.resize(resdesc.MipLevels, state);
 
 	D3D12_HEAP_PROPERTIES heapprop = {};
 	heapprop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
@@ -1340,7 +1352,7 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 	}
 	
 	cv.DepthStencil = {1.0f, 0};
-	CHECK(device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, mState, pcv, IID_PPV_ARGS(&mResource)));
+	CHECK(device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, state, pcv, IID_PPV_ARGS(&mResource)));
 
 	mDesc = resdesc;
 	mHandle = createView();
@@ -1372,14 +1384,17 @@ void Renderer::Resource::unmap(UINT sub)
 	mResource->Unmap(sub,nullptr);
 }
 
-const D3D12_RESOURCE_STATES & Renderer::Resource::getState() const
+const D3D12_RESOURCE_STATES & Renderer::Resource::getState(UINT sub) const
 {
-	return mState;
+	return mState[sub];
 }
 
 void Renderer::Resource::setName(const std::wstring& name)
 {
-	mResource->SetName(name.c_str());
+	std::wstringstream ss;
+	ss << name << L"(" << mResource.Get() << L")";
+	mName = ss.str();
+	mResource->SetName(mName.c_str());
 }
 
 //void Renderer::Resource::setState(const D3D12_RESOURCE_STATES & s) 
@@ -1543,32 +1558,75 @@ void Renderer::CommandList::transitionTo(Resource::Ref res, D3D12_RESOURCE_STATE
 	if (state == cur)
 		return;
 
-	D3D12_RESOURCE_BARRIER barrier;
-	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-
-	barrier.Transition.pResource = res->get();
-	barrier.Transition.StateBefore = cur;
-	barrier.Transition.StateAfter = state;
-	barrier.Transition.Subresource = subresource;
-
-	res->mState = state;
-	addResourceBarrier(barrier);
+	addResourceTransition(res,state,subresource);
 	if (autoflush)
 		flushResourceBarrier();
 }
 
-void Renderer::CommandList::addResourceBarrier(const D3D12_RESOURCE_BARRIER& resbarrier)
+void Renderer::CommandList::addResourceTransition(const Resource::Ref& res, D3D12_RESOURCE_STATES state, UINT subres)
 {
-	mResourceBarriers.push_back(resbarrier);
+	//Common::Assert(mResourceTransitions.find(res->get()) == mResourceTransitions.end(), "unexpected.");
+	mResourceTransitions[res->get()] = {res, state, subres};
 }
 
 void Renderer::CommandList::flushResourceBarrier()
 {
-	if (mResourceBarriers.empty())
+	if (mResourceTransitions.empty())
 		return;
-	mCmdList->ResourceBarrier((UINT)mResourceBarriers.size(), mResourceBarriers.data());
-	mResourceBarriers.clear();
+
+	std::vector<D3D12_RESOURCE_BARRIER> barriers;
+	for (auto& t : mResourceTransitions)
+	{
+		auto res = t.second.res;
+		D3D12_RESOURCE_BARRIER b = {};
+		b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		b.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+		b.Transition.pResource = res->get();
+		b.Transition.StateAfter = t.second.state;
+		b.Transition.Subresource = t.second.subresource;
+
+		if (t.second.subresource == D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)
+		{
+			bool allthesame = true;
+			const auto& desc = res->getDesc();
+			auto state = res->getState();
+			for (UINT i = 1; i < desc.MipLevels; ++i)
+			{
+				if (res->getState(i) != state)
+				{
+					allthesame = false;
+					break;
+				}
+			}
+
+			if (allthesame)
+			{
+				b.Transition.StateBefore = state;
+				barriers.emplace_back(b);
+			}
+			else
+			{
+				for (UINT i = 0; i < desc.MipLevels; ++i)
+				{
+					b.Transition.StateBefore = res->getState(i);
+					b.Transition.Subresource = i;
+					barriers.emplace_back(b);
+				}
+			}
+
+			for (UINT i = 0; i < desc.MipLevels;++i)
+				res->mState[i] = t.second.state;
+		}
+		else
+		{
+			b.Transition.StateBefore = res->getState(t.second.subresource);
+			barriers.emplace_back(b);
+			res->mState[t.second.subresource] = t.second.state;
+		}	
+	}
+	mCmdList->ResourceBarrier((UINT)barriers.size(), barriers.data());
+
+	mResourceTransitions.clear();
 }
 
 void Renderer::CommandList::copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size)
@@ -1632,6 +1690,8 @@ void Renderer::CommandList::setRenderTarget(const ResourceView::Ref& rt, const R
 	const D3D12_CPU_DESCRIPTOR_HANDLE* dshandle = 0;
 	if (ds)
 		dshandle = & (ds->getCPUHandle());
+
+
 	mCmdList->OMSetRenderTargets(1, &rt->getCPUHandle(),FALSE, dshandle);
 }
 
@@ -1643,8 +1703,9 @@ void Renderer::CommandList::setRenderTargets(const std::vector<ResourceView::Ref
 
 	std::vector< D3D12_CPU_DESCRIPTOR_HANDLE> rtvs = {};
 	for (auto& rt: rts)
+	{
 		rtvs.push_back(rt->getCPUHandle());
-
+	}
 	mCmdList->OMSetRenderTargets((UINT)rtvs.size(), rtvs.data(), FALSE, dshandle);
 
 }

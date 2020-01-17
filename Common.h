@@ -46,6 +46,14 @@ using ComPtr = Microsoft::WRL::ComPtr<T>;
 class Common
 {
 public :
+
+	template<class ... Args>
+	static void log(const Args& ... args)
+	{
+		auto context = format(args ...) + "\n";
+		OutputDebugStringA(context.c_str());
+	}
+
 	static void checkResult(HRESULT hr, const std::string& info = {})
 	{
 		if (hr == S_OK) return;
