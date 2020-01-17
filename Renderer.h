@@ -3,8 +3,8 @@
 
 
 //#if WINVER  < _WIN32_WINNT_WIN10
-	//#define D3D12ON7
-	//#include "D3D12Downlevel.h"
+	#define D3D12ON7
+	#include "D3D12Downlevel.h"
 //#endif
 
 #if defined(D3D12ON7)
@@ -542,8 +542,8 @@ public:
 		void setPSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
 
 		void setVariable(Shader::ShaderType type, const std::string& name, const void* data);
-		void setVSVariable(Shader::ShaderType type, const std::string& name, const void* data);
-		void setPSVariable(Shader::ShaderType type, const std::string& name, const void* data);
+		void setVSVariable( const std::string& name, const void* data);
+		void setPSVariable( const std::string& name, const void* data);
 
 		ConstantBuffer::Ptr createConstantBuffer(Shader::ShaderType type, const std::string& name);
 

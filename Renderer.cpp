@@ -1985,7 +1985,7 @@ void Renderer::Shader::createRootParameters()
 
 				CBuffer* cbuffers;
 
-				if (bd.Size < 256)
+				if (bd.Size < 0)
 					cbuffers = &mSemanticsMap.cbuffersBy32Bits[bd.Name];
 				else
 					cbuffers = &mSemanticsMap.cbuffers[bd.Name];
@@ -2186,29 +2186,6 @@ void Renderer::PipelineState::setConstant(Shader::ShaderType type, const std::st
 	//ASSERT(ret != cbuffers.end(), "cannot find specify cbuffer at setConstant");
 
 	mCBuffers[type][ret->second.slot + mSemanticsMap[type].offset] = c->getHandle();
-	//for (auto& cb : cbuffers)
-	//{
-	//	if (cb.first == name)
-	//	{
-	//		auto& cbuff = mCBuffers[type][cb.first];
-	//		cbuff.buffer->blit(data);
-	//		cbuff.needrefesh = true;
-	//		return;
-	//	}
-	//	else
-	//	{
-	//		auto ret = cb.second.variables.find(name);
-	//		if (ret == cb.second.variables.end())
-	//			continue;
-
-	//		auto& cbuff = mCBuffers[type][cb.first];
-	//		cbuff.buffer->blit(data, ret->second.offset, ret->second.size);
-	//		cbuff.needrefesh = true;
-	//		return;
-	//	}
-	//}
-
-	//ASSERT(0, "specify variable name is not existed.");
 }
 
 void Renderer::PipelineState::setVSConstant(const std::string & name, const ConstantBuffer::Ptr& c)
@@ -2219,6 +2196,32 @@ void Renderer::PipelineState::setVSConstant(const std::string & name, const Cons
 void Renderer::PipelineState::setPSConstant(const std::string & name, const ConstantBuffer::Ptr& c)
 {
 	setConstant(Shader::ST_PIXEL, name, c);
+}
+
+void Renderer::PipelineState::setVariable(Shader::ShaderType type, const std::string & name, const void * data)
+{
+	auto& cbuffers = mSemanticsMap[type].cbuffersBy32Bits;
+	for (auto& cb : cbuffers)
+	{
+		auto ret = cb.second.variables.find(name);
+		if (ret == cb.second.variables.end())
+			continue;
+
+		auto& buffer = mCBuffersBy32Bits[type][cb.second.slot + mSemanticsMap[type].offset];
+		buffer.resize(cb.second.size);
+		memcpy(buffer.data() + ret->second.offset, data, ret->second.size );
+		return;
+	}
+}
+
+void Renderer::PipelineState::setVSVariable(const std::string & name, const void * data)
+{
+	setVariable(Shader::ST_VERTEX, name, data);
+}
+
+void Renderer::PipelineState::setPSVariable(const std::string & name, const void * data)
+{
+	setVariable(Shader::ST_PIXEL, name, data);
 }
 
 Renderer::ConstantBuffer::Ptr Renderer::PipelineState::createConstantBuffer(Shader::ShaderType type,const std::string& name)

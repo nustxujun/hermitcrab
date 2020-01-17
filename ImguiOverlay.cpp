@@ -170,6 +170,7 @@ void ImGuiPass::draw(ImDrawData* data)
 
 	mConstant->blit(mvp);
 	mPipelineState->setVSConstant("vertexBuffer", mConstant);
+	//mPipelineState->setVSVariable("ProjectionMatrix", mvp);
 
 	//cmdlist->set32BitConstants(1,16,mvp,0);
 
