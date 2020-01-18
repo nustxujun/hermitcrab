@@ -230,7 +230,7 @@ void Renderer::flushCommandQueue()
 	mQueueFence->wait();
 }
 
-void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref)>& copy)
+void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref, UINT)>& copy)
 {
 	auto src = Resource::create();
 	const auto& desc = res->getDesc();
@@ -245,7 +245,7 @@ void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size
 		UINT64 requiredSize = 0;
 		UINT64 rowSize = 0;
 		D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
-		Renderer::getSingleton()->getDevice()->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, nullptr, &rowSize, &requiredSize);
+		Renderer::getSingleton()->getDevice()->GetCopyableFootprints(&desc, subresource, 1, 0, &footprint, nullptr, &rowSize, &requiredSize);
 		src->init(requiredSize, D3D12_HEAP_TYPE_UPLOAD);
 
 
@@ -263,7 +263,7 @@ void Renderer::updateResource(Resource::Ref res, const void* buffer, UINT64 size
 
 	executeResourceCommands([&](CommandList::Ref cmdlist){
 		cmdlist->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST, -1, true);
-		copy(cmdlist, src);
+		copy(cmdlist, src, subresource);
 	});
 }
 
@@ -567,8 +567,8 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	ASSERT(data != nullptr,"cannot create texture");
 	
 	auto tex = createTexture(width, height, 1, format);
-	updateResource(tex, data, width * height * D3DHelper::sizeof_DXGI_FORMAT(format), [dst = tex](auto cmdlist, auto src){
-		cmdlist->copyTexture(dst,0,{0,0,0},src,0,nullptr);
+	updateResource(tex, 0 ,data, width * height * D3DHelper::sizeof_DXGI_FORMAT(format), [dst = tex](auto cmdlist, auto src, auto sub){
+		cmdlist->copyTexture(dst,sub,{0,0,0},src,0,nullptr);
 	});
 	stbi_image_free(data);
 
@@ -577,12 +577,17 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	return tex;
 }
 
-Renderer::Texture::Ref Renderer::createTexture(UINT width, UINT height, DXGI_FORMAT format, UINT nummips, const void * data)
+Renderer::Texture::Ref Renderer::createTexture(UINT width, UINT height, DXGI_FORMAT format, const std::vector<std::vector<char>>& mipdatas)
 {
-	auto tex = createTexture(width, height, 1, format, nummips,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_FLAG_NONE);
-	updateResource(tex, data, width * height * D3DHelper::sizeof_DXGI_FORMAT(format), [dst = tex](auto cmdlist, auto src) {
-		cmdlist->copyTexture(dst, 0, { 0,0,0 }, src, 0, nullptr);
-		});
+	auto tex = createTexture(width, height, 1, format, mipdatas.size(),D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_FLAG_NONE);
+	auto size = width * height * D3DHelper::sizeof_DXGI_FORMAT(format);
+	for (auto i = 0; i < mipdatas.size(); ++i)
+	{
+		updateResource(tex, i, mipdatas[i].data(), size, [dst = tex](auto cmdlist, auto src, auto sub) {
+			cmdlist->copyTexture(dst, sub, { 0,0,0 }, src, 0, nullptr);
+			});
+		size /= 4;
+	}
 	return tex;
 }
 
@@ -590,9 +595,9 @@ Renderer::Buffer::Ptr Renderer::createBuffer(UINT size, UINT stride, D3D12_HEAP_
 {
 	auto vert = Buffer::Ptr(new Buffer(size, stride, type));
 	if (buffer)
-		updateResource(vert->getResource(), buffer, size, [dst = vert->getResource(), size](CommandList::Ref cmdlist, Resource::Ref src){
+		updateResource(vert->getResource(), 0,buffer, size, [dst = vert->getResource(), size](CommandList::Ref cmdlist, Resource::Ref src, UINT sub){
 			
-			cmdlist->copyBuffer(dst,0,src,0, size);
+			cmdlist->copyBuffer(dst,sub,src,0, size);
 		});
 		//updateBuffer(vert->getResource(), buffer,size);/
 
@@ -1359,14 +1364,14 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 }
 
 
-void Renderer::Resource::blit(const void* data, UINT64 size)
+void Renderer::Resource::blit(const void* data, UINT64 size, UINT subresource)
 {
 	D3D12_RANGE readrange = { 0,0 };
 	char* dst = 0;
-	CHECK(mResource->Map(0, &readrange, (void**)&dst));
+	CHECK(mResource->Map(subresource, &readrange, (void**)&dst));
 	memcpy(dst, data, (size_t)size);
 	D3D12_RANGE writerange = { 0, (SIZE_T)size };
-	mResource->Unmap(0, &writerange);
+	mResource->Unmap(subresource, &writerange);
 }
 
 char* Renderer::Resource::map(UINT sub)

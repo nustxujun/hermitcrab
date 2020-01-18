@@ -316,15 +316,15 @@ void RenderGraph::Resources::clear()
 	mResourceMap.clear();
 }
 
-bool RenderGraph::Resources::check(const ResourceHandle::Ptr& res)
-{
-	for (auto& rt : mRenderTargets)
-	{
-		if (rt->getView() == res->getView())
-			return true;
-	}
-	return mDepthStencil && mDepthStencil->getView() == res->getView();
-}
+//bool RenderGraph::Resources::check(const ResourceHandle::Ptr& res)
+//{
+//	for (auto& rt : mRenderTargets)
+//	{
+//		if (rt->getView() == res->getView())
+//			return true;
+//	}
+//	return mDepthStencil && mDepthStencil->getView() == res->getView();
+//}
 
 RenderGraph::LambdaRenderPass::LambdaRenderPass(LambdaRenderPass && lrp):
 	mSetup(std::move(lrp.mSetup)), mExecute(std::move(lrp.mExecute)), mCompile(std::move(lrp.mCompile))

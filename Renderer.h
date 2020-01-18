@@ -219,7 +219,7 @@ public:
 		virtual ~Resource();
 		virtual void init(UINT64 size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
 		virtual void init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES ressate);
-		virtual void blit(const void* data, UINT64 size);
+		virtual void blit(const void* data, UINT64 size, UINT subresource = 0);
 		char* map(UINT sub);
 		void unmap(UINT sub);
 		
@@ -664,7 +664,7 @@ public:
 	CommandList::Ref getCommandList();
 	ResourceView::Ref getBackBuffer();
 	void flushCommandQueue();
-	void updateResource(Resource::Ref res, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref )>& copy);
+	void updateResource(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref, UINT)>& copy);
 	void executeResourceCommands(const std::function<void(CommandList::Ref)>& dofunc, Renderer::CommandAllocator::Ptr alloc = {});
 
 	Shader::Ptr compileShaderFromFile(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
@@ -674,7 +674,7 @@ public:
 	void destroyResource(Resource::Ref res);
 	Texture::Ref createTexture(UINT width, UINT height, UINT depth, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	Texture::Ref createTexture(const std::wstring& filename);
-	Texture::Ref createTexture(UINT width, UINT height, DXGI_FORMAT format , UINT nummips, const void* data);
+	Texture::Ref createTexture(UINT width, UINT height, DXGI_FORMAT format , const std::vector<std::vector<char>>& mipdatas);
 
 	Buffer::Ptr createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	ConstantBuffer::Ptr createConstantBuffer(UINT size);

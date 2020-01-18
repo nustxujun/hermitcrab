@@ -278,8 +278,8 @@ void ImGuiPass::initFonts()
 
 	auto renderer = Renderer::getSingleton();
 	mFonts = renderer->createTexture(width, height, 1,DXGI_FORMAT_R8G8B8A8_UNORM);
-	renderer->updateResource(mFonts, pixels, width * height * 4, [dst = mFonts](auto cmdlist, auto src) {
-		cmdlist->copyTexture(dst, 0, { 0,0,0 }, src, 0, nullptr);
+	renderer->updateResource(mFonts, 0,pixels, width * height * 4, [dst = mFonts](auto cmdlist, auto src, auto sub) {
+		cmdlist->copyTexture(dst, sub, { 0,0,0 }, src, 0, nullptr);
 	});
 
 	static_assert(sizeof(ImTextureID) >= sizeof(mFonts->getGPUHandle().ptr), "Can't pack descriptor handle into TexID, 32-bit not supported yet.");
