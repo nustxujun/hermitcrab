@@ -152,7 +152,7 @@ void Renderer::beginFrame()
 	//resetCommands();
 
 
-	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET, 0, true);
+	mCommandList->transitionBarrier(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET, 0, true);
 
 
 	auto heap = mDescriptorHeaps[DHT_CBV_SRV_UAV]->get();
@@ -262,7 +262,7 @@ void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* b
 		ASSERT(0,"unsupported resource.");
 
 	executeResourceCommands([&](CommandList::Ref cmdlist){
-		cmdlist->transitionTo(res, D3D12_RESOURCE_STATE_COPY_DEST, -1, true);
+		cmdlist->transitionBarrier(res, D3D12_RESOURCE_STATE_COPY_DEST, -1, true);
 		copy(cmdlist, src, subresource);
 	});
 }
@@ -886,7 +886,7 @@ void Renderer::recycleCommandAllocator(CommandAllocator::Ptr ca)
 
 void Renderer::commitCommands()
 {
-	mCommandList->transitionTo(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_PRESENT, 0, true);
+	mCommandList->transitionBarrier(mBackbuffers[mCurrentFrame]->getTexture(), D3D12_RESOURCE_STATE_PRESENT, 0, true);
 
 #ifndef D3D12ON7
 	mCommandList->close();
@@ -1557,7 +1557,7 @@ Renderer::CommandList::~CommandList()
 {
 }
 
-void Renderer::CommandList::transitionTo(Resource::Ref res, D3D12_RESOURCE_STATES  state, UINT subresource ,bool autoflush)
+void Renderer::CommandList::transitionBarrier(Resource::Ref res, D3D12_RESOURCE_STATES  state, UINT subresource ,bool autoflush)
 {
 	const auto& cur = res->getState();
 	if (state == cur)
@@ -1568,21 +1568,28 @@ void Renderer::CommandList::transitionTo(Resource::Ref res, D3D12_RESOURCE_STATE
 		flushResourceBarrier();
 }
 
+void Renderer::CommandList::uavBarrier(Resource::Ref res)
+{
+	mUAVBarrier[res->get()] = res;
+}
+
 void Renderer::CommandList::addResourceTransition(const Resource::Ref& res, D3D12_RESOURCE_STATES state, UINT subres)
 {
 	//Common::Assert(mResourceTransitions.find(res->get()) == mResourceTransitions.end(), "unexpected.");
-	mResourceTransitions[res->get()] = {res, state, subres};
+	mTransitionBarrier[res->get()] = {res, state, subres};
 }
 
 void Renderer::CommandList::flushResourceBarrier()
 {
-	if (mResourceTransitions.empty())
+	if (mTransitionBarrier.empty())
 		return;
 
 	std::vector<D3D12_RESOURCE_BARRIER> barriers;
-	for (auto& t : mResourceTransitions)
+	for (auto& t : mTransitionBarrier)
 	{
 		auto res = t.second.res;
+		if (!res)
+			continue;
 		D3D12_RESOURCE_BARRIER b = {};
 		b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 		b.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
@@ -1629,9 +1636,20 @@ void Renderer::CommandList::flushResourceBarrier()
 			res->mState[t.second.subresource] = t.second.state;
 		}	
 	}
+
+	for (auto& uav : mUAVBarrier)
+	{
+		if (!uav.second)
+			continue;
+		D3D12_RESOURCE_BARRIER b;
+		b.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+		b.UAV.pResource = uav.first;
+		barriers.emplace_back(b);
+	}
+
 	mCmdList->ResourceBarrier((UINT)barriers.size(), barriers.data());
 
-	mResourceTransitions.clear();
+	mTransitionBarrier.clear();
 }
 
 void Renderer::CommandList::copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size)
@@ -2065,11 +2083,8 @@ void Renderer::Shader::createRootParameters()
 					rootparam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 					rootparam.Constants.Num32BitValues = bd.Size / 4;
 					rootparam.Constants.ShaderRegister = desc.BindPoint;
-#ifndef D3D12ON7
-					rootparam.Constants.RegisterSpace = desc.Space;
-#else
-					rootparam.Constants.RegisterSpace = 0;
-#endif
+					rootparam.Constants.RegisterSpace = range.RegisterSpace;
+
 				}
 				else
 					cbuffers = &mSemanticsMap.cbuffers[bd.Name];

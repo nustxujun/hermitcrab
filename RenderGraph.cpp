@@ -234,7 +234,7 @@ void RenderGraph::RenderPass::prepareResources()
 			break;
 		}
 		
-		cmdlist->transitionTo(rt->getView()->getTexture(),D3D12_RESOURCE_STATE_RENDER_TARGET);
+		cmdlist->transitionBarrier(rt->getView()->getTexture(),D3D12_RESOURCE_STATE_RENDER_TARGET);
 		rtvs.push_back(rt->getView());
 	}
 
@@ -255,13 +255,13 @@ void RenderGraph::RenderPass::prepareResources()
 			break;
 		}
 
-		cmdlist->transitionTo(ds->getView()->getTexture(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
+		cmdlist->transitionBarrier(ds->getView()->getTexture(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
 		dsv = ds->getView();
 	}
 
 	for (auto& srv : mShaderResources)
 	{
-		cmdlist->transitionTo(srv->getView()->getTexture(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		cmdlist->transitionBarrier(srv->getView()->getTexture(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	}
 
 	cmdlist->flushResourceBarrier();
