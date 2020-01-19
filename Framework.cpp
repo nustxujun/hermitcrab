@@ -10,9 +10,7 @@ Framework::Framework()
 	registerWindow();
 	createWindow();
 	mRenderer = Renderer::create();
-	mRenderer->initialize(mWindow);
 
-	resize(800, 600);
 }
 
 Framework::~Framework()
@@ -47,6 +45,11 @@ void Framework::update()
 void Framework::setProcessor(const std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)>& f)
 {
 	processor = f;
+}
+
+void Framework::initialize()
+{
+	mRenderer->initialize(mWindow);
 }
 
 HWND Framework::createWindow()

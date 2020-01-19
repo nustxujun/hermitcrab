@@ -19,6 +19,7 @@ class DefaultFrame :public RenderContext, public Framework
 public:
 	void init()
 	{
+		Framework::initialize();
 		pipeline = decltype(pipeline)(new DefaultPipeline);
 
 		rendercmd.init(false);

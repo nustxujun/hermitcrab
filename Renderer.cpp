@@ -1807,30 +1807,27 @@ void Renderer::CommandList::generateMips(Texture::Ref texture)
 	auto renderer = Renderer::getSingleton();
 	auto pso = renderer->mGenMipsPSO[0];
 	auto desc = texture->getDesc();
+	auto& consts = renderer->mGenMipsConsts;
 
 	if (desc.MipLevels == 1)
 		return;
 
 	Texture::Ref dst;
-	if (desc.Flags | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)
-	{
-		dst = texture;
-	}
-	else
+
 	{
 		dst = renderer->createTexture(
-			desc.Width >> 1,
-			desc.Height >> 1, 
+			desc.Width,
+			desc.Height, 
 			desc.DepthOrArraySize,
 			desc.Format,
-			desc.MipLevels - 1,
+			desc.MipLevels ,
 			D3D12_HEAP_TYPE_DEFAULT, 
 			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
 			Resource::RT_TRANSIENT
 		);
 	}
 
-	std::vector<ResourceView::Ptr> rvs;
+	std::vector<ResourceView::Ptr> uavs(1);
 	for (auto i = 1; i < desc.MipLevels; ++i)
 	{
 		auto rv = renderer->createResourceView(dst);
@@ -1841,25 +1838,42 @@ void Renderer::CommandList::generateMips(Texture::Ref texture)
 		uavd.Texture2D.MipSlice = i;
 
 		rv->createUnorderedAccessView(&uavd);
-		rvs.push_back(rv);
+		uavs.push_back(rv);
 	}
 
+	renderer->executeResourceCommands([&](CommandList::Ref cmdlist) {
+		cmdlist->setPipelineState(pso);
+		for (auto mip = 0; mip < desc.MipLevels - 1; ++mip)
+		{
+			UINT32 width = desc.Width >> mip;
+			UINT32 height = desc.Height >> mip;
+			consts->setVariable("SrcMipLevel", &mip);
 
+			UINT32 nummips = std::min(4, desc.MipLevels - mip);
+			consts->setVariable("NumMipLevels", &nummips);
 
+			UINT32 outputWidth = width >> 1;
+			UINT32 outputHeight = height >> 1;
 
+			float texelSize[] = {
+				1.0f / (float)outputWidth,
+				1.0f / (float)outputHeight
+			};
 
-	//renderer->executeResourceCommands([&](CommandList::Ref cmdlist) {
-	//	cmdlist->setPipelineState(pso);
-	//	for (auto i = 0; i < desc.MipLevels - 1; ++i)
-	//	{
-	//		auto src = mips[i];
-	//		auto dst = mips[i + 1];
+			consts->setVariable("TexelSize", texelSize);
 
-	//		//pso->setResource()
-	//		//cmdlist->dispatch();
-	//	}
+			pso->setConstant(Shader::ST_COMPUTE,"CB0",consts);
+			UINT non_power_of_two = (height & 1) << 1 | (width & 1);
 
-	//});
+			pso->setPSResource("SrcMip", texture->getGPUHandle());
+
+			for (auto i = mip + 1; i < nummips; ++i )
+				pso->setPSResource(Common::format("Output", i), uavs[i]->getTexture()->getGPUHandle());
+			
+			cmdlist->dispatch(outputWidth / 8, outputHeight / 8, 1);
+		}
+
+	});
 
 
 }

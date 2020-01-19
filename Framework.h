@@ -8,6 +8,7 @@ class Framework
 public:
 	Framework();
 	virtual ~Framework();
+	void initialize();
 
 	void resize(int width, int height);
 	void update();
