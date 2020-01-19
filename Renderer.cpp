@@ -1964,12 +1964,16 @@ Renderer::RenderState::RenderState(std::function<void(RenderState&)> initializer
 Renderer::Shader::Shader(const MemoryData& data, ShaderType type) :
 	mCodeBlob(data), mType(type)
 {
-	createRootParameters();
 }
 
 void Renderer::Shader::registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc)
 {
 	mStaticSamplers.push_back(desc);
+}
+
+void Renderer::Shader::enable32BitsConstants(bool b)
+{
+	mUse32BitsConstants = b;
 }
 
 D3D12_SHADER_VISIBILITY Renderer::Shader::getShaderVisibility() const
@@ -2005,6 +2009,9 @@ D3D12_DESCRIPTOR_RANGE_TYPE Renderer::Shader::getRangeType(D3D_SHADER_INPUT_TYPE
 
 void Renderer::Shader::createRootParameters()
 {
+	mRootParameters.clear();
+	mRanges.clear();
+
 	CHECK(D3DReflect(mCodeBlob->data(), mCodeBlob->size(), IID_PPV_ARGS(&mReflection)));
 
 	ShaderDesc shaderdesc;
@@ -2051,8 +2058,19 @@ void Renderer::Shader::createRootParameters()
 
 				CBuffer* cbuffers;
 
-				if (bd.Size < 0)
+				if (mUse32BitsConstants)
+				{
 					cbuffers = &mSemanticsMap.cbuffersBy32Bits[bd.Name];
+
+					rootparam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+					rootparam.Constants.Num32BitValues = bd.Size / 4;
+					rootparam.Constants.ShaderRegister = desc.BindPoint;
+#ifndef D3D12ON7
+					rootparam.Constants.RegisterSpace = desc.Space;
+#else
+					rootparam.Constants.RegisterSpace = 0;
+#endif
+				}
 				else
 					cbuffers = &mSemanticsMap.cbuffers[bd.Name];
 
@@ -2099,6 +2117,7 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	UINT offset = 0;
 	for (auto& s : shaders)
 	{
+		s->createRootParameters();
 		samplers.insert(samplers.end(), s->mStaticSamplers.begin(), s->mStaticSamplers.end());
 		params.insert(params.end(), s->mRootParameters.begin(), s->mRootParameters.end());
 		s->mSemanticsMap.offset = offset;
@@ -2169,6 +2188,7 @@ Renderer::PipelineState::PipelineState(const Shader::Ptr & shader)
 	D3D12_COMPUTE_PIPELINE_STATE_DESC desc = {0};
 	D3D12_ROOT_SIGNATURE_DESC rsd = {};
 
+	shader->createRootParameters();
 	rsd.NumParameters = (UINT)shader->mRootParameters.size();
 	if (rsd.NumParameters > 0)
 		rsd.pParameters = shader->mRootParameters.data();

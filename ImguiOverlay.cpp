@@ -46,6 +46,7 @@ void ImGuiPass::initRendering()
 	auto vs = renderer->compileShaderFromFile("shaders/imgui.hlsl", "vs", SM_VS);
 	auto ps = renderer->compileShaderFromFile("shaders/imgui.hlsl", "ps", SM_PS);
 	std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
+	vs->enable32BitsConstants(true);
 	ps->registerStaticSampler({
 		D3D12_FILTER_MIN_MAG_MIP_POINT,
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
@@ -168,9 +169,9 @@ void ImGuiPass::draw(ImDrawData* data)
 
 	cmdlist->setPipelineState(mPipelineState);
 
-	mConstant->blit(mvp);
-	mPipelineState->setVSConstant("vertexBuffer", mConstant);
-	//mPipelineState->setVSVariable("ProjectionMatrix", mvp);
+	//mConstant->blit(mvp);
+	//mPipelineState->setVSConstant("vertexBuffer", mConstant);
+	mPipelineState->setVSVariable("ProjectionMatrix", mvp);
 
 	//cmdlist->set32BitConstants(1,16,mvp,0);
 
