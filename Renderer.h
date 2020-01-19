@@ -3,8 +3,8 @@
 
 
 //#if WINVER  < _WIN32_WINNT_WIN10
-	#define D3D12ON7
-	#include "D3D12Downlevel.h"
+	//#define D3D12ON7
+	//#include "D3D12Downlevel.h"
 //#endif
 
 #if defined(D3D12ON7)
@@ -436,7 +436,7 @@ public:
 	public:
 		Shader(const MemoryData& data, ShaderType type);
 		void registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc);
-
+		void enable32BitsConstants(bool b);
 	private:
 		D3D12_SHADER_VISIBILITY getShaderVisibility()const;
 		D3D12_DESCRIPTOR_RANGE_TYPE getRangeType(D3D_SHADER_INPUT_TYPE type)const;
@@ -444,6 +444,7 @@ public:
 	private:
 		ShaderType mType;
 		MemoryData mCodeBlob;
+		bool mUse32BitsConstants = false;
 
 		ComPtr<ShaderReflection> mReflection;
 		std::vector< D3D12_STATIC_SAMPLER_DESC> mStaticSamplers;
@@ -594,7 +595,8 @@ public:
 		void close();
 		void reset(const CommandAllocator::Ref& alloc);
 
-		void transitionTo( Resource::Ref res, D3D12_RESOURCE_STATES state, UINT subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool autoflush = false);
+		void transitionBarrier( Resource::Ref res, D3D12_RESOURCE_STATES state, UINT subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool autoflush = false);
+		void uavBarrier(Resource::Ref res);
 		void addResourceTransition(const Resource::Ref& res, D3D12_RESOURCE_STATES state, UINT subresource);
 		void flushResourceBarrier();
 		void copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size );
@@ -637,7 +639,8 @@ public:
 			D3D12_RESOURCE_STATES state;
 			UINT subresource;
 		};
-		std::map<ID3D12Resource*,Transition> mResourceTransitions;
+		std::map<ID3D12Resource*,Transition> mTransitionBarrier;
+		std::map<ID3D12Resource*, Resource::Ref> mUAVBarrier;
 	};
 
 
