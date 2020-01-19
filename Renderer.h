@@ -3,8 +3,8 @@
 
 
 //#if WINVER  < _WIN32_WINNT_WIN10
-	//#define D3D12ON7
-	//#include "D3D12Downlevel.h"
+	#define D3D12ON7
+	#include "D3D12Downlevel.h"
 //#endif
 
 #if defined(D3D12ON7)
@@ -285,7 +285,8 @@ public:
 		using Resource::Resource;
 		Texture(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON):Resource(res, state){}
 
-		virtual void init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
+		using Resource::init;
+		void init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
 
 	private:
 		DescriptorHandle createView() override;
@@ -677,7 +678,7 @@ public:
 	void destroyResource(Resource::Ref res);
 	Texture::Ref createTexture(UINT width, UINT height, UINT depth, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	Texture::Ref createTexture(const std::wstring& filename);
-	Texture::Ref createTexture(UINT width, UINT height, DXGI_FORMAT format , const std::vector<std::vector<char>>& mipdatas);
+	Texture::Ref createTexture(UINT width, UINT height, DXGI_FORMAT format ,UINT miplevels, const void* data);
 
 	Buffer::Ptr createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	ConstantBuffer::Ptr createConstantBuffer(UINT size);
@@ -753,7 +754,6 @@ private:
 	CommandAllocator::Ptr mProfileCmdAlloc;
 	ConstantBufferAllocator::Ptr mConstantBufferAllocator;
 	std::array<PipelineState::Ref, 4> mGenMipsPSO;
-	ConstantBuffer::Ptr mGenMipsConsts;
 	bool mVSync = false;
 
 };

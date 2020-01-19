@@ -59,17 +59,13 @@ void RenderCommand::createMesh(
 
 }
 
-void RenderCommand::createTexture(const std::string & name, int width, int height, DXGI_FORMAT format,const std::vector<char*>& data)
+void RenderCommand::createTexture(const std::string & name, int width, int height, DXGI_FORMAT format,const char* data)
 {
 	mIPC << "createTexture";
 
 	UINT32 size = D3DHelper::sizeof_DXGI_FORMAT(format) * width * height;
-	mIPC << name << width << height << format << size << (UINT32)data.size();
-	for (auto& d : data)
-	{
-		mIPC.send(d, size);
-		size /= 4;
-	}
+	mIPC << name << width << height << format << size ;
+	mIPC.send(data, size);
 }
 
 void RenderCommand::createModel(const std::string & name, const std::vector<std::string> meshs, const Matrix & transform, const std::string& materialName)
@@ -135,23 +131,18 @@ void RenderCommand::record()
 	};
 
 	processors["createTexture"] = [&ipc = mIPC]() {
-		UINT32 width, height, size, miplevels;
+		UINT32 width, height, size;
 		DXGI_FORMAT fmt;
 		std::string name;
-		ipc >> name >>  width >> height >> fmt >> size >> miplevels;
-		std::vector<std::vector<char>> data;
-		data.resize(miplevels);
+		ipc >> name >>  width >> height >> fmt >> size ;
+		std::vector<char> data;
+		data.resize(size);
 
-		for (auto& d : data)
-		{
-			d.resize(size);
-			ipc.receive(d.data(), size);
-			size /= 4;
-		}
+		ipc.receive(data.data(), size);
 
 		auto context = RenderContext::getSingleton();
 		auto tex = context->createObject<Texture>(name);
-		tex->init(width,height, fmt, data);
+		tex->init(width,height, fmt, data.data());
 		return true;
 	};
 

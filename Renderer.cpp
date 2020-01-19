@@ -537,9 +537,10 @@ Renderer::Texture::Ref Renderer::createTexture(UINT width, UINT height, UINT dep
 	}
 
 	auto tex = Texture::create(restype);
-	tex->init(width, height, type, format, flags);
+	tex->init(resdesc, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON);
 
 	addResource(tex);
+
 	return tex;
 }
 
@@ -566,10 +567,8 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	}
 	ASSERT(data != nullptr,"cannot create texture");
 	
-	auto tex = createTexture(width, height, 1, format);
-	updateResource(tex, 0 ,data, width * height * D3DHelper::sizeof_DXGI_FORMAT(format), [dst = tex](auto cmdlist, auto src, auto sub){
-		cmdlist->copyTexture(dst,sub,{0,0,0},src,0,nullptr);
-	});
+	auto tex = createTexture(width, height, format, 1,data);
+
 	stbi_image_free(data);
 
 	mTextureMap[filename] = tex;
@@ -577,17 +576,18 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	return tex;
 }
 
-Renderer::Texture::Ref Renderer::createTexture(UINT width, UINT height, DXGI_FORMAT format, const std::vector<std::vector<char>>& mipdatas)
+Renderer::Texture::Ref Renderer::createTexture(UINT width, UINT height, DXGI_FORMAT format, UINT miplevels, const void* data)
 {
-	auto tex = createTexture(width, height, 1, format, mipdatas.size(),D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_FLAG_NONE);
+	auto tex = createTexture(width, height, 1, format, miplevels,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_FLAG_NONE);
 	auto size = width * height * D3DHelper::sizeof_DXGI_FORMAT(format);
-	for (auto i = 0; i < mipdatas.size(); ++i)
-	{
-		updateResource(tex, i, mipdatas[i].data(), size, [dst = tex](auto cmdlist, auto src, auto sub) {
-			cmdlist->copyTexture(dst, sub, { 0,0,0 }, src, 0, nullptr);
-			});
-		size /= 4;
-	}
+
+	updateResource(tex, 0, data, size, [dst = tex](auto cmdlist, auto src, auto sub) {
+		cmdlist->copyTexture(dst, sub, { 0,0,0 }, src, 0, nullptr);
+	});
+
+	executeResourceCommands([&](auto cmdlist) {
+		cmdlist->generateMips(tex);
+	});
 	return tex;
 }
 
@@ -802,6 +802,7 @@ void Renderer::initResources()
 		std::stringstream ss;
 		ss << i;
 		auto shader = compileShaderFromFile("shaders/gen_mips.hlsl", "main", SM_CS,{{"NON_OF_POWER", ss.str().c_str()},{NULL,NULL}});
+		shader->enable32BitsConstants(true);
 		shader->registerStaticSampler({
 			D3D12_FILTER_MIN_MAG_MIP_POINT,
 			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
@@ -818,7 +819,6 @@ void Renderer::initResources()
 		mGenMipsPSO[i] = createComputePipelineState(shader);
 	}
 
-	mGenMipsConsts = mGenMipsPSO[0]->createConstantBuffer(Shader::ST_COMPUTE, "CB0");
 }
 
 Renderer::Shader::ShaderType Renderer::mapShaderType(const std::string & target)
@@ -1825,7 +1825,6 @@ void Renderer::CommandList::generateMips(Texture::Ref texture)
 	auto renderer = Renderer::getSingleton();
 	auto pso = renderer->mGenMipsPSO[0];
 	auto desc = texture->getDesc();
-	auto& consts = renderer->mGenMipsConsts;
 
 	if (desc.MipLevels == 1)
 		return;
@@ -1865,10 +1864,11 @@ void Renderer::CommandList::generateMips(Texture::Ref texture)
 		{
 			UINT32 width = desc.Width >> mip;
 			UINT32 height = desc.Height >> mip;
-			consts->setVariable("SrcMipLevel", &mip);
+			//consts->setVariable("SrcMipLevel", &mip);
+			pso->setVariable(Shader::ST_COMPUTE,"SrcMipLevel", &mip);
 
 			UINT32 nummips = std::min(4, desc.MipLevels - mip);
-			consts->setVariable("NumMipLevels", &nummips);
+			pso->setVariable(Shader::ST_COMPUTE, "NumMipLevels", &nummips);
 
 			UINT32 outputWidth = width >> 1;
 			UINT32 outputHeight = height >> 1;
@@ -1878,9 +1878,8 @@ void Renderer::CommandList::generateMips(Texture::Ref texture)
 				1.0f / (float)outputHeight
 			};
 
-			consts->setVariable("TexelSize", texelSize);
+			pso->setVariable(Shader::ST_COMPUTE, "TexelSize", &texelSize);
 
-			pso->setConstant(Shader::ST_COMPUTE,"CB0",consts);
 			UINT non_power_of_two = (height & 1) << 1 | (width & 1);
 
 			pso->setPSResource("SrcMip", texture->getGPUHandle());

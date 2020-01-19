@@ -30,9 +30,9 @@ struct Texture: public Object
 {
 	using Ptr = std::shared_ptr<Texture>;
 
-	void init(int width, int height, DXGI_FORMAT format, const std::vector<std::vector<char>>& mipdatas)
+	void init(int width, int height, DXGI_FORMAT format, const void* data)
 	{
-		texture = Renderer::getSingleton()->createTexture((UINT)width, (UINT)height, format, mipdatas);
+		texture = Renderer::getSingleton()->createTexture((UINT)width, (UINT)height, format,1, data);
 		texture->setName(M2U("Texture " + name));
 	}
 	Renderer::Texture::Ref texture;

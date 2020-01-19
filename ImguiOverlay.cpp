@@ -278,11 +278,14 @@ void ImGuiPass::initFonts()
 	io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
 
 	auto renderer = Renderer::getSingleton();
-	mFonts = renderer->createTexture(width, height, 1,DXGI_FORMAT_R8G8B8A8_UNORM);
+	mFonts = renderer->createTexture(width, height, 1,DXGI_FORMAT_R8G8B8A8_UNORM,5);
 	renderer->updateResource(mFonts, 0,pixels, width * height * 4, [dst = mFonts](auto cmdlist, auto src, auto sub) {
 		cmdlist->copyTexture(dst, sub, { 0,0,0 }, src, 0, nullptr);
 	});
 
+	renderer->executeResourceCommands([&](auto cmdlist) {
+		cmdlist->generateMips(mFonts);
+		});
 	static_assert(sizeof(ImTextureID) >= sizeof(mFonts->getGPUHandle().ptr), "Can't pack descriptor handle into TexID, 32-bit not supported yet.");
 	io.Fonts->TexID = (ImTextureID)mFonts->getGPUHandle().ptr;
 }
