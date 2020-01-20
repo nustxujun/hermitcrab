@@ -174,6 +174,8 @@ void Renderer::endFrame()
 
 	updateTimeStamp();
 
+	collectDebugInfo();
+
 	debugInfoCache = debugInfoCurrent;
 }
 
@@ -520,6 +522,8 @@ Renderer::Resource::Ref Renderer::createResource(size_t size, D3D12_HEAP_TYPE ty
 Renderer::Texture::Ref Renderer::createTexture(UINT width, UINT height, UINT depth,  DXGI_FORMAT format, UINT nummips, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags, Resource::ResourceType restype)
 {
 	unsigned long maxmips;
+	_BitScanReverse(&maxmips, width | height);
+	nummips = std::max((UINT)maxmips + 1, nummips);
 
 	D3D12_RESOURCE_DESC resdesc = {};
 	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -839,6 +843,12 @@ Renderer::Shader::ShaderType Renderer::mapShaderType(const std::string & target)
 		break;
 	}
 	return type;
+}
+
+void Renderer::collectDebugInfo()
+{
+	debugInfoCurrent.numResources = mResources.size();
+	debugInfoCurrent.numTransientOnUse = mResources.size() - mTransients.size();
 }
 
 std::string Renderer::findFile(const std::string & filename)
@@ -1374,7 +1384,7 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 	cv.DepthStencil = {1.0f, 0};
 	CHECK(device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, state, pcv, IID_PPV_ARGS(&mResource)));
 
-	mDesc = mResource->GetDesc();
+	mDesc = resdesc;
 	mState.resize(mDesc.MipLevels, state);
 
 	mHandle = createView();

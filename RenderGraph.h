@@ -20,6 +20,7 @@ public:
 	static ResourceHandle::Ptr clone(ResourceHandle::Ptr res);
 
 	ResourceHandle(Renderer::ViewType t, int w, int h, DXGI_FORMAT format);
+	~ResourceHandle();
 
 	Renderer::ViewType getType()const;
 	const std::wstring& getName()const;
@@ -27,8 +28,8 @@ public:
 	void setClearValue(const ClearValue& vec){mClearValue = vec;};
 	const ClearValue& getClearValue()const{return mClearValue;};
 
-	void addRef();
-	void release();
+	//void addRef();
+	//void release();
 
 	void prepare();
 	const Renderer::ResourceView::Ptr& getView() const {return mView;}

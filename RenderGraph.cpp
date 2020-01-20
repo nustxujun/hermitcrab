@@ -17,6 +17,11 @@ ResourceHandle::ResourceHandle(Renderer::ViewType t, int w, int h, DXGI_FORMAT f
 {
 }
 
+ResourceHandle::~ResourceHandle()
+{
+	mView.reset();
+}
+
 Renderer::ViewType ResourceHandle::getType() const
 {
 	return mType;
@@ -33,25 +38,25 @@ void ResourceHandle::setName(const std::wstring & n)
 }
 
 
-void ResourceHandle::addRef()
-{
-	mRefCount++;
-}
-
-void ResourceHandle::release()
-{
-	if (mRefCount == 0)
-	{
-		mView.reset();
-		return;
-	}
-
-	mRefCount--;
-}
+//void ResourceHandle::addRef()
+//{
+//	mRefCount++;
+//}
+//
+//void ResourceHandle::release()
+//{
+//	if (mRefCount == 0)
+//	{
+//		//mView.reset();
+//		return;
+//	}
+//
+//	mRefCount--;
+//}
 
 void ResourceHandle::prepare()
 {
-	Common::Assert(mRefCount != 0,"invalied resource");
+	//Common::Assert(mRefCount != 0,"invalied resource");
 
 	if (!mView)
 		mView = Renderer::getSingleton()->createResourceView(mWidth, mHeight,mFormat,mType, Renderer::Resource::RT_TRANSIENT);
@@ -165,7 +170,7 @@ void RenderGraph::RenderPass::read(ResourceHandle::Ptr res, UINT slot)
 	if (slot >= mShaderResources.size())
 		mShaderResources.resize(slot + 1);
 	mShaderResources[slot] = res;
-	res->addRef();
+	//res->addRef();
 }
 
 void RenderGraph::RenderPass::write(ResourceHandle::Ptr rt, InitialType type, UINT slot)
@@ -191,9 +196,9 @@ bool RenderGraph::RenderPass::isPrepared() const
 
 void RenderGraph::RenderPass::release()
 {
-	for (auto&i : mShaderResources)
-		if (i)
-			i->release();
+	//for (auto&i : mShaderResources)
+		//if (i)
+			//i->release();
 	mShaderResources.clear();
 	mResources.clear();
 }
@@ -298,20 +303,20 @@ void RenderGraph::Resources::add(ResourceHandle::Ptr res, UINT slot)
 
 	if (!res->getName().empty())
 		mResourceMap[res->getName()] = res;
-	res->addRef();
+	//res->addRef();
 
 }
 
 void RenderGraph::Resources::clear()
 {
-	for (auto& i : mRenderTargets)
-	{
-		if (i)
-			i->release();
-	}
+	//for (auto& i : mRenderTargets)
+	//{
+	//	if (i)
+	//		i->release();
+	//}
 	mRenderTargets.clear();
-	if (mDepthStencil)
-		mDepthStencil->release();
+	//if (mDepthStencil)
+		//mDepthStencil->release();
 	mDepthStencil.reset();
 	mResourceMap.clear();
 }

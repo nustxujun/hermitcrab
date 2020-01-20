@@ -236,7 +236,7 @@ void ImGuiPass::setup()
 	HWND win = Renderer::getSingleton()->getWindow();
 	RECT rect;
 	::GetClientRect(win,&rect);
-	resize(win, rect.right, rect.bottom);
+	resize(win, std::max(1L, rect.right), std::max(1L,rect.bottom));
 }
 
 void ImGuiPass::compile(const RenderGraph::Inputs & inputs)

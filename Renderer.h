@@ -74,6 +74,9 @@ public:
 	{
 		size_t drawcallCount = 0;
 		size_t primitiveCount = 0;
+		size_t numResources = 0;
+		size_t numTransientOnUse = 0;
+
 	};
 
 
@@ -711,7 +714,7 @@ private:
 	void initProfile();
 	void initResources();
 	Shader::ShaderType mapShaderType(const std::string& target);
-
+	void collectDebugInfo();
 
 	CommandAllocator::Ptr allocCommandAllocator();
 	void recycleCommandAllocator(CommandAllocator::Ptr ca);

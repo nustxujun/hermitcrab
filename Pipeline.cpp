@@ -116,6 +116,9 @@ DefaultPipeline::DefaultPipeline()
 		const auto& debuginfo = Renderer::getSingleton()->getDebugInfo();
 		ImGui::Text("drawcall count: %d",debuginfo.drawcallCount);
 		ImGui::Text("primitive count: %d", debuginfo.primitiveCount);
+		ImGui::Text("resources count: %d", debuginfo.numResources);
+		ImGui::Text("transient texture count: %d", debuginfo.numTransientOnUse);
+
 		return true;
 	};
 
