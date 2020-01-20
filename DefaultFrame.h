@@ -22,14 +22,13 @@ public:
 		Framework::initialize();
 		pipeline = decltype(pipeline)(new DefaultPipeline);
 
-		//rendercmd.init(false);
-		//rendercmd.record();
-		//commonConsts = mRenderList[0]->material->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL,"CommonConstants");
+		rendercmd.init(false);
+		rendercmd.record();
+		commonConsts = mRenderList[0]->material->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL,"CommonConstants");
 
 		auto cam = getObject<Camera>("main");
 
 		Framework::resize(cam->viewport.Width, cam->viewport.Height);
-
 	}
 
 	void renderScreen()

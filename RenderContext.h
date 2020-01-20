@@ -81,7 +81,7 @@ struct Material: public Object
 
 		for (auto& t : textures)
 		{
-			pipelineState->setPSResource(t.first, t.second->texture->getGPUHandle());
+			pipelineState->setPSResource(t.first, t.second->texture->getShaderResource());
 
 		}
 	}

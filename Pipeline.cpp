@@ -24,7 +24,7 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::present()
 			{
 				if (srvs[i])
 				{
-					quad->setResource(i, srvs[i]->getView()->getTexture()->getGPUHandle());
+					quad->setResource(i, srvs[i]->getView()->getTexture()->getShaderResource());
 				}
 			}
 			RenderContext::getSingleton()->renderScreen(quad.get());
@@ -79,7 +79,7 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::postprocess(const std::string& ps, 
 			for (UINT i = 0; i < srvs.size();++i)
 			{
 				if (srvs[i])
-					pso->setPSResource(i,srvs[i]->getView()->getTexture()->getGPUHandle());
+					pso->setPSResource(i,srvs[i]->getView()->getTexture()->getShaderResource());
 			}
 			//pso->setPSResource("frame",srvs[0]->getView()->getHandle());
 			RenderContext::getSingleton()->renderScreen(quad.get());

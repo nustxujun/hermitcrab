@@ -278,6 +278,9 @@ void Renderer::executeResourceCommands(const std::function<void(CommandList::Ref
 
 	mResourceCommandList->reset(alloc);
 
+	auto heap = mDescriptorHeaps[DHT_CBV_SRV_UAV]->get();
+	mResourceCommandList->get()->SetDescriptorHeaps(1, &heap);
+
 	dofunc(mResourceCommandList);
 
 	mResourceCommandList->close();
@@ -516,6 +519,8 @@ Renderer::Resource::Ref Renderer::createResource(size_t size, D3D12_HEAP_TYPE ty
 
 Renderer::Texture::Ref Renderer::createTexture(UINT width, UINT height, UINT depth,  DXGI_FORMAT format, UINT nummips, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags, Resource::ResourceType restype)
 {
+	unsigned long maxmips;
+
 	D3D12_RESOURCE_DESC resdesc = {};
 	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 	resdesc.Alignment = 0;
@@ -567,7 +572,7 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	}
 	ASSERT(data != nullptr,"cannot create texture");
 	
-	auto tex = createTexture(width, height, format, 1,data);
+	auto tex = createTexture(width, height, format, 0,data);
 
 	stbi_image_free(data);
 
@@ -1185,9 +1190,9 @@ Renderer::ResourceView::~ResourceView()
 		Renderer::getSingleton()->destroyResource(mTexture);
 }
 
-const D3D12_CPU_DESCRIPTOR_HANDLE& Renderer::ResourceView::getCPUHandle() const
+const Renderer::DescriptorHandle& Renderer::ResourceView::getHandle() const
 {
-	return mHandle.cpu;
+	return mHandle;
 }
 
 const Renderer::Texture::Ref& Renderer::ResourceView::getTexture() const
@@ -1333,8 +1338,18 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 	{
 		state = D3D12_RESOURCE_STATE_GENERIC_READ;
 	}
-
-	mState.resize(resdesc.MipLevels, state);
+	else if (resdesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
+	{
+		state = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	}
+	else if (resdesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)
+	{
+		state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+	}
+	else if (resdesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
+	{
+		state = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+	}
 
 	D3D12_HEAP_PROPERTIES heapprop = {};
 	heapprop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
@@ -1359,7 +1374,9 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 	cv.DepthStencil = {1.0f, 0};
 	CHECK(device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, state, pcv, IID_PPV_ARGS(&mResource)));
 
-	mDesc = resdesc;
+	mDesc = mResource->GetDesc();
+	mState.resize(mDesc.MipLevels, state);
+
 	mHandle = createView();
 }
 
@@ -1443,7 +1460,7 @@ size_t Renderer::Resource::hash()
 	return mHashValue;
 }
 
-D3D12_GPU_DESCRIPTOR_HANDLE Renderer::Resource::getGPUHandle()
+const D3D12_GPU_DESCRIPTOR_HANDLE& Renderer::Resource::getShaderResource()
 {
 	return mHandle;
 }
@@ -1459,7 +1476,9 @@ Renderer::DescriptorHandle Renderer::Resource::createView()
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.Format = desc.Format;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	srvDesc.Texture2D.MipLevels = desc.MipLevels;
+	//srvDesc.Buffer.FirstElement = 0;
+	//srvDesc.Buffer.NumElements = 1;
+	//srvDesc.Buffer.StructureByteStride = desc.Width;
 	Renderer::getSingleton()->getDevice()->CreateShaderResourceView(get(), &srvDesc, handle.cpu);
 	return handle;
 }
@@ -1480,31 +1499,38 @@ void Renderer::Texture::init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_F
 	resdesc.Flags = flags;
 
 	D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
-	if (flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
-		state |= D3D12_RESOURCE_STATE_RENDER_TARGET;
-	else if (flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
-		state |= D3D12_RESOURCE_STATE_DEPTH_WRITE ;
-	else if (flags & D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
-		state |= D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+	Resource::init(resdesc, ht, D3D12_RESOURCE_STATE_COMMON);
 
-	Resource::init(resdesc, ht, state);
+}
 
-
-
+const D3D12_GPU_DESCRIPTOR_HANDLE& Renderer::Texture::getShaderResource(UINT i)
+{
+	if (i >= mHandles.size())
+	{
+		mHandles.resize(i + 1);
+		mHandles[i] = createView(i,1);
+	}
+	return mHandles[i];
 }
 
 Renderer::DescriptorHandle Renderer::Texture::createView()
 {
+	return createView(0,-1);
+}
+
+Renderer::DescriptorHandle Renderer::Texture::createView(UINT begin, UINT count)
+{
 	auto desc = getDesc();
 	if (desc.Flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE)
-		return {} ;
+		return {};
 	DescriptorHandle handle = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.Format = desc.Format;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Texture2D.MipLevels = desc.MipLevels;
+	srvDesc.Texture2D.MostDetailedMip = begin;
+	srvDesc.Texture2D.MipLevels = count;
 	Renderer::getSingleton()->getDevice()->CreateShaderResourceView(get(), &srvDesc, handle.cpu);
 	return handle;
 }
@@ -1559,18 +1585,23 @@ Renderer::CommandList::~CommandList()
 
 void Renderer::CommandList::transitionBarrier(Resource::Ref res, D3D12_RESOURCE_STATES  state, UINT subresource ,bool autoflush)
 {
-	const auto& cur = res->getState();
-	if (state == cur)
-		return;
-
+	if (subresource != D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)
+	{
+		const auto& cur = res->getState(subresource);
+		if (state == cur)
+			return;
+	}
 	addResourceTransition(res,state,subresource);
 	if (autoflush)
 		flushResourceBarrier();
 }
 
-void Renderer::CommandList::uavBarrier(Resource::Ref res)
+void Renderer::CommandList::uavBarrier(Resource::Ref res, bool autoflush)
 {
 	mUAVBarrier[res->get()] = res;
+
+	if (autoflush)
+		flushResourceBarrier();
 }
 
 void Renderer::CommandList::addResourceTransition(const Resource::Ref& res, D3D12_RESOURCE_STATES state, UINT subres)
@@ -1581,8 +1612,6 @@ void Renderer::CommandList::addResourceTransition(const Resource::Ref& res, D3D1
 
 void Renderer::CommandList::flushResourceBarrier()
 {
-	if (mTransitionBarrier.empty())
-		return;
 
 	std::vector<D3D12_RESOURCE_BARRIER> barriers;
 	for (auto& t : mTransitionBarrier)
@@ -1613,13 +1642,19 @@ void Renderer::CommandList::flushResourceBarrier()
 
 			if (allthesame)
 			{
-				b.Transition.StateBefore = state;
-				barriers.emplace_back(b);
+				if (state != t.second.state)
+				{
+					b.Transition.StateBefore = state;
+					barriers.emplace_back(b);
+				}
 			}
 			else
 			{
 				for (UINT i = 0; i < desc.MipLevels; ++i)
 				{
+					auto substate = res->getState(i);
+					if (substate == t.second.state)
+						continue;
 					b.Transition.StateBefore = res->getState(i);
 					b.Transition.Subresource = i;
 					barriers.emplace_back(b);
@@ -1644,12 +1679,15 @@ void Renderer::CommandList::flushResourceBarrier()
 		D3D12_RESOURCE_BARRIER b;
 		b.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
 		b.UAV.pResource = uav.first;
+		b.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
 		barriers.emplace_back(b);
 	}
 
-	mCmdList->ResourceBarrier((UINT)barriers.size(), barriers.data());
+	if (!barriers.empty())
+		mCmdList->ResourceBarrier((UINT)barriers.size(), barriers.data());
 
 	mTransitionBarrier.clear();
+	mUAVBarrier.clear();
 }
 
 void Renderer::CommandList::copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size)
@@ -1657,10 +1695,12 @@ void Renderer::CommandList::copyBuffer(Resource::Ref dst, UINT dstStart, Resourc
 	mCmdList->CopyBufferRegion(dst->get(), dstStart, src->get(), srcStart, size);
 }
 
-void Renderer::CommandList::copyTexture(Resource::Ref dst, UINT dstSub, const std::array<UINT, 3>& dstStart, Resource::Ref src, UINT srcSub, const std::pair<std::array<UINT, 3>, std::array<UINT, 3>>* srcBox)
+void Renderer::CommandList::copyTexture(Resource::Ref dst, UINT dstSub, const std::array<UINT, 3>& dstStart, Resource::Ref src, UINT srcSub, const D3D12_BOX* srcBox)
 {
-	D3D12_TEXTURE_COPY_LOCATION dstlocal = {dst->get(),D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX , dstSub};
-	D3D12_TEXTURE_COPY_LOCATION srclocal = {src->get(), D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT , {}};
+	bool dstIsBuffer = dst->getDesc().Dimension == D3D12_RESOURCE_DIMENSION_BUFFER;
+	bool srcIsBuffer = src->getDesc().Dimension == D3D12_RESOURCE_DIMENSION_BUFFER;
+	D3D12_TEXTURE_COPY_LOCATION dstlocal = {dst->get(),dstIsBuffer? D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT:  D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX   , dstSub};
+	D3D12_TEXTURE_COPY_LOCATION srclocal = {src->get(), srcIsBuffer ? D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT : D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX , srcSub};
 	const auto& srcDesc = src->getDesc();
 	const auto& dstDesc = dst->getDesc();
 
@@ -1673,6 +1713,11 @@ void Renderer::CommandList::copyTexture(Resource::Ref dst, UINT dstSub, const st
 	mCmdList->CopyTextureRegion(&dstlocal, dstStart[0], dstStart[1], dstStart[2],&srclocal,(const D3D12_BOX*)srcBox);
 }
 
+void Renderer::CommandList::copyResource(const Resource::Ref& dst, const Resource::Ref& src)
+{
+	mCmdList->CopyResource(dst->get(), src->get());
+}
+
 void Renderer::CommandList::discardResource(const ResourceView::Ref & rt)
 {
 	mCmdList->DiscardResource(rt->getTexture()->get(),nullptr);
@@ -1680,22 +1725,22 @@ void Renderer::CommandList::discardResource(const ResourceView::Ref & rt)
 
 void Renderer::CommandList::clearRenderTarget(const ResourceView::Ref & rt, const Color & color)
 {
-	mCmdList->ClearRenderTargetView(rt->getCPUHandle(), color.data(),0, nullptr);
+	mCmdList->ClearRenderTargetView(rt->getHandle(), color.data(),0, nullptr);
 }
 
 void Renderer::CommandList::clearDepth(const ResourceView::Ref& rt, float depth)
 {
-	mCmdList->ClearDepthStencilView(rt->getCPUHandle(), D3D12_CLEAR_FLAG_DEPTH,depth, 0,0, 0);
+	mCmdList->ClearDepthStencilView(rt->getHandle(), D3D12_CLEAR_FLAG_DEPTH,depth, 0,0, 0);
 }
 
 void Renderer::CommandList::clearStencil(const ResourceView::Ref & rt, UINT8 stencil)
 {
-	mCmdList->ClearDepthStencilView(rt->getCPUHandle(), D3D12_CLEAR_FLAG_STENCIL, 1.0f, stencil, 0, 0);
+	mCmdList->ClearDepthStencilView(rt->getHandle(), D3D12_CLEAR_FLAG_STENCIL, 1.0f, stencil, 0, 0);
 }
 
 void Renderer::CommandList::clearDepthStencil(const ResourceView::Ref & rt, float depth, UINT8 stencil)
 {
-	mCmdList->ClearDepthStencilView(rt->getCPUHandle(), D3D12_CLEAR_FLAG_STENCIL | D3D12_CLEAR_FLAG_DEPTH, depth, stencil, 0, 0);
+	mCmdList->ClearDepthStencilView(rt->getHandle(), D3D12_CLEAR_FLAG_STENCIL | D3D12_CLEAR_FLAG_DEPTH, depth, stencil, 0, 0);
 }
 
 void Renderer::CommandList::setViewport(const D3D12_VIEWPORT& vp)
@@ -1712,22 +1757,22 @@ void Renderer::CommandList::setRenderTarget(const ResourceView::Ref& rt, const R
 {
 	const D3D12_CPU_DESCRIPTOR_HANDLE* dshandle = 0;
 	if (ds)
-		dshandle = & (ds->getCPUHandle());
+		dshandle = & (ds->getHandle().cpu);
 
 
-	mCmdList->OMSetRenderTargets(1, &rt->getCPUHandle(),FALSE, dshandle);
+	mCmdList->OMSetRenderTargets(1, &rt->getHandle().cpu,FALSE, dshandle);
 }
 
 void Renderer::CommandList::setRenderTargets(const std::vector<ResourceView::Ref>& rts, const ResourceView::Ref & ds)
 {
 	const D3D12_CPU_DESCRIPTOR_HANDLE* dshandle = 0;
 	if (ds)
-		dshandle = &(ds->getCPUHandle());
+		dshandle = &(ds->getHandle().cpu);
 
 	std::vector< D3D12_CPU_DESCRIPTOR_HANDLE> rtvs = {};
 	for (auto& rt: rts)
 	{
-		rtvs.push_back(rt->getCPUHandle());
+		rtvs.push_back(rt->getHandle());
 	}
 	mCmdList->OMSetRenderTargets((UINT)rtvs.size(), rtvs.data(), FALSE, dshandle);
 
@@ -1823,29 +1868,30 @@ void Renderer::CommandList::endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QU
 void Renderer::CommandList::generateMips(Texture::Ref texture)
 {
 	auto renderer = Renderer::getSingleton();
-	auto pso = renderer->mGenMipsPSO[0];
 	auto desc = texture->getDesc();
 
 	if (desc.MipLevels == 1)
 		return;
 
-	Texture::Ref dst;
+	Texture::Ref dst = renderer->createTexture(
+		desc.Width,
+		desc.Height, 
+		desc.DepthOrArraySize,
+		desc.Format,
+		desc.MipLevels ,
+		D3D12_HEAP_TYPE_DEFAULT, 
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+		Resource::RT_TRANSIENT
+	);
 
-	{
-		dst = renderer->createTexture(
-			desc.Width,
-			desc.Height, 
-			desc.DepthOrArraySize,
-			desc.Format,
-			desc.MipLevels ,
-			D3D12_HEAP_TYPE_DEFAULT, 
-			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-			Resource::RT_TRANSIENT
-		);
-	}
+	transitionBarrier(texture, D3D12_RESOURCE_STATE_COPY_SOURCE,0);
+	transitionBarrier(dst, D3D12_RESOURCE_STATE_COPY_DEST,0, true);
+	copyTexture(dst, 0,{0,0,0}, texture, 0,  nullptr);
+	transitionBarrier(dst, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 0,true);
+	
 
 	std::vector<ResourceView::Ptr> uavs(1);
-	for (auto i = 1; i < desc.MipLevels; ++i)
+	for (auto i = 1; i < desc.MipLevels ; ++i)
 	{
 		auto rv = renderer->createResourceView(dst);
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uavd = {};
@@ -1858,41 +1904,48 @@ void Renderer::CommandList::generateMips(Texture::Ref texture)
 		uavs.push_back(rv);
 	}
 
-	renderer->executeResourceCommands([&](CommandList::Ref cmdlist) {
-		cmdlist->setPipelineState(pso);
-		for (auto mip = 0; mip < desc.MipLevels - 1; ++mip)
-		{
-			UINT32 width = desc.Width >> mip;
-			UINT32 height = desc.Height >> mip;
-			//consts->setVariable("SrcMipLevel", &mip);
-			pso->setVariable(Shader::ST_COMPUTE,"SrcMipLevel", &mip);
+	for (auto mip = 0; mip < desc.MipLevels - 1 ; )
+	{
+		UINT32 width = std::max(1U, (UINT32)desc.Width >> mip);
+		UINT32 height = std::max(1U, (UINT32)desc.Height >> mip);
 
-			UINT32 nummips = std::min(4, desc.MipLevels - mip);
-			pso->setVariable(Shader::ST_COMPUTE, "NumMipLevels", &nummips);
+		UINT non_power_of_two = (height & 1) << 1 | (width & 1);
+		auto pso = renderer->mGenMipsPSO[non_power_of_two];
+		setPipelineState(pso);
 
-			UINT32 outputWidth = width >> 1;
-			UINT32 outputHeight = height >> 1;
+		int zero = 0;
+		pso->setVariable(Shader::ST_COMPUTE,"SrcMipLevel", &zero);
 
-			float texelSize[] = {
-				1.0f / (float)outputWidth,
-				1.0f / (float)outputHeight
-			};
+		UINT32 nummips = std::min(4, desc.MipLevels - mip - 1);
+		pso->setVariable(Shader::ST_COMPUTE, "NumMipLevels", &nummips);
 
-			pso->setVariable(Shader::ST_COMPUTE, "TexelSize", &texelSize);
+		UINT32 outputWidth = std::max(1U, width >> 1);
+		UINT32 outputHeight = std::max(1U,height >> 1);
 
-			UINT non_power_of_two = (height & 1) << 1 | (width & 1);
+		float texelSize[] = {
+			1.0f / (float)outputWidth,
+			1.0f / (float)outputHeight
+		};
 
-			pso->setPSResource("SrcMip", texture->getGPUHandle());
+		pso->setVariable(Shader::ST_COMPUTE, "TexelSize", &texelSize);
 
-			for (auto i = mip + 1; i < nummips; ++i )
-				pso->setPSResource(Common::format("Output", i), uavs[i]->getTexture()->getGPUHandle());
+		pso->setResource(Shader::ST_COMPUTE, "SrcMip", dst->getShaderResource());
+
+		for (auto i = 0; i < nummips; ++i )
+			pso->setResource(Shader::ST_COMPUTE, Common::format("OutMip", i + 1), uavs[i + mip + 1]->getHandle());
 			
-			cmdlist->dispatch(outputWidth / 8, outputHeight / 8, 1);
-		}
+		dispatch(outputWidth , outputHeight , 1);
+		uavBarrier(dst, true);
 
-	});
+		mip += nummips;
+	}
 
+	transitionBarrier(texture, D3D12_RESOURCE_STATE_COPY_DEST, -1);
+	transitionBarrier(dst, D3D12_RESOURCE_STATE_COPY_SOURCE, -1, true);
 
+	copyResource(texture, dst);
+
+	transitionBarrier(texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,-1, true);
 }
 
 void Renderer::CommandList::close()

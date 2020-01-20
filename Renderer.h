@@ -3,8 +3,8 @@
 
 
 //#if WINVER  < _WIN32_WINNT_WIN10
-	#define D3D12ON7
-	#include "D3D12Downlevel.h"
+	//#define D3D12ON7
+	//#include "D3D12Downlevel.h"
 //#endif
 
 #if defined(D3D12ON7)
@@ -236,7 +236,7 @@ public:
 		static size_t hash(const D3D12_RESOURCE_DESC& desc);
 		size_t hash();
 		UINT64 getSize()const{return mDesc.Width;}
-		D3D12_GPU_DESCRIPTOR_HANDLE getGPUHandle();
+		const D3D12_GPU_DESCRIPTOR_HANDLE& getShaderResource();
 	protected:
 		virtual DescriptorHandle createView();
 	private:
@@ -288,8 +288,14 @@ public:
 		using Resource::init;
 		void init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
 
+		using Resource::getShaderResource;
+		const D3D12_GPU_DESCRIPTOR_HANDLE& getShaderResource(UINT i);
+
 	private:
 		DescriptorHandle createView() override;
+		DescriptorHandle createView(UINT begin, UINT count);
+
+		std::vector<D3D12_GPU_DESCRIPTOR_HANDLE> mHandles;
 	};
 
 	class ResourceView final:public Interface<ResourceView>
@@ -300,7 +306,7 @@ public:
 		ResourceView(ViewType type, UINT width, UINT height, DXGI_FORMAT format, Resource::ResourceType rt = Resource::RT_PERSISTENT);
 		~ResourceView();
 
-		const D3D12_CPU_DESCRIPTOR_HANDLE& getCPUHandle()const;
+		const DescriptorHandle& getHandle()const;
 
 		const Texture::Ref& getTexture()const;
 		ViewType getType()const{return mType;};
@@ -597,12 +603,12 @@ public:
 		void reset(const CommandAllocator::Ref& alloc);
 
 		void transitionBarrier( Resource::Ref res, D3D12_RESOURCE_STATES state, UINT subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool autoflush = false);
-		void uavBarrier(Resource::Ref res);
+		void uavBarrier(Resource::Ref res, bool autoflush = false);
 		void addResourceTransition(const Resource::Ref& res, D3D12_RESOURCE_STATES state, UINT subresource);
 		void flushResourceBarrier();
 		void copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size );
-		void copyTexture(Resource::Ref dst, UINT dstSub, const std::array<UINT, 3>& dstStart, Resource::Ref src, UINT srcSub, const std::pair<std::array<UINT,3>, std::array<UINT, 3>>* srcBox );
-
+		void copyTexture(Resource::Ref dst, UINT dstSub, const std::array<UINT, 3>& dstStart, Resource::Ref src, UINT srcSub, const D3D12_BOX* srcBox );
+		void copyResource(const Resource::Ref& dst, const Resource::Ref& src);
 		void discardResource(const ResourceView::Ref& rt);
 		void clearRenderTarget(const ResourceView::Ref& rt, const Color& color);
 		void clearDepth(const ResourceView::Ref& rt, float depth);
