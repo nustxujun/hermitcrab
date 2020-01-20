@@ -1947,7 +1947,7 @@ void Renderer::CommandList::generateMips(Texture::Ref texture)
 
 		pso->setResource(Shader::ST_COMPUTE, "SrcMip", dst->getShaderResource());
 
-		for (auto i = 0; i < nummips; ++i )
+		for (UINT i = 0; i < nummips; ++i )
 			pso->setResource(Shader::ST_COMPUTE, Common::format("OutMip", i + 1), uavs[i + mip + 1]->getHandle());
 			
 		dispatch(outputWidth , outputHeight , 1);
