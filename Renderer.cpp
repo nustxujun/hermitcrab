@@ -311,11 +311,17 @@ Renderer::Shader::Ptr Renderer::compileShaderFromFile(const std::string & absfil
 	return compileShader(absfilepath,context,entry,target,  macros);
 }
 
-Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std::string & context, const std::string & entry, const std::string & target,const std::vector<D3D_SHADER_MACRO>& macros, const std::string& cachename)
+Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std::string & context, const std::string & entry, const std::string & target,const std::vector<D3D_SHADER_MACRO>& incomingMacros, const std::string& cachename)
 {
 	Shader::ShaderType type = mapShaderType(target);
-
-
+	std::vector<D3D_SHADER_MACRO> macros = incomingMacros;
+	if (!macros.empty())
+	{
+		if (macros.back().Name != NULL)
+		{
+			macros.push_back({NULL,NULL});
+		}
+	}
 	auto gethash = [this](const std::string& context, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros) {
 		std::hash<std::string> hash;
 		auto hashcontext = context + entry + target;
