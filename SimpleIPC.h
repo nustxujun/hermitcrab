@@ -77,6 +77,8 @@ public:
 		receive(&str[0], str.size());
 		return *this;
 	}
+
+	void invalid();
 private:
 	size_t try_receive(void* buffer, size_t size);
 private:
@@ -85,4 +87,5 @@ private:
 	HANDLE mSendWaiter;
 	HANDLE mReceiveWaiter;
 	std::list<std::vector<char>> mSendQueue;
+	bool mVaild = true;
 };

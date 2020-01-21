@@ -30,6 +30,12 @@ void RenderCommand::done()
 	mIPC << "done";
 }
 
+void RenderCommand::invalid()
+{
+	mIPC << "invalid";
+	mIPC.invalid();
+}
+
 
 void RenderCommand::createMesh(
 	const std::string & name, 
@@ -59,7 +65,7 @@ void RenderCommand::createMesh(
 
 }
 
-void RenderCommand::createTexture(const std::string & name, int width, int height, DXGI_FORMAT format,const char* data)
+void RenderCommand::createTexture(const std::string & name, int width, int height, DXGI_FORMAT format,const void* data)
 {
 	mIPC << "createTexture";
 
@@ -212,6 +218,11 @@ void RenderCommand::record()
 
 
 	processors["done"] = []() {
+		return false;
+	};
+
+	processors["invalid"] = [&ipc = mIPC]() {
+		ipc.invalid();
 		return false;
 	};
 

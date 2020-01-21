@@ -64,7 +64,8 @@ public :
 		std::cout << Common::format(msg, info) ;
 		MessageBoxA(NULL, Common::format(msg, info).c_str(), NULL, MB_ICONERROR);
 		_CrtDbgBreak();
-		abort();
+		//abort();
+		throw std::exception("terminate client");
 	}
 
 	static void Assert(bool v, const std::string& what)
@@ -74,8 +75,8 @@ public :
 		std::cout << what;
 		MessageBoxA(0, what.c_str(), 0, MB_ICONERROR);
 		_CrtDbgBreak();
-		abort();
-
+		//abort();
+		throw std::exception("terminate client");
 	}
 
 	template<class T, class ... Args>

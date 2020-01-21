@@ -25,7 +25,7 @@ public:
 		const std::string& name,
 		int width, int height, 
 		DXGI_FORMAT format,
-		const char* data
+		const void* data
 		);
 
 	void createModel(
@@ -57,6 +57,7 @@ public:
 		const Vector3& dir);
 
 	void done();
+	void invalid();
 private:
 	static RenderCommand* instance;
 
