@@ -849,6 +849,13 @@ void Renderer::collectDebugInfo()
 {
 	debugInfoCurrent.numResources = mResources.size();
 	debugInfoCurrent.numTransientOnUse = mResources.size() - mTransients.size();
+
+	for (auto& r: mResources)
+	{
+		auto desc = r->get()->GetDesc();
+		if (desc.Format != DXGI_FORMAT_UNKNOWN)
+			debugInfoCurrent.videoMemory += desc.Width * desc.Height * desc.DepthOrArraySize * D3DHelper::sizeof_DXGI_FORMAT(desc.Format);
+	}
 }
 
 std::string Renderer::findFile(const std::string & filename)

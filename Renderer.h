@@ -76,6 +76,7 @@ public:
 		size_t primitiveCount = 0;
 		size_t numResources = 0;
 		size_t numTransientOnUse = 0;
+		size_t videoMemory = 0;
 
 	};
 

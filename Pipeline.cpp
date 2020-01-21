@@ -118,6 +118,7 @@ DefaultPipeline::DefaultPipeline()
 		ImGui::Text("primitive count: %d", debuginfo.primitiveCount);
 		ImGui::Text("resources count: %d", debuginfo.numResources);
 		ImGui::Text("transient texture count: %d", debuginfo.numTransientOnUse);
+		ImGui::Text("video memroy: %d", debuginfo.videoMemory);
 
 		return true;
 	};
