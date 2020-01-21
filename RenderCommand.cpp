@@ -33,6 +33,7 @@ void RenderCommand::done()
 void RenderCommand::invalid()
 {
 	mIPC << "invalid";
+	mIPC.invalid();
 }
 
 
@@ -64,7 +65,7 @@ void RenderCommand::createMesh(
 
 }
 
-void RenderCommand::createTexture(const std::string & name, int width, int height, DXGI_FORMAT format,const char* data)
+void RenderCommand::createTexture(const std::string & name, int width, int height, DXGI_FORMAT format,const void* data)
 {
 	mIPC << "createTexture";
 

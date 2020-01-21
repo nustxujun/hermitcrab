@@ -78,7 +78,7 @@ public:
 		return *this;
 	}
 
-	void invalid(){ mVaild = false;}
+	void invalid();
 private:
 	size_t try_receive(void* buffer, size_t size);
 private:

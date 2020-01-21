@@ -58,6 +58,11 @@ void SimpleIPC::receive(void* buffer, size_t size)
 	}
 }
 
+void SimpleIPC::invalid() 
+{
+	mVaild = false; 
+}
+
 
 void SimpleIPC::Channal::map()
 {

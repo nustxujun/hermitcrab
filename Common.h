@@ -75,8 +75,8 @@ public :
 		std::cout << what;
 		MessageBoxA(0, what.c_str(), 0, MB_ICONERROR);
 		_CrtDbgBreak();
-		abort();
-
+		//abort();
+		throw std::exception("terminate client");
 	}
 
 	template<class T, class ... Args>

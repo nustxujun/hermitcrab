@@ -25,7 +25,7 @@ public:
 		const std::string& name,
 		int width, int height, 
 		DXGI_FORMAT format,
-		const char* data
+		const void* data
 		);
 
 	void createModel(
