@@ -1817,6 +1817,7 @@ void Renderer::CommandList::setRenderTargets(const std::vector<ResourceView::Ref
 
 void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
 {
+	auto renderer = Renderer::getSingleton();
 	mCurrentPipelineState = ps;
 	mCmdList->SetPipelineState(ps->get());
 
@@ -1950,8 +1951,7 @@ void Renderer::CommandList::generateMips(Texture::Ref texture)
 		auto pso = renderer->mGenMipsPSO[non_power_of_two];
 		setPipelineState(pso);
 
-		int zero = 0;
-		pso->setVariable(Shader::ST_COMPUTE,"SrcMipLevel", &zero);
+		pso->setVariable(Shader::ST_COMPUTE,"SrcMipLevel", &mip);
 
 		UINT32 nummips = std::min(4, desc.MipLevels - mip - 1);
 		pso->setVariable(Shader::ST_COMPUTE, "NumMipLevels", &nummips);

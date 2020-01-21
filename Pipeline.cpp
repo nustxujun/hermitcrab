@@ -117,8 +117,8 @@ DefaultPipeline::DefaultPipeline()
 		ImGui::Text("drawcall count: %d",debuginfo.drawcallCount);
 		ImGui::Text("primitive count: %d", debuginfo.primitiveCount);
 		ImGui::Text("resources count: %d", debuginfo.numResources);
-		ImGui::Text("transient texture count: %d", debuginfo.numTransientOnUse);
-		ImGui::Text("video memroy: %d", debuginfo.videoMemory);
+
+		ImGui::Text("video memroy: %d MB", debuginfo.videoMemory / 1024 / 1024);
 
 		return true;
 	};
@@ -132,16 +132,16 @@ DefaultPipeline::DefaultPipeline()
 
 	mVisualizationWnd = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("visualization");
 	mVisualizationWnd->drawCallback = [&visual = mSettings](auto gui) {
-		int v = 0;
+		static int cur = 0;
 		static int selected = 0;
-		ImGui::RadioButton("final", &v, 0);
-		ImGui::RadioButton("base color", &v, 1);
-		ImGui::RadioButton("normal", &v, 2);
+		ImGui::RadioButton("final", &cur, 0);
+		ImGui::RadioButton("base color", &cur, 1);
+		ImGui::RadioButton("normal", &cur, 2);
 
-		if (v != selected)
+		if (cur != selected)
 		{
-			RenderContext::getSingleton()->recompileMaterials((Material::Visualizaion)v);
-			selected = v;
+			RenderContext::getSingleton()->recompileMaterials((Material::Visualizaion)cur);
+			selected = cur;
 		}
 
 		return true;
