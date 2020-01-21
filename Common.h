@@ -64,7 +64,8 @@ public :
 		std::cout << Common::format(msg, info) ;
 		MessageBoxA(NULL, Common::format(msg, info).c_str(), NULL, MB_ICONERROR);
 		_CrtDbgBreak();
-		abort();
+		//abort();
+		throw std::exception("terminate client");
 	}
 
 	static void Assert(bool v, const std::string& what)

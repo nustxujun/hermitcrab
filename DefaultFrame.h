@@ -11,6 +11,7 @@
 
 class DefaultFrame :public RenderContext, public Framework
 {
+public:
 	RenderCommand rendercmd ;
 	std::shared_ptr<DefaultPipeline> pipeline;
 	Renderer::ConstantBuffer::Ptr commonConsts;

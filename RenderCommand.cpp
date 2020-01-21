@@ -30,6 +30,11 @@ void RenderCommand::done()
 	mIPC << "done";
 }
 
+void RenderCommand::invalid()
+{
+	mIPC << "invalid";
+}
+
 
 void RenderCommand::createMesh(
 	const std::string & name, 
@@ -212,6 +217,11 @@ void RenderCommand::record()
 
 
 	processors["done"] = []() {
+		return false;
+	};
+
+	processors["invalid"] = [&ipc = mIPC]() {
+		ipc.invalid();
 		return false;
 	};
 

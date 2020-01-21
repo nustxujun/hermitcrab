@@ -32,7 +32,7 @@ void SimpleIPC::close()
 void SimpleIPC::send(const void* buffer, size_t size)
 {
 	char* beg = (char*)buffer;
-	while (size > 0)
+	while (size > 0 && mVaild)
 	{
 		//::WaitForSingleObject(mSendWaiter, -1);
 		auto writesize = mSender.write(beg, size);
@@ -47,7 +47,7 @@ void SimpleIPC::send(const void* buffer, size_t size)
 void SimpleIPC::receive(void* buffer, size_t size)
 {
 	char* beg = (char*)buffer;
-	while (size > 0)
+	while (size > 0 && mVaild)
 	{
 		//::WaitForSingleObject(mReceiveWaiter, -1);
 		auto readsize = mReceiver.read(beg, size);

@@ -57,6 +57,7 @@ public:
 		const Vector3& dir);
 
 	void done();
+	void invalid();
 private:
 	static RenderCommand* instance;
 
