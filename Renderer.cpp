@@ -819,7 +819,7 @@ void Renderer::initResources()
 		auto shader = compileShaderFromFile("shaders/gen_mips.hlsl", "main", SM_CS,{{"NON_OF_POWER", ss.str().c_str()},{NULL,NULL}});
 		shader->enable32BitsConstants(true);
 		shader->registerStaticSampler({
-			D3D12_FILTER_MIN_MAG_MIP_POINT,
+			D3D12_FILTER_MIN_MAG_MIP_LINEAR,
 			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
 			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
 			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
