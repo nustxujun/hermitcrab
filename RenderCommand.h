@@ -58,6 +58,7 @@ public:
 
 	void done();
 	void invalid();
+	void invalidSelf();
 private:
 	static RenderCommand* instance;
 

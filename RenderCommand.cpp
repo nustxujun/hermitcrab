@@ -35,7 +35,10 @@ void RenderCommand::invalid()
 	mIPC << "invalid";
 	mIPC.invalid();
 }
-
+void RenderCommand::invalidSelf()
+{
+	mIPC.invalid();
+}
 
 void RenderCommand::createMesh(
 	const std::string & name, 
@@ -232,7 +235,9 @@ void RenderCommand::record()
 		mIPC >> cmd;
 		auto p = processors.find(cmd);
 	
-		Common::Assert(p != processors.end(), "unknonw command: " + cmd);
+		//Common::Assert(p != processors.end(), "unknonw command: " + cmd);
+		if (p == processors.end())
+			break;
 
 		if (!p->second())
 			break;
