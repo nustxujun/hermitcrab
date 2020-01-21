@@ -123,6 +123,14 @@ DefaultPipeline::DefaultPipeline()
 		return true;
 	};
 
+	mRenderSettingsWnd = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("rendersettings");
+	mRenderSettingsWnd->drawCallback = [&settings = mSettings](auto gui) {
+		ImGui::Checkbox("color grading", &settings.colorGrading);
+
+		return true;
+	};
+
+
 	auto mainbar = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiMenuBar>(true);
 	mainbar->createChild<ImGuiOverlay::ImGuiButton>("profile")->callback = [profile = mProfileWindow](auto button) {
 		profile->visible = !profile->visible;
@@ -130,12 +138,19 @@ DefaultPipeline::DefaultPipeline()
 	mainbar->createChild<ImGuiOverlay::ImGuiButton>("debuginfo")->callback = [debuginfo = mDebugInfo](auto button) {
 		debuginfo->visible = !debuginfo->visible;
 	};
+	mainbar->createChild<ImGuiOverlay::ImGuiButton>("settings")->callback = [settings = mRenderSettingsWnd](auto button) {
+		settings->visible = !settings->visible;
+	};
 }
 
 void DefaultPipeline::update()
 {
 	RenderGraph graph;
-	graph.begin() >> mDrawScene >> mColorGrading    >> mGui >> mPresent;
+	auto& next = graph.begin() >> mDrawScene;
+	if (mSettings.colorGrading)
+		next >> mColorGrading >> mGui >> mPresent;
+	else 
+		next >> mGui >> mPresent;
 
 	graph.setup();
 	graph.compile();

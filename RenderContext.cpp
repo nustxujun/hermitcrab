@@ -27,3 +27,12 @@ Camera::Ptr RenderContext::getMainCamera() const
 	return mCamera;
 }
 
+const char * Material::genShaderContent()
+{
+	static std::string content;
+	content.clear();
+	content += "half3 _final = directBRDF(Roughness, Metallic, F0_DEFAULT, Base_Color.rgb, _normal.xyz,-sundir, campos - input.worldPos);";
+	content += " return half4(_final ,1) * suncolor;";
+
+	return content.c_str();
+}
