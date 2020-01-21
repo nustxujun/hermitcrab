@@ -29,6 +29,7 @@ private:
 	ImGuiOverlay::ImGuiObject* mProfileWindow;
 	ImGuiOverlay::ImGuiObject* mDebugInfo;
 	ImGuiOverlay::ImGuiObject* mRenderSettingsWnd;
+	ImGuiOverlay::ImGuiObject* mVisualizationWnd;
 
 
 	struct RenderSettings

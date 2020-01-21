@@ -19,9 +19,14 @@ int main()
 	{
 
 		DefaultFrame frame;
-
-		frame.init();
-		frame.update();
+		try{
+			frame.init();
+			frame.update();
+		}
+		catch (...)
+		{
+			frame.rendercmd.invalid();
+		}
 	}
 
 	return 0;

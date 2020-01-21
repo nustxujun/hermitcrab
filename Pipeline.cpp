@@ -130,17 +130,35 @@ DefaultPipeline::DefaultPipeline()
 		return true;
 	};
 
+	mVisualizationWnd = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("visualization");
+	mVisualizationWnd->drawCallback = [&visual = mSettings](auto gui) {
+		int v = 0;
+		static int selected = 0;
+		ImGui::RadioButton("final", &v, 0);
+		ImGui::RadioButton("base color", &v, 1);
+		ImGui::RadioButton("normal", &v, 2);
+
+		if (v != selected)
+		{
+			RenderContext::getSingleton()->recompileMaterials((Material::Visualizaion)v);
+			selected = v;
+		}
+
+		return true;
+	};
 
 	auto mainbar = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiMenuBar>(true);
-	mainbar->createChild<ImGuiOverlay::ImGuiButton>("profile")->callback = [profile = mProfileWindow](auto button) {
-		profile->visible = !profile->visible;
+	auto addbutton = [&](const std::string& name, ImGuiOverlay::ImGuiObject* win){
+		mainbar->createChild<ImGuiOverlay::ImGuiButton>(name)->callback = [=](auto button) {
+			win->visible = !win->visible;
+		};
 	};
-	mainbar->createChild<ImGuiOverlay::ImGuiButton>("debuginfo")->callback = [debuginfo = mDebugInfo](auto button) {
-		debuginfo->visible = !debuginfo->visible;
-	};
-	mainbar->createChild<ImGuiOverlay::ImGuiButton>("settings")->callback = [settings = mRenderSettingsWnd](auto button) {
-		settings->visible = !settings->visible;
-	};
+
+	addbutton("profile", mProfileWindow);
+	addbutton("debuginfo", mDebugInfo);
+	addbutton("settings", mRenderSettingsWnd);
+	addbutton("visualizations", mVisualizationWnd);
+
 }
 
 void DefaultPipeline::update()

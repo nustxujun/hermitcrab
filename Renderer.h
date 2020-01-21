@@ -3,8 +3,8 @@
 
 
 //#if WINVER  < _WIN32_WINNT_WIN10
-	#define D3D12ON7
-	#include "D3D12Downlevel.h"
+	//#define D3D12ON7
+	//#include "D3D12Downlevel.h"
 //#endif
 
 #if defined(D3D12ON7)
@@ -693,6 +693,7 @@ public:
 	Buffer::Ptr createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	ConstantBuffer::Ptr createConstantBuffer(UINT size);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
+	void destroyPipelineState(const PipelineState::Ref& pso);
 	PipelineState::Ref createComputePipelineState(const Shader::Ptr& shader);
 
 	ResourceView::Ptr createResourceView(UINT width, UINT height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERSISTENT);

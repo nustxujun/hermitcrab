@@ -62,10 +62,24 @@ struct Mesh : public Object
 struct Material: public Object
 {
 	using Ptr = std::shared_ptr<Material>;
+	enum class Visualizaion
+	{
+		Final,
+		BaseColor,
+		Normal,
+	};
+
 
 	Renderer::PipelineState::Ref pipelineState;
 	std::map<std::string, Vector4> parameters;
 	std::map<std::string, Texture::Ptr > textures;
+
+	struct Shader
+	{
+		std::string vs;
+		std::string ps;
+		std::string psblob;
+	} shaders;
 
 	void apply(const Renderer::ConstantBuffer::Ptr& vscbuffer, const Renderer::ConstantBuffer::Ptr& pscbuffer)
 	{
@@ -86,41 +100,9 @@ struct Material: public Object
 		}
 	}
 
-	const char* genShaderContent();
-
-
-	void init(const std::string & vsname, const std::string& psname, const std::string& pscontent)
-	{
-		auto renderer = Renderer::getSingleton();
-
-		auto vs = renderer->compileShaderFromFile(vsname, "vs", SM_VS);
-		auto ps = renderer->compileShader(psname, pscontent, "ps", SM_PS, { {"__SHADER_CONTENT__", genShaderContent()} });
-		std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
-		ps->registerStaticSampler({
-				D3D12_FILTER_MIN_LINEAR_MAG_MIP_POINT,
-				D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-				D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-				D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-				0,0,
-				D3D12_COMPARISON_FUNC_NEVER,
-				D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
-				0,
-				D3D12_FLOAT32_MAX,
-				0,0,
-				D3D12_SHADER_VISIBILITY_PIXEL
-			});
-		Renderer::RenderState rs = Renderer::RenderState::GeneralSolid;
-		rs.setInputLayout({
-			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "NORMAL", 1, DXGI_FORMAT_R32G32B32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "NORMAL", 2, DXGI_FORMAT_R32G32B32_FLOAT, 0, 44, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		});
-
-		pipelineState = renderer->createPipelineState(shaders, rs);
-		pipelineState->get()->SetName(M2U("Material " + name).c_str());
-	}
+	const char* genShaderContent(Visualizaion v);
+	void compileShaders(Visualizaion v);
+	void init(const std::string& vsname, const std::string& psname, const std::string& pscontent);
 };
 
 struct Model : public Object
@@ -161,6 +143,7 @@ class RenderContext
 {
 	static RenderContext* instance;
 public:
+	void recompileMaterials(Material::Visualizaion v);
 	virtual void renderScene(Camera::Ptr cam, UINT flags = 0, UINT mask = 0xffffffff) = 0;
 	virtual void renderScreen(const Quad* quad) ;
 
@@ -232,10 +215,17 @@ public:
 	{
 		mRenderList.push_back(model);
 	}
+
+	template<>
+	void process(const Material::Ptr& m)
+	{
+		mMaterials.push_back(m);
+	}
 protected:
 	Camera::Ptr mCamera;
 	std::map<std::string, Object::Ptr> mObjects;
 	std::vector<Light::Ptr> mLights;
 	std::vector<Model::Ptr> mRenderList;
+	std::vector<Material::Ptr> mMaterials;
 
 };

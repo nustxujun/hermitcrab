@@ -653,6 +653,20 @@ Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Sha
 	return pso;
 }
 
+void Renderer::destroyPipelineState(const PipelineState::Ref& pso)
+{
+	auto i = mPipelineStates.begin();
+	auto endi = mPipelineStates.end();
+	for(;i != endi; ++i)
+	{
+		if (*i == pso.shared())
+		{
+			mPipelineStates.erase(i);
+			return ;
+		}
+	}
+}
+
 Renderer::PipelineState::Ref Renderer::createComputePipelineState(const Shader::Ptr & shader)
 {
 	auto pso = PipelineState::create(shader);
