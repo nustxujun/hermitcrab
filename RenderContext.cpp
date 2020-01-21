@@ -63,7 +63,7 @@ void Material::compileShaders(Visualizaion v)
 	auto ps = renderer->compileShader(shaders.ps, shaders.psblob, "ps", SM_PS, { { "__SHADER_CONTENT__", genShaderContent(v) } });
 	std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
 	ps->registerStaticSampler({
-		D3D12_FILTER_MIN_LINEAR_MAG_MIP_POINT,
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR,
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,

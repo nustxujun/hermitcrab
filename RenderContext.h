@@ -103,6 +103,7 @@ struct Material: public Object
 	const char* genShaderContent(Visualizaion v);
 	void compileShaders(Visualizaion v);
 	void init(const std::string& vsname, const std::string& psname, const std::string& pscontent);
+
 };
 
 struct Model : public Object
