@@ -38,7 +38,7 @@ class Renderer
 #endif
 
 
-
+public:
 	static const auto FEATURE_LEVEL = D3D_FEATURE_LEVEL_12_0;
 	static auto const NUM_BACK_BUFFERS = 2;
 	static auto const NUM_MAX_RENDER_TARGET_VIEWS = 8 * 1024;
@@ -72,12 +72,31 @@ public:
 public:
 	struct DebugInfo
 	{
+		std::string adapter;
+
 		size_t drawcallCount = 0;
 		size_t primitiveCount = 0;
 		size_t numResources = 0;
 		size_t numTransientOnUse = 0;
 		size_t videoMemory = 0;
 
+		void reset()
+		{
+			drawcallCount = 0;
+			primitiveCount = 0;
+			numResources = 0;
+			numTransientOnUse = 0;
+			videoMemory = 0;
+		}
+
+		void operator =(const DebugInfo& di)
+		{
+			drawcallCount = di.drawcallCount;
+			primitiveCount = di.primitiveCount;
+			numResources = di.numResources;
+			numTransientOnUse = di.numTransientOnUse;
+			videoMemory = di.videoMemory;
+		}
 	};
 
 
@@ -389,6 +408,7 @@ public:
 
 	class CommandAllocator final: public Interface<CommandAllocator>
 	{
+	friend class Renderer::CommandList;
 	public:
 		CommandAllocator();
 		~CommandAllocator();
@@ -476,7 +496,7 @@ public:
 		~ConstantBuffer();
 
 		void setReflection(const std::map<std::string, Shader::Variable>& rft);
-		void setVariable(const std::string& name, void* data);
+		void setVariable(const std::string& name, const void* data);
 		void blit(const void* buffer, UINT64 offset = 0, UINT64 size = -1);
 		D3D12_GPU_DESCRIPTOR_HANDLE getHandle()const;
 	private:
@@ -639,7 +659,11 @@ public:
 		void dispatch(UINT x, UINT y , UINT z);
 		void endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx);
 		void generateMips(Texture::Ref texture);
+
+		Fence::Ptr getFence(){return mAllocator->mFence;}
 	private:
+		
+		CommandAllocator::Ref mAllocator;
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
 		PipelineState::Ref mCurrentPipelineState;
 
@@ -677,6 +701,7 @@ public:
 	ID3D12CommandQueue* getCommandQueue();
 	CommandList::Ref getCommandList();
 	ResourceView::Ref getBackBuffer();
+	UINT getCurrentFrameIndex();
 	void flushCommandQueue();
 	void updateResource(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref, UINT)>& copy);
 	void executeResourceCommands(const std::function<void(CommandList::Ref)>& dofunc, Renderer::CommandAllocator::Ptr alloc = {});
@@ -696,8 +721,9 @@ public:
 	void destroyPipelineState(const PipelineState::Ref& pso);
 	PipelineState::Ref createComputePipelineState(const Shader::Ptr& shader);
 
-	ResourceView::Ptr createResourceView(UINT width, UINT height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERSISTENT);
-	ResourceView::Ptr createResourceView(const Texture::Ref& tex, bool autorelease = false);
+	ResourceView::Ref createResourceView(UINT width, UINT height, DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt = Resource::RT_PERSISTENT);
+	ResourceView::Ref createResourceView(const Texture::Ref& tex, bool autorelease = false);
+	void destroyResourceView(ResourceView::Ref rv);
 
 	Profile::Ref createProfile();
 	ComPtr<ID3D12QueryHeap> getTimeStampQueryHeap();
@@ -725,7 +751,7 @@ private:
 	void syncFrame();
 
 	ComPtr<IDXGIFACTORY> getDXGIFactory();
-	ComPtr<IDXGIAdapter> getAdapter();
+	std::vector<ComPtr<IDXGIAdapter>> getAdapter();
 	DescriptorHeap::Ref getDescriptorHeap(DescriptorHeapType);
 	Resource::Ref findTransient(const D3D12_RESOURCE_DESC& desc);
 	void addResource(Resource::Ptr res);
@@ -765,6 +791,7 @@ private:
 	CommandAllocator::Ptr mProfileCmdAlloc;
 	ConstantBufferAllocator::Ptr mConstantBufferAllocator;
 	std::array<PipelineState::Ref, 4> mGenMipsPSO;
+	std::vector<ResourceView::Ptr> mResourceViews;
 	bool mVSync = false;
 
 };

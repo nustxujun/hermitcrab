@@ -19,7 +19,9 @@ ResourceHandle::ResourceHandle(Renderer::ViewType t, int w, int h, DXGI_FORMAT f
 
 ResourceHandle::~ResourceHandle()
 {
-	mView.reset();
+	auto renderer = Renderer::getSingleton();
+	if (renderer)
+		renderer->destroyResourceView(mView);
 }
 
 Renderer::ViewType ResourceHandle::getType() const
@@ -58,8 +60,14 @@ void ResourceHandle::prepare()
 {
 	//Common::Assert(mRefCount != 0,"invalied resource");
 
+
+}
+
+const Renderer::ResourceView::Ref& ResourceHandle::getView()
+{
 	if (!mView)
 		mView = Renderer::getSingleton()->createResourceView(mWidth, mHeight,mFormat,mType, Renderer::Resource::RT_TRANSIENT);
+	return mView; 
 }
 
 

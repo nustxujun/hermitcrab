@@ -20,13 +20,10 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::present()
 			auto bb = renderer->getBackBuffer();
 			cmdlist->setRenderTarget(bb);
 
-			for (UINT i = 0; i < srvs.size(); ++i)
-			{
-				if (srvs[i])
-				{
-					quad->setResource(i, srvs[i]->getView()->getTexture()->getShaderResource());
-				}
-			}
+		
+			quad->setResource("tex",srvs[0]->getView()->getTexture()->getShaderResource());
+		
+			quad->fitToScreen();
 			RenderContext::getSingleton()->renderScreen(quad.get());
 
 
@@ -76,11 +73,8 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::postprocess(const std::string& ps, 
 			auto pso = quad->getPipelineState();
 			if (prepare)
 				prepare(pso);
-			for (UINT i = 0; i < srvs.size();++i)
-			{
-				if (srvs[i])
-					pso->setPSResource(i,srvs[i]->getView()->getTexture()->getShaderResource());
-			}
+			quad->fitToScreen();
+			quad->setResource("frame",srvs[0]->getView()->getTexture()->getShaderResource());
 			//pso->setPSResource("frame",srvs[0]->getView()->getHandle());
 			RenderContext::getSingleton()->renderScreen(quad.get());
 		}) };
@@ -114,6 +108,7 @@ DefaultPipeline::DefaultPipeline()
 	mDebugInfo = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("debuginfo");
 	mDebugInfo->drawCallback = [](ImGuiOverlay::ImGuiObject* gui) {
 		const auto& debuginfo = Renderer::getSingleton()->getDebugInfo();
+		ImGui::Text("adapter: %s", debuginfo.adapter.c_str());
 		ImGui::Text("drawcall count: %d",debuginfo.drawcallCount);
 		ImGui::Text("primitive count: %d", debuginfo.primitiveCount);
 		ImGui::Text("resources count: %d", debuginfo.numResources);
@@ -164,37 +159,40 @@ DefaultPipeline::DefaultPipeline()
 void DefaultPipeline::update()
 {
 	RenderGraph graph;
-	auto& next = graph.begin() >> mDrawScene;
+	auto* next = &(graph.begin() >> mDrawScene );
 	if (mSettings.colorGrading)
-		next >> mColorGrading >> mGui >> mPresent;
-	else 
-		next >> mGui >> mPresent;
+		next = &next->operator>>( mColorGrading); 
+	
+	next->operator>>(mGui) >> mPresent;
+
+
 
 	graph.setup();
 	graph.compile();
 	graph.execute(
 		[&profiles = mProfiles, profilewin = mProfileWindow](RenderGraph::RenderPass* pass) {
-			if (pass->getName() == "begin pass")
+			if (pass->getName() == "begin pass" || 
+				pass->getName().empty())
 				return ;
-			if (!profiles[pass].first )
+			if (!profiles[pass->getName()].first )
 			{
-				profiles[pass] = {
+				profiles[pass->getName()] = {
 					Renderer::getSingleton()->createProfile(),
 					profilewin->createChild<ImGuiOverlay::ImGuiText>(""),
 				};
 			}
-			profiles[pass].first->begin();
+			profiles[pass->getName()].first->begin();
 		},
 		[&profiles = mProfiles](RenderGraph::RenderPass* pass)
 		{
-			if (!profiles[pass].first)
+			if (!profiles[pass->getName()].first)
 				return;
-			auto& p = profiles[pass].first;
+			auto& p = profiles[pass->getName()].first;
 			p->end();
 			std::stringstream ss;
 			ss.precision(3);
 			ss << pass->getName() << ": " << p->getCPUTime()<< "(" << p->getGPUTime() << ")" << "ms";
-			profiles[pass].second->text = ss.str();
+			profiles[pass->getName()].second->text = ss.str();
 		}
 	);
 }

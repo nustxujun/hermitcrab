@@ -31,8 +31,9 @@ private:
 	LRESULT process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 private:
 	Renderer::PipelineState::Ref mPipelineState;
-	Renderer::Buffer::Ptr mVertexBuffer;
-	Renderer::Buffer::Ptr mIndexBuffer;
+	Renderer::Buffer::Ptr mVertexBuffer[Renderer::NUM_BACK_BUFFERS];
+	Renderer::Buffer::Ptr mIndexBuffer[Renderer::NUM_BACK_BUFFERS];
+	std::vector<char> mCaches[2];
 	Renderer::ConstantBuffer::Ptr mConstant;
 	Renderer::Texture::Ref mFonts;
 	int mWidth = 0;
@@ -353,4 +354,16 @@ struct ImGuiSelectable : public ImGuiObject
 	}
 };
 
+struct ImGuiImage : public ImGuiObject
+{
+	Renderer::Texture::Ref texture;
+	void update() override
+	{
+		if (!texture)
+			return;
+		auto& desc = texture->getDesc();
+		ImGui::Image((ImTextureID)texture->getShaderResource().ptr, { (float)desc.Width,  (float)desc.Height });
+		drawCallback(this);
+	}
+};
 }

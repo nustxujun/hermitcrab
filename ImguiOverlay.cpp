@@ -114,29 +114,32 @@ void ImGuiPass::initRendering()
 
 	mPipelineState = renderer->createPipelineState(shaders, rs);
 	mConstant = mPipelineState->createConstantBuffer(Renderer::Shader::ST_VERTEX,"vertexBuffer");
+
 }
 
 
 void ImGuiPass::draw(ImDrawData* data)
 {
-	if (data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f || data->TotalIdxCount <= 0)
+	if (data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f || data->TotalIdxCount <= 0 )
 		return;
 
 	auto renderer = Renderer::getSingleton();
-	if (!mVertexBuffer || mVertexBuffer->getSize() < data->TotalVtxCount * sizeof(ImDrawVert))
+	auto& VertexBuffer = mVertexBuffer[renderer->getCurrentFrameIndex()];
+	auto& IndexBuffer = mIndexBuffer[renderer->getCurrentFrameIndex()];
+	if (!VertexBuffer || VertexBuffer->getSize() < data->TotalVtxCount * sizeof(ImDrawVert))
 	{
-		auto size = data->TotalIdxCount * 2;
-		mVertexBuffer = renderer->createBuffer(size * sizeof(ImDrawVert), sizeof(ImDrawVert), D3D12_HEAP_TYPE_UPLOAD);
+		auto size = data->TotalIdxCount;
+		VertexBuffer = renderer->createBuffer(size * sizeof(ImDrawVert), sizeof(ImDrawVert), D3D12_HEAP_TYPE_UPLOAD);
 	}
 
-	if (!mIndexBuffer || mIndexBuffer->getSize() < data->TotalIdxCount * sizeof(ImDrawIdx))
+	if (!IndexBuffer || IndexBuffer->getSize() < data->TotalIdxCount * sizeof(ImDrawIdx))
 	{
-		auto size = data->TotalIdxCount * 2;
-		mIndexBuffer = renderer->createBuffer(size * sizeof(ImDrawIdx), sizeof(ImDrawIdx), D3D12_HEAP_TYPE_UPLOAD);
+		auto size = data->TotalIdxCount ;
+		IndexBuffer = renderer->createBuffer(size * sizeof(ImDrawIdx), sizeof(ImDrawIdx), D3D12_HEAP_TYPE_UPLOAD);
 	}
 
-	auto vertices = mVertexBuffer->getResource()->map(0);
-	auto indices = mIndexBuffer->getResource()->map(0);
+	auto vertices = VertexBuffer->getResource()->map(0);
+	auto indices = IndexBuffer->getResource()->map(0);
 
 	for (int n = 0; n < data->CmdListsCount; n++)
 	{
@@ -149,8 +152,8 @@ void ImGuiPass::draw(ImDrawData* data)
 		indices += numIndices;
 	}
 
-	mVertexBuffer->getResource()->unmap(0);
-	mIndexBuffer->getResource()->unmap(0);
+	VertexBuffer->getResource()->unmap(0);
+	IndexBuffer->getResource()->unmap(0);
 
 	float L = data->DisplayPos.x;
 	float R = data->DisplayPos.x + data->DisplaySize.x;
@@ -166,7 +169,6 @@ void ImGuiPass::draw(ImDrawData* data)
 	};
 
 	auto cmdlist = renderer->getCommandList();
-
 	cmdlist->setPipelineState(mPipelineState);
 
 	//mConstant->blit(mvp);
@@ -182,8 +184,8 @@ void ImGuiPass::draw(ImDrawData* data)
 	vp.MaxDepth = 1.0f;
 	vp.TopLeftX = vp.TopLeftX = 0;
 	cmdlist->setViewport(vp);
-	cmdlist->setVertexBuffer(mVertexBuffer);
-	cmdlist->setIndexBuffer(mIndexBuffer);
+	cmdlist->setVertexBuffer(VertexBuffer);
+	cmdlist->setIndexBuffer(IndexBuffer);
 	cmdlist->setPrimitiveType();
 
 	int global_idx_offset = 0;
@@ -213,7 +215,6 @@ void ImGuiPass::draw(ImDrawData* data)
 		global_idx_offset += cmd_list->IdxBuffer.Size;
 		global_vtx_offset += cmd_list->VtxBuffer.Size;
 	}
-
 }
 #define GET_X_LPARAM(lp)	((int)(short)LOWORD(lp))
 #define GET_Y_LPARAM(lp)	((int)(short)HIWORD(lp))

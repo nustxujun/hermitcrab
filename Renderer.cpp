@@ -23,8 +23,9 @@ Renderer::Ptr Renderer::instance;
 #define LOG Common::log
 
 
+static Renderer::DebugInfo debugInfo;
 static Renderer::DebugInfo debugInfoCache;
-static Renderer::DebugInfo debugInfoCurrent;
+
 
 DXGI_FORMAT const Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
 
@@ -148,7 +149,7 @@ void Renderer::resize(int width, int height)
 
 void Renderer::beginFrame()
 {
-	debugInfoCurrent = {};
+	debugInfo.reset();
 	//resetCommands();
 
 
@@ -176,7 +177,6 @@ void Renderer::endFrame()
 
 	collectDebugInfo();
 
-	debugInfoCache = debugInfoCurrent;
 }
 
 std::array<LONG, 2> Renderer::getSize()
@@ -224,6 +224,11 @@ Renderer::CommandList::Ref Renderer::getCommandList()
 Renderer::ResourceView::Ref Renderer::getBackBuffer()
 {
 	return mBackbuffers[mCurrentFrame];
+}
+
+UINT Renderer::getCurrentFrameIndex()
+{
+	return mCurrentFrame;
 }
 
 void Renderer::flushCommandQueue()
@@ -674,7 +679,7 @@ Renderer::PipelineState::Ref Renderer::createComputePipelineState(const Shader::
 	return pso;
 }
 
-Renderer::ResourceView::Ptr Renderer::createResourceView(UINT width, UINT height,DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt)
+Renderer::ResourceView::Ref Renderer::createResourceView(UINT width, UINT height,DXGI_FORMAT format, ViewType vt, Resource::ResourceType rt)
 {
 	auto desc = mBackbuffers[0]->getTexture()->getDesc();
 	if (width == 0 || height == 0 )
@@ -685,12 +690,28 @@ Renderer::ResourceView::Ptr Renderer::createResourceView(UINT width, UINT height
 	if (format == DXGI_FORMAT_UNKNOWN)
 		format = FRAME_BUFFER_FORMAT;
 	auto view = ResourceView::create(vt,width, height, format, rt);
+	mResourceViews.push_back(view);
 	return view;
 }
 
-Renderer::ResourceView::Ptr Renderer::createResourceView(const Texture::Ref& tex, bool autorelease )
+Renderer::ResourceView::Ref Renderer::createResourceView(const Texture::Ref& tex, bool autorelease )
 {
-	return ResourceView::create(tex, autorelease);
+	auto rv = ResourceView::create(tex, autorelease);
+	mResourceViews.push_back(rv);
+	return rv;
+}
+
+void Renderer::destroyResourceView(ResourceView::Ref rv)
+{
+	auto endi = mResourceViews.end();
+	for (auto i = mResourceViews.begin(); i != endi; ++i)
+	{
+		if (rv == *i)
+		{
+			mResourceViews.erase(i);
+			return ;
+		}
+	}
 }
 
 Renderer::Profile::Ref Renderer::createProfile()
@@ -721,6 +742,7 @@ void Renderer::uninitialize()
 	mQueueFence.reset();
 
 	//clear resources
+	mResourceViews.clear();
 	mBackbuffers.fill({});
 	mResources.clear();
 	mPipelineStates.clear();
@@ -746,7 +768,12 @@ void Renderer::uninitialize()
 
 void Renderer::initDevice()
 {
-	auto adapter = getAdapter();
+	auto adapters = getAdapter();
+	auto adapter = adapters.back();
+	DXGI_ADAPTER_DESC desc;
+	adapter->GetDesc(&desc);
+
+	debugInfoCache.adapter = U2M(desc.Description);
 	CHECK(D3D12CreateDevice(adapter.Get(), FEATURE_LEVEL, IID_PPV_ARGS(&mDevice)));
 
 #if defined(_DEBUG)
@@ -867,15 +894,17 @@ Renderer::Shader::ShaderType Renderer::mapShaderType(const std::string & target)
 
 void Renderer::collectDebugInfo()
 {
-	debugInfoCurrent.numResources = mResources.size();
-	debugInfoCurrent.numTransientOnUse = mResources.size() - mTransients.size();
+	debugInfo.numResources = mResources.size();
+	debugInfo.numTransientOnUse = mResources.size() - mTransients.size();
 
 	for (auto& r: mResources)
 	{
 		auto desc = r->get()->GetDesc();
 		if (desc.Format != DXGI_FORMAT_UNKNOWN)
-			debugInfoCurrent.videoMemory += desc.Width * desc.Height * desc.DepthOrArraySize * D3DHelper::sizeof_DXGI_FORMAT(desc.Format);
+			debugInfo.videoMemory += desc.Width * desc.Height * desc.DepthOrArraySize * D3DHelper::sizeof_DXGI_FORMAT(desc.Format);
 	}
+
+	debugInfoCache = debugInfo;
 }
 
 std::string Renderer::findFile(const std::string & filename)
@@ -973,8 +1002,9 @@ ComPtr<Renderer::IDXGIFACTORY> Renderer::getDXGIFactory()
 	return fac;
 }
 
-ComPtr<IDXGIAdapter> Renderer::getAdapter()
+std::vector<ComPtr<IDXGIAdapter>> Renderer::getAdapter()
 {
+	std::vector<ComPtr<IDXGIAdapter>> adapters;
 	ComPtr<IDXGIAdapter1> adapter;
 	auto factory = getDXGIFactory();
 
@@ -985,14 +1015,13 @@ ComPtr<IDXGIAdapter> Renderer::getAdapter()
 		if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
 			continue;
 
-		if (SUCCEEDED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), nullptr)))
+		if (SUCCEEDED(D3D12CreateDevice(adapter.Get(), FEATURE_LEVEL, _uuidof(ID3D12Device), nullptr)))
 		{
-			return adapter;
+			adapters.push_back(adapter);
 		}
 	}
 
-	ASSERT(false, "fail to find adapter");
-	return {};
+	return adapters;
 }
 
 Renderer::DescriptorHeap::Ref Renderer::getDescriptorHeap(DescriptorHeapType type)
@@ -1613,7 +1642,6 @@ Renderer::CommandList::CommandList(const CommandAllocator::Ref & alloc)
 {
 	auto device = Renderer::getSingleton()->getDevice();
 	CHECK(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, alloc->get(), nullptr, IID_PPV_ARGS(&mCmdList)));
-
 }
 
 Renderer::CommandList::~CommandList()
@@ -1622,13 +1650,10 @@ Renderer::CommandList::~CommandList()
 
 void Renderer::CommandList::transitionBarrier(Resource::Ref res, D3D12_RESOURCE_STATES  state, UINT subresource ,bool autoflush)
 {
-	if (subresource != D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)
+	if (subresource == D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES || state != res->getState(subresource))
 	{
-		const auto& cur = res->getState(subresource);
-		if (state == cur)
-			return;
+		addResourceTransition(res, state, subresource);
 	}
-	addResourceTransition(res,state,subresource);
 	if (autoflush)
 		flushResourceBarrier();
 }
@@ -1796,7 +1821,7 @@ void Renderer::CommandList::setRenderTarget(const ResourceView::Ref& rt, const R
 	if (ds)
 		dshandle = & (ds->getHandle().cpu);
 
-
+	Common::Assert(rt->getTexture()->getState() == D3D12_RESOURCE_STATE_RENDER_TARGET, "need transition to rendertarget");
 	mCmdList->OMSetRenderTargets(1, &rt->getHandle().cpu,FALSE, dshandle);
 }
 
@@ -1809,6 +1834,7 @@ void Renderer::CommandList::setRenderTargets(const std::vector<ResourceView::Ref
 	std::vector< D3D12_CPU_DESCRIPTOR_HANDLE> rtvs = {};
 	for (auto& rt: rts)
 	{
+		Common::Assert(rt->getTexture()->getState() == D3D12_RESOURCE_STATE_RENDER_TARGET, "need rt");
 		rtvs.push_back(rt->getHandle());
 	}
 	mCmdList->OMSetRenderTargets((UINT)rtvs.size(), rtvs.data(), FALSE, dshandle);
@@ -1877,8 +1903,8 @@ void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, 
 {
 	mCurrentPipelineState->setRootDescriptorTable(this);
 
-	debugInfoCurrent.drawcallCount++;
-	debugInfoCurrent.primitiveCount+= vertexCount / 3 * instanceCount;
+	debugInfo.drawcallCount++;
+	debugInfo.primitiveCount+= vertexCount / 3 * instanceCount;
 	mCmdList->DrawInstanced(vertexCount, instanceCount, startVertex, startInstance);
 }
 
@@ -1886,8 +1912,8 @@ void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UIN
 {
 	mCurrentPipelineState->setRootDescriptorTable(this);
 
-	debugInfoCurrent.drawcallCount++;
-	debugInfoCurrent.primitiveCount += indexCountPerInstance / 3 * instanceCount;
+	debugInfo.drawcallCount++;
+	debugInfo.primitiveCount += indexCountPerInstance / 3 * instanceCount;
 	mCmdList->DrawIndexedInstanced(indexCountPerInstance, instanceCount, startIndex,startVertex,startInstance);
 }
 
@@ -1928,7 +1954,7 @@ void Renderer::CommandList::generateMips(Texture::Ref texture)
 	transitionBarrier(dst, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 0,true);
 	
 
-	std::vector<ResourceView::Ptr> uavs(1);
+	std::vector<ResourceView::Ref> uavs(1);
 	for (auto i = 1; i < desc.MipLevels ; ++i)
 	{
 		auto rv = renderer->createResourceView(dst);
@@ -1983,6 +2009,8 @@ void Renderer::CommandList::generateMips(Texture::Ref texture)
 	copyResource(texture, dst);
 
 	transitionBarrier(texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,-1, true);
+	for (auto& u: uavs)
+		renderer->destroyResourceView(u);
 }
 
 void Renderer::CommandList::close()
@@ -1992,6 +2020,7 @@ void Renderer::CommandList::close()
 
 void Renderer::CommandList::reset(const CommandAllocator::Ref& alloc)
 {
+	mAllocator = alloc;
 	CHECK(mCmdList->Reset(alloc->get(), nullptr));
 }
 
@@ -2345,7 +2374,10 @@ void Renderer::PipelineState::setResource(Shader::ShaderType type, const std::st
 		auto& uavs = mSemanticsMap[type].uavs;
 		auto ret = uavs.find(name);
 		if (ret == uavs.end())
-			return;	
+		{
+			LOG(name , " is not a bound resource in shader" );
+			return;
+		}
 		mTextures[type][ret->second + mSemanticsMap[type].offset] = handle;
 	}
 	else
@@ -2650,7 +2682,7 @@ void Renderer::ConstantBuffer::setReflection(const std::map<std::string, Shader:
 	mVariables = rft;
 }
 
-void Renderer::ConstantBuffer::setVariable(const std::string& name, void* data)
+void Renderer::ConstantBuffer::setVariable(const std::string& name,const void* data)
 {
 	auto ret = mVariables.find(name);
 	if (ret == mVariables.end())
