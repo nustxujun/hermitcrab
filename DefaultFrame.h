@@ -18,15 +18,17 @@ public:
 
 
 public:
-	void init()
+	void init(bool runwithipc = false)
 	{
 		Framework::initialize();
 		pipeline = decltype(pipeline)(new DefaultPipeline);
 
-		rendercmd.init(false);
-		rendercmd.record();
-		commonConsts = mRenderList[0]->material->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL,"CommonConstants");
-
+		if (runwithipc)
+		{
+			rendercmd.init(false);
+			rendercmd.record();
+			commonConsts = mRenderList[0]->material->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL,"CommonConstants");
+		}
 		auto cam = getObject<Camera>("main");
 
 		Framework::resize(cam->viewport.Width, cam->viewport.Height);
