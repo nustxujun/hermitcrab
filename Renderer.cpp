@@ -1834,8 +1834,15 @@ void Renderer::CommandList::setRenderTargets(const std::vector<ResourceView::Ref
 	std::vector< D3D12_CPU_DESCRIPTOR_HANDLE> rtvs = {};
 	for (auto& rt: rts)
 	{
-		Common::Assert(rt->getTexture()->getState() == D3D12_RESOURCE_STATE_RENDER_TARGET, "need rt");
-		rtvs.push_back(rt->getHandle());
+		if (rt)
+		{
+			Common::Assert(rt->getTexture()->getState() == D3D12_RESOURCE_STATE_RENDER_TARGET, "need rt");
+			rtvs.push_back(rt->getHandle());
+		}
+		else
+		{
+			rtvs.push_back({});
+		}
 	}
 	mCmdList->OMSetRenderTargets((UINT)rtvs.size(), rtvs.data(), FALSE, dshandle);
 

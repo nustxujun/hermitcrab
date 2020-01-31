@@ -16,9 +16,9 @@ class DefaultPipeline: public Pipeline
 public:
 	DefaultPipeline();
 
-	void update();
+	virtual void update();
 
-private:
+protected:
 	ImGuiPass mGui;
 	RenderGraph::LambdaRenderPass::Ptr mPresent;
 	RenderGraph::LambdaRenderPass::Ptr mDrawScene;

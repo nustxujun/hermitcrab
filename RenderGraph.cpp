@@ -245,10 +245,18 @@ void RenderGraph::RenderPass::prepareResources()
 		case IT_DISCARD: 
 			clears.emplace_back([&]() {cmdlist->discardResource(rt->getView());});
 			break;
+
 		}
 		
-		cmdlist->transitionBarrier(rt->getView()->getTexture(),D3D12_RESOURCE_STATE_RENDER_TARGET);
-		rtvs.push_back(rt->getView());
+		if (mInitialTypes[&(*rt)] == IT_NOUSE)
+		{
+			//rtvs.push_back({});
+		}
+		else
+		{
+			cmdlist->transitionBarrier(rt->getView()->getTexture(),D3D12_RESOURCE_STATE_RENDER_TARGET);
+			rtvs.push_back(rt->getView());
+		}
 	}
 
 	auto ds = mResources.getDepthStencil();
@@ -263,13 +271,15 @@ void RenderGraph::RenderPass::prepareResources()
 			clears.emplace_back([&]() {cmdlist->clearDepthStencil(ds->getView(), clearvalue.depth, clearvalue.stencil);});
 			break;
 		case IT_DISCARD: 
-			
 			clears.emplace_back([&]() {cmdlist->discardResource(ds->getView()); });
 			break;
 		}
 
-		cmdlist->transitionBarrier(ds->getView()->getTexture(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
-		dsv = ds->getView();
+		if (mInitialTypes[&(*ds)] != IT_NOUSE)
+		{
+			cmdlist->transitionBarrier(ds->getView()->getTexture(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
+			dsv = ds->getView();
+		}
 	}
 
 	for (auto& srv : mShaderResources)

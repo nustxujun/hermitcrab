@@ -80,6 +80,7 @@ public:
 			IT_NONE,
 			IT_CLEAR,
 			IT_DISCARD,
+			IT_NOUSE,
 		};
 
 		virtual void setup() = 0;
