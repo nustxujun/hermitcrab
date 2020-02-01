@@ -77,7 +77,7 @@ void RenderCommand::createTexture(const std::string & name, int width, int heigh
 	mIPC.send(data, size);
 }
 
-void RenderCommand::createModel(const std::string & name, const std::vector<std::string> meshs, const Matrix & transform, const std::string& materialName)
+void RenderCommand::createModel(const std::string & name, const std::vector<std::string> meshs, const Matrix & transform, const Matrix& normaltransform, const std::string& materialName)
 {
 	mIPC << "createModel";
 	mIPC << name;
@@ -86,7 +86,7 @@ void RenderCommand::createModel(const std::string & name, const std::vector<std:
 	for (auto& m : meshs)
 		mIPC << m;
 
-	mIPC << transform << materialName;
+	mIPC << transform<< normaltransform << materialName;
 
 }
 
@@ -171,7 +171,7 @@ void RenderCommand::record()
 			model->meshs.push_back(mesh);
 		}
 		
-		ipc >> model->transform;
+		ipc >> model->transform >> model->normTransform;
 		std::string matname;
 		ipc >> matname;
 		//model->material = context->getObject<Material>(matname);

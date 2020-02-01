@@ -121,6 +121,8 @@ public:
 			model->vcbuffer->setVariable("view", &cam->view);
 			model->vcbuffer->setVariable("proj", &cam->proj);
 			model->vcbuffer->setVariable("world", &model->transform);
+			model->vcbuffer->setVariable("nworld", &model->normTransform);
+
 			model->material->apply(model->vcbuffer, model->pcbuffer);
 			if (commonConsts)
 				model->material->pipelineState->setPSConstant("CommonConstants", commonConsts);

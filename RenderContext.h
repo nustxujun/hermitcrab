@@ -112,6 +112,7 @@ struct Model : public Object
 
 	std::vector<Mesh::Ptr> meshs;
 	Matrix transform;
+	Matrix normTransform;
 	Material::Ptr material;
 	Renderer::ConstantBuffer::Ptr vcbuffer;
 	Renderer::ConstantBuffer::Ptr pcbuffer;
@@ -154,11 +155,13 @@ public:
 		auto ret = getObject<T>(name);
 		if (ret)
 			return ret;
+			
+		auto& type = typeid(T);
 
-		std::cout << "create object: " << name << std::endl;
+		std::cout << "create " << type.name() << " : " << name << std::endl;
 		auto o = std::shared_ptr<T>(new T());
 		o->name = name;
-		mObjects[name] = o;
+		mObjects[type.name()][name] = o;
 		process(o);
 		return o;
 	}
@@ -166,8 +169,9 @@ public:
 	template<class T>
 	std::shared_ptr<T> getObject(const std::string& name)
 	{
-		auto ret = mObjects.find(name);
-		if (ret == mObjects.end())
+		auto& type = typeid(T);
+		auto ret = mObjects[type.name()].find(name);
+		if (ret == mObjects[type.name()].end())
 		{
 			//Common::Assert(false, "cannot find object: " + name);
 			//std::cout << "cannot find " << name << std::endl;
@@ -224,7 +228,7 @@ public:
 	}
 protected:
 	Camera::Ptr mCamera;
-	std::map<std::string, Object::Ptr> mObjects;
+	std::map<std::string,std::map<std::string, Object::Ptr>> mObjects;
 	std::vector<Light::Ptr> mLights;
 	std::vector<Model::Ptr> mRenderList;
 	std::vector<Material::Ptr> mMaterials;

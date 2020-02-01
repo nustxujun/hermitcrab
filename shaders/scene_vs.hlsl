@@ -4,6 +4,7 @@ cbuffer VSConstant
 	matrix world;
 	matrix view; 
 	matrix proj;
+	matrix nworld;
 };
 
 struct VSInput
@@ -28,9 +29,9 @@ PSInput vs(VSInput input)
 	result.uv = input.uv;
 
 
-	result.normal = mul(float4(input.normal, 0), world);
-	result.tangent = mul(float4(input.tangent, 0), world);
-	result.binormal = mul(float4(input.binormal, 0), world);
+	result.normal = mul(float4(input.normal, 0), nworld);
+	result.tangent = mul(float4(input.tangent, 0), nworld);
+	result.binormal = mul(float4(input.binormal, 0), nworld);
 	return result;
 }
 

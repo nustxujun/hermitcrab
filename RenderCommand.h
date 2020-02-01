@@ -32,6 +32,7 @@ public:
 		const std::string& name,
 		const std::vector<std::string> meshs,
 		const Matrix& transform,
+		const Matrix& normaltransform,
 		const std::string& materialName
 	);
 
