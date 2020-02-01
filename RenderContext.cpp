@@ -63,7 +63,7 @@ void Material::compileShaders(Visualizaion v)
 
 	auto vs = renderer->compileShaderFromFile(shaders.vs, "vs", SM_VS);
 	auto ps = renderer->compileShader(shaders.ps, shaders.psblob, "ps", SM_PS, { { "__SHADER_CONTENT__", genShaderContent(v) } });
-	std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
+	std::vector<Renderer::Shader::Ptr> ss = { vs, ps };
 	ps->registerStaticSampler({
 		D3D12_FILTER_MIN_MAG_MIP_LINEAR,
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,
@@ -88,7 +88,7 @@ void Material::compileShaders(Visualizaion v)
 
 	if (pipelineState)
 		renderer->destroyPipelineState(pipelineState);
-	pipelineState = renderer->createPipelineState(shaders, rs);
+	pipelineState = renderer->createPipelineState(ss, rs);
 	pipelineState->get()->SetName(M2U("Material " + name).c_str());
 }
 
