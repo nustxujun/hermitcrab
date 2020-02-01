@@ -2455,6 +2455,8 @@ void Renderer::PipelineState::setVariable(Shader::ShaderType type, const std::st
 		memcpy(buffer.data() + ret->second.offset, data, ret->second.size );
 		return;
 	}
+
+	LOG("undefined variable ",name);
 }
 
 void Renderer::PipelineState::setVSVariable(const std::string & name, const void * data)

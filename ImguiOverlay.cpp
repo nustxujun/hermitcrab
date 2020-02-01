@@ -226,6 +226,11 @@ LRESULT ImGuiPass::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 	{
 	case WM_LBUTTONDOWN: io.MouseDown[0] = true;break;
 	case WM_LBUTTONUP: io.MouseDown[0] = false; break;
+	case WM_RBUTTONDOWN: io.MouseDown[1] = true; break;
+	case WM_RBUTTONUP: io.MouseDown[1] = false; break;
+	case WM_MBUTTONDOWN: io.MouseDown[2] = true; break;
+	case WM_MBUTTONUP: io.MouseDown[2] = false; break;
+
 	case WM_MOUSEMOVE: {io.MousePos.x = (float)GET_X_LPARAM(lParam); io.MousePos.y = (float)GET_Y_LPARAM(lParam);} break;
 	}
 
