@@ -42,11 +42,20 @@ const char * Material::genShaderContent(Visualizaion v)
 	switch (v)
 	{
 	case Visualizaion::Final:
-		content += "half3 _final = directBRDF(Roughness, Metallic, F0_DEFAULT, Base_Color.rgb, _normal.xyz,-sundir, campos - input.worldPos);";
-		content += " return half4(_final ,1) * suncolor;";
+		content += "half3 _final = (half3)directBRDF(Roughness, Metallic, F0_DEFAULT, Base_Color.rgb, _normal.xyz,-sundir, campos - input.worldPos);";
+		content += " return half4(_final * suncolor.rgb + Emissive_Color.rgb,1);";
 		break;
 	case Visualizaion::BaseColor:
-		content += "return half4(Base_Color.rgb, 1);";
+		content += "return half4(Base_Color.rgb + Emissive_Color.rgb, 1) ;";
+		break;
+	case Visualizaion::VertexColor:
+		content += "return input.color;";
+		break;
+	case Visualizaion::Roughness:
+		content += "return Roughness;";
+		break;
+	case Visualizaion::Metallic:
+		content += "return Metallic;";
 		break;
 	case Visualizaion::Normal:
 		content += "return half4(_normal.xyz * 0.5f + 0.5f, 1);";
@@ -59,10 +68,20 @@ const char * Material::genShaderContent(Visualizaion v)
 
 void Material::compileShaders(Visualizaion v)
 {
+
+	if (pipelineStateCaches[(size_t)v])
+	{
+		pipelineState = pipelineStateCaches[(size_t)v];
+		return;
+	}
 	auto renderer = Renderer::getSingleton();
 
 	auto vs = renderer->compileShaderFromFile(shaders.vs, "vs", SM_VS);
-	auto ps = renderer->compileShader(shaders.ps, shaders.psblob, "ps", SM_PS, { { "__SHADER_CONTENT__", genShaderContent(v) } });
+
+	std::string blob = shaders.psblob;
+	const char content_macro[] = "__SHADER_CONTENT__";
+	blob.replace(blob.find(content_macro),sizeof(content_macro),genShaderContent(v));
+	auto ps = renderer->compileShader(shaders.ps, blob, "ps", SM_PS);
 	std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
 	ps->registerStaticSampler({
 		D3D12_FILTER_MIN_MAG_MIP_LINEAR,
@@ -84,11 +103,13 @@ void Material::compileShaders(Visualizaion v)
 		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "NORMAL", 1, DXGI_FORMAT_R32G32B32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "NORMAL", 2, DXGI_FORMAT_R32G32B32_FLOAT, 0, 44, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_B8G8R8A8_UNORM, 0, 56, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+
 		});
 
-	if (pipelineState)
-		renderer->destroyPipelineState(pipelineState);
+
 	pipelineState = renderer->createPipelineState(shaders, rs);
+	pipelineStateCaches[(size_t)v] = pipelineState;
 	pipelineState->get()->SetName(M2U("Material " + name).c_str());
 }
 

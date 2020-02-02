@@ -3,7 +3,7 @@
 
 ImGuiPass::ImGuiPass()
 {
-	setName("ImGui pass");
+	setName("ImGui");
 	initImGui();
 	initRendering();
 	initFonts();

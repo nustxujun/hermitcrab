@@ -41,7 +41,7 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::present()
 			//cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
 		})};
-	pass->setName("present pass");
+	pass->setName("present");
 	return pass;
 }
 
@@ -55,7 +55,7 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::drawScene(Camera::Ptr cam, UINT fla
 			RenderContext::getSingleton()->renderScene(cam,flags, mask);
 		} )};
 
-	pass->setName("draw scene pass");
+	pass->setName("draw scene");
 	return pass;
 }
 
@@ -130,8 +130,12 @@ DefaultPipeline::DefaultPipeline()
 		static int cur = 0;
 		static int selected = 0;
 		ImGui::RadioButton("final", &cur, 0);
-		ImGui::RadioButton("base color", &cur, 1);
-		ImGui::RadioButton("normal", &cur, 2);
+		ImGui::RadioButton("vertex color", &cur, 1);
+		ImGui::RadioButton("base color", &cur, 2);
+		ImGui::RadioButton("roughness", &cur, 3);
+		ImGui::RadioButton("metallic", &cur, 4);
+
+		ImGui::RadioButton("normal", &cur, 5);
 
 		if (cur != selected)
 		{

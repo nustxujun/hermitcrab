@@ -13,6 +13,7 @@ struct PSInput
 	float4 binormal: NORMAL2;
 
 	float4 worldPos: COLOR0;
+	float4 color: COLOR1;
 };
 
 struct LightInfo

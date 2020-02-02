@@ -65,12 +65,19 @@ struct Material: public Object
 	enum class Visualizaion
 	{
 		Final,
+		VertexColor,
 		BaseColor,
+		Roughness,
+		Metallic,
+
 		Normal,
+		Num,
 	};
 
 
 	Renderer::PipelineState::Ref pipelineState;
+	std::array<Renderer::PipelineState::Ref,(size_t)Visualizaion::Num> pipelineStateCaches;
+
 	std::map<std::string, Vector4> parameters;
 	std::map<std::string, Texture::Ptr > textures;
 

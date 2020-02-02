@@ -406,7 +406,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 
 #if defined(_DEBUG)
 	// Enable better shader debugging with the graphics debugging tools.
-	UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+	UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_ENABLE_STRICTNESS;
 #else
 	UINT compileFlags = 0;
 #endif
@@ -458,7 +458,24 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 
 	if (FAILED(D3DCompile(context.data(), context.size(), name.c_str(), macros.data(),&include, (entry).c_str(), (target).c_str(), compileFlags, 0, &blob, &err)))
 	{
-		::OutputDebugStringA(context.c_str());
+		std::string debnugcontext = ">1	" + context;
+		auto i = debnugcontext.begin();
+		int line = 2;
+		for (; i != debnugcontext.end(); )
+		{
+			if (*i == '\n')
+			{
+				std::stringstream ss;
+				ss << ">" << line++ << "	";
+				std::string p = ss.str();
+				i = debnugcontext.insert(i + 1,p.begin(), p.end());
+				i +=3;
+			}
+			else
+				++i;
+		}
+
+		::OutputDebugStringA(debnugcontext.c_str());
 
 
 		::OutputDebugStringA((const char*)err->GetBufferPointer());
@@ -658,20 +675,6 @@ Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Sha
 	return pso;
 }
 
-void Renderer::destroyPipelineState(const PipelineState::Ref& pso)
-{
-	auto i = mPipelineStates.begin();
-	auto endi = mPipelineStates.end();
-	for(;i != endi; ++i)
-	{
-		if (*i == pso.shared())
-		{
-			mPipelineStates.erase(i);
-			return ;
-		}
-	}
-}
-
 Renderer::PipelineState::Ref Renderer::createComputePipelineState(const Shader::Ptr & shader)
 {
 	auto pso = PipelineState::create(shader);
@@ -769,10 +772,18 @@ void Renderer::uninitialize()
 void Renderer::initDevice()
 {
 	auto adapters = getAdapter();
-	auto adapter = adapters.back();
+	ComPtr<IDXGIAdapter> adapter;
+
+	for (auto& a : adapters)
+	{
+		DXGI_ADAPTER_DESC desc;
+		a->GetDesc(&desc);
+		if (std::wstring(desc.Description).find(L"Intel") == std::string::npos || !adapter)
+			adapter = a;
+	}
+
 	DXGI_ADAPTER_DESC desc;
 	adapter->GetDesc(&desc);
-
 	debugInfoCache.adapter = U2M(desc.Description);
 	CHECK(D3D12CreateDevice(adapter.Get(), FEATURE_LEVEL, IID_PPV_ARGS(&mDevice)));
 
