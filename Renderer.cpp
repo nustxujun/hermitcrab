@@ -2144,6 +2144,11 @@ void Renderer::Shader::enable32BitsConstants(bool b)
 	mUse32BitsConstants = b;
 }
 
+void Renderer::Shader::enable32BitsConstants(const std::string& name)
+{
+	mUse32BitsConstantsSet.insert(name);
+}
+
 D3D12_SHADER_VISIBILITY Renderer::Shader::getShaderVisibility() const
 {
 	switch (mType)
@@ -2226,7 +2231,8 @@ void Renderer::Shader::createRootParameters()
 
 				CBuffer* cbuffers;
 
-				if (mUse32BitsConstants)
+				if (mUse32BitsConstants || 
+					mUse32BitsConstantsSet.find(bd.Name) != mUse32BitsConstantsSet.end())
 				{
 					cbuffers = &mSemanticsMap.cbuffersBy32Bits[bd.Name];
 

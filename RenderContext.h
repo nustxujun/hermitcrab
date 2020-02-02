@@ -41,11 +41,19 @@ struct Texture: public Object
 struct Mesh : public Object
 {
 	using Ptr = std::shared_ptr<Mesh>;
+	struct SubMesh
+	{
+		UINT materialIndex;
+		UINT startIndex;
+		UINT numIndices;
+		UINT startVertexIndex;
+	};
 
 	Texture::Ptr texture;
 	Renderer::Buffer::Ptr vertices;
 	Renderer::Buffer::Ptr indices;
 	size_t numIndices;
+	std::vector<SubMesh> submeshes ;
 
 	void init(const std::vector<char>& vs, const std::vector<char>& is, size_t vsstride, size_t isstride, size_t ni)
 	{
@@ -78,7 +86,6 @@ struct Material: public Object
 	Renderer::PipelineState::Ref pipelineState;
 	std::array<Renderer::PipelineState::Ref,(size_t)Visualizaion::Num> pipelineStateCaches;
 
-	std::map<std::string, Vector4> parameters;
 	std::map<std::string, Texture::Ptr > textures;
 
 	struct Shader
@@ -88,24 +95,7 @@ struct Material: public Object
 		std::string psblob;
 	} shaders;
 
-	void apply(const Renderer::ConstantBuffer::Ptr& vscbuffer, const Renderer::ConstantBuffer::Ptr& pscbuffer)
-	{
-		if (vscbuffer)
-			pipelineState->setVSConstant("VSConstant", vscbuffer);
-		if (pscbuffer)
-		{
-			for (auto& p : parameters)
-				pscbuffer->setVariable(p.first, &p.second);
-
-			pipelineState->setPSConstant("PSConstant", pscbuffer);
-		}
-
-		for (auto& t : textures)
-		{
-			pipelineState->setPSResource(t.first, t.second->texture->getShaderResource());
-
-		}
-	}
+	void applyTextures();
 
 	const char* genShaderContent(Visualizaion v);
 	void compileShaders(Visualizaion v);
@@ -120,15 +110,14 @@ struct Model : public Object
 	std::vector<Mesh::Ptr> meshs;
 	Matrix transform;
 	Matrix normTransform;
-	Material::Ptr material;
-	Renderer::ConstantBuffer::Ptr vcbuffer;
-	Renderer::ConstantBuffer::Ptr pcbuffer;
+	std::vector<Material::Ptr> materials;
+	//Renderer::ConstantBuffer::Ptr vcbuffer;
+	//Renderer::ConstantBuffer::Ptr pcbuffer;
 
-	void init(Material::Ptr m)
+	void init()
 	{
-		material = m;
-		vcbuffer = m->pipelineState->createConstantBuffer(Renderer::Shader::ST_VERTEX,"VSConstant");
-		pcbuffer = m->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL, "PSConstant");
+		//vcbuffer = m->pipelineState->createConstantBuffer(Renderer::Shader::ST_VERTEX,"VSConstant");
+		//pcbuffer = m->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL, "PSConstant");
 
 	}
 };

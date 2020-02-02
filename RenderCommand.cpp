@@ -49,7 +49,8 @@ void RenderCommand::createMesh(
 	const void * indices, 
 	UINT32 bytesofindices, 
 	UINT32 numindices,
-	UINT32 indexStride)
+	UINT32 indexStride,
+	const std::vector<SubMesh>& submeshs)
 {
 	mIPC << "createMesh";
 	
@@ -65,6 +66,9 @@ void RenderCommand::createMesh(
 	mIPC << indexStride;
 	mIPC.send(indices, bytesofindices);
 
+	mIPC << (UINT)submeshs.size();
+	for (auto& sm : submeshs)
+		mIPC << sm;
 
 }
 
@@ -77,7 +81,7 @@ void RenderCommand::createTexture(const std::string & name, int width, int heigh
 	mIPC.send(data, size);
 }
 
-void RenderCommand::createModel(const std::string & name, const std::vector<std::string> meshs, const Matrix & transform, const Matrix& normaltransform, const std::string& materialName)
+void RenderCommand::createModel(const std::string & name, const std::vector<std::string> meshs, const Matrix & transform, const Matrix& normaltransform, const std::vector<std::string>& materialNames)
 {
 	mIPC << "createModel";
 	mIPC << name;
@@ -86,8 +90,10 @@ void RenderCommand::createModel(const std::string & name, const std::vector<std:
 	for (auto& m : meshs)
 		mIPC << m;
 
-	mIPC << transform<< normaltransform << materialName;
-
+	mIPC << transform<< normaltransform;
+	mIPC << (UINT) materialNames.size();
+	for (auto& m:materialNames)
+		mIPC << m;
 }
 
 void RenderCommand::createCamera(const std::string & name, const Vector3& pos, const Vector3& dir, const Matrix & view, const Matrix & proj, const D3D12_VIEWPORT & vp)
@@ -131,11 +137,24 @@ void RenderCommand::record()
 		indices.resize(numBytesIndices);
 		ipc.receive(indices.data(), numBytesIndices);
 
-		
+		UINT numSubmeshs;
+		ipc  >> numSubmeshs;
+		std::vector<SubMesh> submeshs(numSubmeshs);
+
+		for (auto& sm:submeshs)
+			ipc >> sm;
+
 		auto context = RenderContext::getSingleton();
 		auto mesh = context->createObject<Mesh>(name);
 
 		mesh->init(vertices,indices,verticesStride, indicesStride, numIndices);
+		for (auto& sm:submeshs)
+			mesh->submeshes.push_back({
+				sm.materialIndex,
+				sm.startIndex,
+				sm.numIndices,
+				sm.startVertexIndex
+			});
 		return true;
 	};
 
@@ -172,10 +191,16 @@ void RenderCommand::record()
 		}
 		
 		ipc >> model->transform >> model->normTransform;
-		std::string matname;
-		ipc >> matname;
-		//model->material = context->getObject<Material>(matname);
-		model->init(context->getObject<Material>(matname));
+		UINT  numMaterials;
+		ipc >> numMaterials;
+		for (UINT i = 0; i < numMaterials; ++i)
+		{
+			std::string matname;
+			ipc >> matname;
+			model->materials.push_back(context->getObject<Material>(matname));
+		}
+
+		model->init();
 		return true;
 	};
 
@@ -198,6 +223,7 @@ void RenderCommand::record()
 		}
 
 		material->init(vs, ps, pscontent);
+		material->applyTextures();
 		return true;
 	};
 

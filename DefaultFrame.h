@@ -27,7 +27,7 @@ public:
 		{
 			rendercmd.init(false);
 			rendercmd.record();
-			commonConsts = mRenderList[0]->material->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL,"CommonConstants");
+			commonConsts = mRenderList[0]->materials[0]->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL,"CommonConstants");
 		}
 		auto cam = getObject<Camera>("main");
 
@@ -117,20 +117,26 @@ public:
 
 		for (auto& model : mRenderList)
 		{
-			cmdlist->setPipelineState(model->material->pipelineState);
-			model->vcbuffer->setVariable("view", &cam->view);
-			model->vcbuffer->setVariable("proj", &cam->proj);
-			model->vcbuffer->setVariable("world", &model->transform);
-			model->vcbuffer->setVariable("nworld", &model->normTransform);
-
-			model->material->apply(model->vcbuffer, model->pcbuffer);
-			if (commonConsts)
-				model->material->pipelineState->setPSConstant("CommonConstants", commonConsts);
 			for (auto& mesh : model->meshs)
 			{
 				cmdlist->setVertexBuffer(mesh->vertices);
 				cmdlist->setIndexBuffer(mesh->indices);
-				cmdlist->drawIndexedInstanced(mesh->numIndices, 1U);
+
+				for (auto& sm : mesh->submeshes)
+				{
+					auto& material = model->materials[sm.materialIndex];
+					auto& pso = material->pipelineState;
+					pso->setVSVariable("view", &cam->view);
+					pso->setVSVariable("proj", &cam->proj);
+					pso->setVSVariable("world", &model->transform);
+					pso->setVSVariable("nworld", &model->normTransform);
+					
+					if (commonConsts)
+						pso->setPSConstant("CommonConstants", commonConsts);
+
+					cmdlist->setPipelineState(pso);
+					cmdlist->drawIndexedInstanced(sm.numIndices,1U,sm.startIndex, sm.startVertexIndex);
+				}
 			}
 		}
 	}

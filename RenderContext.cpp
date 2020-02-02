@@ -35,6 +35,14 @@ Camera::Ptr RenderContext::getMainCamera() const
 	return mCamera;
 }
 
+void Material::applyTextures()
+{
+	for (auto& t : textures)
+	{
+		pipelineState->setPSResource(t.first, t.second->texture->getShaderResource());
+	}
+}
+
 const char * Material::genShaderContent(Visualizaion v)
 {
 	static std::string content;
@@ -77,11 +85,12 @@ void Material::compileShaders(Visualizaion v)
 	auto renderer = Renderer::getSingleton();
 
 	auto vs = renderer->compileShaderFromFile(shaders.vs, "vs", SM_VS);
-
+	vs->enable32BitsConstants(true);
 	std::string blob = shaders.psblob;
 	const char content_macro[] = "__SHADER_CONTENT__";
 	blob.replace(blob.find(content_macro),sizeof(content_macro),genShaderContent(v));
 	auto ps = renderer->compileShader(shaders.ps, blob, "ps", SM_PS);
+	ps->enable32BitsConstants("PSConstant");
 	std::vector<Renderer::Shader::Ptr> ss = { vs, ps };
 	ps->registerStaticSampler({
 		D3D12_FILTER_MIN_MAG_MIP_LINEAR,

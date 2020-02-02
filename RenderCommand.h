@@ -10,6 +10,14 @@ public:
 	void init(bool host);
 	void record();
 
+	struct SubMesh
+	{
+		UINT materialIndex;
+		UINT startIndex;
+		UINT numIndices;
+		UINT startVertexIndex;
+	};
+
 	void createMesh(
 		const std::string& name, 
 		const void* vertices, 
@@ -19,7 +27,8 @@ public:
 		const void* indices,
 		UINT32 bytesofindices,
 		UINT32 numindices,
-		UINT32 indexStride);
+		UINT32 indexStride,
+		const std::vector<SubMesh>& submeshs);
 
 	void createTexture(
 		const std::string& name,
@@ -33,7 +42,7 @@ public:
 		const std::vector<std::string> meshs,
 		const Matrix& transform,
 		const Matrix& normaltransform,
-		const std::string& materialName
+		const std::vector<std::string>& materialNames
 	);
 
 	void createCamera(
