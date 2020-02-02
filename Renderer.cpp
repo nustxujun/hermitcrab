@@ -465,9 +465,9 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 		{
 			if (*i == '\n')
 			{
-				std::stringstream ss;
-				ss << ">" << line++ << "	";
-				std::string p = ss.str();
+				std::stringstream conv;
+				conv << ">" << line++ << "	";
+				std::string p = conv.str();
 				i = debnugcontext.insert(i + 1,p.begin(), p.end());
 				i +=3;
 			}
