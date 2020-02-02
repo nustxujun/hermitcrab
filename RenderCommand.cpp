@@ -153,7 +153,6 @@ void RenderCommand::record()
 				sm.materialIndex,
 				sm.startIndex,
 				sm.numIndices,
-				sm.startVertexIndex
 			});
 		return true;
 	};
