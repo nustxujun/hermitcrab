@@ -15,7 +15,6 @@ public:
 		UINT materialIndex;
 		UINT startIndex;
 		UINT numIndices;
-		UINT startVertexIndex;
 	};
 
 	void createMesh(

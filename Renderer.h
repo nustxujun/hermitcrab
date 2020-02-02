@@ -468,7 +468,7 @@ public:
 		Shader(const MemoryData& data, ShaderType type);
 		void registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc);
 		void enable32BitsConstants(bool b);
-		void enable32BitsConstants(const std::string& name);
+		void enable32BitsConstantsByName(const std::string& name);
 	private:
 		D3D12_SHADER_VISIBILITY getShaderVisibility()const;
 		D3D12_DESCRIPTOR_RANGE_TYPE getRangeType(D3D_SHADER_INPUT_TYPE type)const;

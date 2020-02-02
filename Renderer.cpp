@@ -2144,7 +2144,7 @@ void Renderer::Shader::enable32BitsConstants(bool b)
 	mUse32BitsConstants = b;
 }
 
-void Renderer::Shader::enable32BitsConstants(const std::string& name)
+void Renderer::Shader::enable32BitsConstantsByName(const std::string& name)
 {
 	mUse32BitsConstantsSet.insert(name);
 }
@@ -2317,6 +2317,22 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 		}
 	}
 
+	UINT rootsigSize = 0;
+	for (auto& p : params)
+	{
+		switch (p.ParameterType)
+		{
+		case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE: rootsigSize += 1; break;
+		case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS: rootsigSize += p.Constants.Num32BitValues; break;
+		case D3D12_ROOT_PARAMETER_TYPE_CBV : 
+		case D3D12_ROOT_PARAMETER_TYPE_SRV :
+		case D3D12_ROOT_PARAMETER_TYPE_UAV :
+			rootsigSize += 2;
+			break;
+		}
+	}
+
+	ASSERT(rootsigSize <= 64, "Root Signature size exceeds maximum of 64 32-bit units.");
 
 	rsd.NumParameters = (UINT)params.size();
 	if (rsd.NumParameters > 0)

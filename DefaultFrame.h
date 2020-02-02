@@ -117,25 +117,44 @@ public:
 
 		for (auto& model : mRenderList)
 		{
+			model->vcbuffer->setVariable("view", &cam->view);
+			model->vcbuffer->setVariable("proj", &cam->proj);
+			model->vcbuffer->setVariable("world", &model->transform);
+			model->vcbuffer->setVariable("nworld", &model->normTransform);
+
+			struct Renderable
+			{
+				Mesh::SubMesh* sm;
+				Mesh::Ptr m;
+			};
+
+			UINT numMaterials = model->materials.size();
+			std::vector<std::vector<Renderable>> subs(numMaterials);
+			
 			for (auto& mesh : model->meshs)
 			{
-				cmdlist->setVertexBuffer(mesh->vertices);
-				cmdlist->setIndexBuffer(mesh->indices);
-
 				for (auto& sm : mesh->submeshes)
 				{
-					auto& material = model->materials[sm.materialIndex];
-					auto& pso = material->pipelineState;
-					pso->setVSVariable("view", &cam->view);
-					pso->setVSVariable("proj", &cam->proj);
-					pso->setVSVariable("world", &model->transform);
-					pso->setVSVariable("nworld", &model->normTransform);
-					
-					if (commonConsts)
-						pso->setPSConstant("CommonConstants", commonConsts);
+					subs[sm.materialIndex].push_back({&sm, mesh});
+				}
+			}
+			
+			for (UINT i = 0; i < numMaterials; ++i)
+			{
+				auto& material = model->materials[i];
+				material->applyTextures();
+				auto& pso = material->pipelineState;
+				pso->setVSConstant("VSConstant", model->vcbuffer);
+				if (commonConsts)
+					pso->setPSConstant("CommonConstants", commonConsts);
 
-					cmdlist->setPipelineState(pso);
-					cmdlist->drawIndexedInstanced(sm.numIndices,1U,sm.startIndex, sm.startVertexIndex);
+				cmdlist->setPipelineState(pso);
+
+				for (auto& sm : subs[i])
+				{
+					cmdlist->setVertexBuffer(sm.m->vertices);
+					cmdlist->setIndexBuffer(sm.m->indices);
+					cmdlist->drawIndexedInstanced(sm.sm->numIndices, 1U, sm.sm->startIndex);
 				}
 			}
 		}

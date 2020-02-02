@@ -46,7 +46,6 @@ struct Mesh : public Object
 		UINT materialIndex;
 		UINT startIndex;
 		UINT numIndices;
-		UINT startVertexIndex;
 	};
 
 	Texture::Ptr texture;
@@ -111,12 +110,12 @@ struct Model : public Object
 	Matrix transform;
 	Matrix normTransform;
 	std::vector<Material::Ptr> materials;
-	//Renderer::ConstantBuffer::Ptr vcbuffer;
+	Renderer::ConstantBuffer::Ptr vcbuffer;
 	//Renderer::ConstantBuffer::Ptr pcbuffer;
 
 	void init()
 	{
-		//vcbuffer = m->pipelineState->createConstantBuffer(Renderer::Shader::ST_VERTEX,"VSConstant");
+		vcbuffer = materials[0]->pipelineState->createConstantBuffer(Renderer::Shader::ST_VERTEX,"VSConstant");
 		//pcbuffer = m->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL, "PSConstant");
 
 	}
