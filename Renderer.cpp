@@ -379,8 +379,8 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 				context.resize(size);
 				file.read(&context[0], size);
 
-				auto hash = gethash(context,{}, target, macros);
-				if (hash != oldhash)
+				auto newhash = gethash(context,{}, target, macros);
+				if (newhash != oldhash)
 				{
 					fail = true;
 					break;
@@ -2390,13 +2390,13 @@ void Renderer::PipelineState::setResource(Shader::ShaderType type, const std::st
 	if (ret == textures.end())
 	{ 
 		auto& uavs = mSemanticsMap[type].uavs;
-		auto ret = uavs.find(name);
-		if (ret == uavs.end())
+		auto uav = uavs.find(name);
+		if (uav == uavs.end())
 		{
 			LOG(name , " is not a bound resource in shader" );
 			return;
 		}
-		mTextures[type][ret->second + mSemanticsMap[type].offset] = handle;
+		mTextures[type][uav->second + mSemanticsMap[type].offset] = handle;
 	}
 	else
 		mTextures[type][ret->second + mSemanticsMap[type].offset] = handle;
