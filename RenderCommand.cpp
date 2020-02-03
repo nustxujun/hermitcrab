@@ -117,6 +117,13 @@ void RenderCommand::createLight(const std::string& name, UINT32 type, const Colo
 	mIPC << "createLight" << name << type << color << dir;
 }
 
+void RenderCommand::createReflectionProbe(const std::string& name, const Matrix& transform, float influence, float brightness, UINT cubesize, const void* data, UINT size)
+{
+	mIPC << "createReflectionProbe" << name << transform << influence << brightness << cubesize;
+	mIPC << size;
+	mIPC.send(data, size);
+}
+
 
 void RenderCommand::record()
 {
@@ -241,6 +248,21 @@ void RenderCommand::record()
 		ipc >> name;
 		auto light = context->createObject<Light>(name);
 		ipc >> light->type >> light->color >> light->dir;
+		return true;
+	};
+
+	processors["createReflectionProbe"] = [&ipc = mIPC]() {
+		auto context = RenderContext::getSingleton();
+		std::string name;
+		ipc >> name;
+		auto probe = context->createObject<ReflectionProbe>(name);
+
+		ipc >> probe->transform >> probe->influence >> probe->brightness;
+		UINT cubesize, size;
+		ipc >> cubesize >> size;
+		std::vector<char> data(size);
+
+		probe->init(cubesize, data.data(), size);
 		return true;
 	};
 

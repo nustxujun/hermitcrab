@@ -65,6 +65,16 @@ public:
 		const Color& color,
 		const Vector3& dir);
 
+	void createReflectionProbe(
+		const std::string& name,
+		const Matrix& transform,
+		float influence,
+		float brightness,
+		UINT cubesize,
+		const void* data,
+		UINT size
+	);
+
 	void done();
 	void invalid();
 	void invalidSelf();

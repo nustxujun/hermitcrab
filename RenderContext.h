@@ -136,6 +136,18 @@ struct Light : public Object
 	Vector3 dir;
 };
 
+struct ReflectionProbe :public Object
+{
+	using Ptr = std::shared_ptr<ReflectionProbe>;
+	
+	Matrix transform;
+	float influence;
+	float brightness;
+	Renderer::Texture::Ref texture;
+
+	void init(UINT cubesize, const void* data, UINT size);
+};
+
 class RenderContext
 {
 	static RenderContext* instance;

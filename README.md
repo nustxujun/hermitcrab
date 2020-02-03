@@ -1,5 +1,5 @@
 # hermitcrab
 
 ## Todo
-- Generate mips
+- IBL
 - Muti-threading 

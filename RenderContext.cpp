@@ -129,3 +129,22 @@ void Material::init(const std::string& vsname, const std::string& psname, const 
 
 	compileShaders(Visualizaion::Final);
 }
+
+void ReflectionProbe::init(UINT cubesize, const void* data, UINT size)
+{
+	UINT textureSize = cubesize * cubesize * 64;
+
+	UINT miplevels = 0;
+	UINT total = 0;
+	while (total < size)
+	{
+		total += textureSize;
+		textureSize /= 4;
+		miplevels++;
+	}
+
+	auto renderer = Renderer::getSingleton();
+	auto texcube = renderer->createTexture(cubesize,cubesize,1,DXGI_FORMAT_R16G16B16A16_FLOAT, miplevels);
+
+
+}
