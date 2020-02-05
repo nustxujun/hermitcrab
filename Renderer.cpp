@@ -138,7 +138,7 @@ void Renderer::resize(int width, int height)
 		std::wstringstream ss;
 		ss << L"BackBuffer" << i;
 		res->setName(ss.str());
-		auto rt = ResourceView::create(res, true);
+		auto rt = ResourceView::create(Texture::Ref(res), true);
 		rt->createRenderTargetView(nullptr);
 		mBackbuffers[i] = rt;
 	}
@@ -263,7 +263,7 @@ void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* b
 		resdesc.Height = 1;
 		resdesc.DepthOrArraySize = 1;
 		resdesc.MipLevels = 1;
-		resdesc.Format = desc.Format;
+		resdesc.Format = DXGI_FORMAT_UNKNOWN;
 		resdesc.SampleDesc.Count = 1;
 		resdesc.SampleDesc.Quality = 0;
 		resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
@@ -299,37 +299,52 @@ void Renderer::updateBuffer(Resource::Ref res, UINT subresource, const void* buf
 
 void Renderer::updateTexture(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, bool srgb)
 {
-	updateResource(res, subresource, buffer, size, [dst = res, srgb = srgb, this, pso = mSRGBConv ](auto cmdlist, auto src, auto sub) {
+	ResourceView::Ptr uavref;
+	Resource::Ptr resref;
+
+	updateResource(res, subresource, buffer, size, [dst = res, srgb , this, pso = mSRGBConv , &resref , &uavref](auto cmdlist, auto src, auto sub) {
 		if (srgb)
 		{
 			auto mid = Resource::create();
-			auto desc = dst->getDesc();
+			resref = mid;
+			auto bufferdesc = src->getDesc();
+			auto& texdesc = dst->getDesc();
 
 			UINT64 requiredSize = 0;
 			UINT64 rowSize = 0;
 			UINT numRows = 0;
 			D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
-			Renderer::getSingleton()->getDevice()->GetCopyableFootprints(&desc, sub, 1, 0, &footprint, &numRows, &rowSize, &requiredSize);
+			Renderer::getSingleton()->getDevice()->GetCopyableFootprints(&texdesc, sub, 1, 0, &footprint, &numRows, &rowSize, &requiredSize);
 			
-			desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-			desc.Width = requiredSize;
-			desc.Height = 1;
-			desc.MipLevels = 1;
-			desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-			desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+			bufferdesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+			mid->init(bufferdesc,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-			mid->init(desc,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-
-			cmdlist->transitionBarrier(src, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 1,true);
+			UINT stride = (UINT)D3DHelper::sizeof_DXGI_FORMAT(texdesc.Format);
+			src->createBuffer(texdesc.Format,0, (UINT)requiredSize / stride,0,0);
+			auto uav = ResourceView::create(mid, false);
+			{
+				D3D12_UNORDERED_ACCESS_VIEW_DESC uavdesc = {};
+				uavdesc.Format = texdesc.Format;
+				uavdesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+				uavdesc.Buffer.FirstElement = 0;
+				uavdesc.Buffer.NumElements = (UINT)requiredSize / stride;
+				uavdesc.Buffer.StructureByteStride = 0;
+				uavdesc.Buffer.CounterOffsetInBytes = 0;
+				uavdesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+				uav->createUnorderedAccessView(&uavdesc);
+			}
+			uavref = uav;
+			//cmdlist->transitionBarrier(src, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 0,true);
 
 			pso->setResource(Shader::ST_COMPUTE,"input", src->getShaderResource());
-			pso->setResource(Shader::ST_COMPUTE, "output", mid->getShaderResource());
-			pso->setVariable(Shader::ST_COMPUTE, "width", &rowSize);
+			pso->setResource(Shader::ST_COMPUTE, "output", uav->getHandle());
+			UINT width = (UINT)texdesc.Width;
+			pso->setVariable(Shader::ST_COMPUTE, "width", &width);
 
 			cmdlist->setPipelineState(pso);
-			cmdlist->dispatch((UINT)rowSize, numRows,1);
+			cmdlist->dispatch(width, texdesc.Height,1);
 
-			cmdlist->transitionBarrier(mid, D3D12_RESOURCE_STATE_COPY_SOURCE, 1, true);
+			cmdlist->transitionBarrier(mid, D3D12_RESOURCE_STATE_COPY_SOURCE, 0, true);
 			cmdlist->copyTexture(dst, sub, {0,0,0}, mid,0,nullptr);
 		}
 		else
@@ -1262,7 +1277,7 @@ Renderer::DescriptorHandle Renderer::DescriptorHeap::alloc()
 void Renderer::DescriptorHeap::dealloc(DescriptorHandle& handle)
 {
 	dealloc(handle.pos);
-	handle = {0,{0},{0}};
+	handle.reset();
 }
 
 
@@ -1280,7 +1295,7 @@ ID3D12DescriptorHeap * Renderer::DescriptorHeap::get()
 	return mHeap.Get();
 }
 
-Renderer::ResourceView::ResourceView(const Texture::Ref& res, bool autorelease):
+Renderer::ResourceView::ResourceView(const Resource::Ref res, bool autorelease):
 	mTexture(res), mType(VT_UNKNOWN), mAutoRelease(autorelease)
 {
 }
@@ -1311,7 +1326,9 @@ Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXG
 	}
 	mTexture = renderer->createTexture(width, height,1, format,1, D3D12_HEAP_TYPE_DEFAULT, flags,rt);
 	if ((flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE) == 0)
-		mTexture->createTexture2D();
+	{
+		mTexture->to<Texture>().createTexture2D();
+	}
 	mAutoRelease = true;
 
 	std::wstringstream ss;
@@ -1369,7 +1386,7 @@ const Renderer::DescriptorHandle& Renderer::ResourceView::getHandle() const
 	return mHandle;
 }
 
-const Renderer::Texture::Ref& Renderer::ResourceView::getTexture() const
+const Renderer::Resource::Ref& Renderer::ResourceView::getTexture() const
 {
 	return mTexture;
 }
@@ -1639,7 +1656,8 @@ void Renderer::Resource::createShaderResource(const D3D12_SHADER_RESOURCE_VIEW_D
 	auto texdesc = getDesc();
 	ASSERT((texdesc.Flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE) == 0, "resource cannot be a SRV");
 
-	DescriptorHandle handle = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
+	auto heap = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV);
+	DescriptorHandle handle = heap->alloc();
 	Renderer::getSingleton()->getDevice()->CreateShaderResourceView(get(), desc, handle.cpu);
 
 	if (i == UINT(-1))
@@ -1647,10 +1665,26 @@ void Renderer::Resource::createShaderResource(const D3D12_SHADER_RESOURCE_VIEW_D
 	else
 	{
 		if (mHandles.size() <= i)
-			mHandles.resize(i + 1);
+			mHandles.resize(i + 1, {});
 
+		if (mHandles[i])
+			heap->dealloc(mHandles[i]);
 		mHandles[i] = handle;
 	}
+}
+
+void Renderer::Resource::createBuffer(DXGI_FORMAT format, UINT64 begin, UINT num, UINT stride, UINT index)
+{
+	auto desc = getDesc();
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format = format;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	srvDesc.Buffer.FirstElement= begin;
+	srvDesc.Buffer.NumElements = num ;
+	srvDesc.Buffer.StructureByteStride = stride;
+	srvDesc.Buffer.Flags = stride == 0? D3D12_BUFFER_SRV_FLAG_NONE: D3D12_BUFFER_SRV_FLAG_RAW;
+	createShaderResource(&srvDesc, index);
 }
 
 void Renderer::Resource::releaseShaderResourceAll()

@@ -1,5 +1,6 @@
 # hermitcrab
 
 ## Todo
-- light probe
+- get irradiance from sh coefs
+- light map
 - Muti-threading 

@@ -131,7 +131,7 @@ public:
 
 		template<class U>
 		WeakPtr(const WeakPtr<U>& p):
-			mPointer(p.weak())
+			mPointer(std::static_pointer_cast<T>(p.shared()))
 		{
 		}
 
@@ -200,9 +200,9 @@ public:
 	class DescriptorHandle
 	{
 	public:
-		D3D12_CPU_DESCRIPTOR_HANDLE cpu;
-		D3D12_GPU_DESCRIPTOR_HANDLE gpu;
-		UINT64 pos;
+		D3D12_CPU_DESCRIPTOR_HANDLE cpu = {};
+		D3D12_GPU_DESCRIPTOR_HANDLE gpu = {};
+		UINT64 pos = 0;
 
 		DescriptorHandle() = default;
 		DescriptorHandle(UINT64 alloc, D3D12_CPU_DESCRIPTOR_HANDLE c, D3D12_GPU_DESCRIPTOR_HANDLE g):
@@ -221,6 +221,17 @@ public:
 			return gpu;
 		}
 
+		operator bool()const
+		{
+			return cpu.ptr == 0 || gpu.ptr == 0;
+		}
+
+		void reset()
+		{
+			cpu.ptr = 0;
+			gpu.ptr = 0;
+			pos = -1;
+		}
 	private:
 
 	};
@@ -261,6 +272,7 @@ public:
 		UINT64 getSize()const{return mDesc.Width;}
 		const D3D12_GPU_DESCRIPTOR_HANDLE& getShaderResource(UINT i = 0);
 		void createShaderResource(const D3D12_SHADER_RESOURCE_VIEW_DESC* desc = nullptr, UINT i = -1);
+		void createBuffer(DXGI_FORMAT format, UINT64 begin, UINT num, UINT stride, UINT i = -1);
 		void releaseShaderResourceAll();
 	private:
 		ComPtr<ID3D12Resource> mResource;
@@ -322,13 +334,13 @@ public:
 	{
 	public:
 
-		ResourceView(const Texture::Ref& res, bool autorelease = false);
+		ResourceView(const Resource::Ref res, bool autorelease = false);
 		ResourceView(ViewType type, UINT width, UINT height, DXGI_FORMAT format, Resource::ResourceType rt = Resource::RT_PERSISTENT);
 		~ResourceView();
 
 		const DescriptorHandle& getHandle()const;
 
-		const Texture::Ref& getTexture()const;
+		const Resource::Ref& getTexture()const;
 		ViewType getType()const{return mType;};
 
 		void createRenderTargetView(const D3D12_RENDER_TARGET_VIEW_DESC* desc);
@@ -341,7 +353,7 @@ public:
 		DescriptorHeapType matchDescriptorHeapType()const;
 	private:
 		DescriptorHandle mHandle;
-		Texture::Ref mTexture;
+		Resource::Ref mTexture;
 		ViewType mType = VT_UNKNOWN;
 		bool mAutoRelease;
 	};
