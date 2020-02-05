@@ -16,7 +16,7 @@ void Quad::init(const std::string & psname, const Renderer::RenderState& setting
 				{ { -1.0f, -1.0f  }, { 0.0f, 1.0f}},
 				{ { -1.0f, 1.0f  }, { 0.0f, 0.0f}}
 			};
-			mVertices = Renderer::getSingleton()->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector2, Vector2>), D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
+			mVertices = Renderer::getSingleton()->createBuffer(sizeof(triangleVertices), sizeof(std::pair<Vector2, Vector2>), false, D3D12_HEAP_TYPE_DEFAULT, triangleVertices, sizeof(triangleVertices));
 			vertices = mVertices;
 		}
 		else

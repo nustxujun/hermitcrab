@@ -133,6 +133,7 @@ void Renderer::resize(int width, int height)
 		ComPtr<ID3D12Resource> buffer;
 		CHECK(mSwapChain->GetBuffer(i, IID_PPV_ARGS(&buffer)));
 		auto res = Texture::create(buffer, D3D12_RESOURCE_STATE_PRESENT);
+		res->createTexture2D();
 		addResource(res);
 		std::wstringstream ss;
 		ss << L"BackBuffer" << i;
@@ -251,13 +252,28 @@ void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* b
 	{
 		UINT64 requiredSize = 0;
 		UINT64 rowSize = 0;
+		UINT numRows = 0;
 		D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
-		Renderer::getSingleton()->getDevice()->GetCopyableFootprints(&desc, subresource, 1, 0, &footprint, nullptr, &rowSize, &requiredSize);
-		src->init(requiredSize, D3D12_HEAP_TYPE_UPLOAD);
+		Renderer::getSingleton()->getDevice()->GetCopyableFootprints(&desc, subresource, 1, 0, &footprint, &numRows, &rowSize, &requiredSize);
+		
+		D3D12_RESOURCE_DESC resdesc = {};
+		resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+		resdesc.Alignment = 0;
+		resdesc.Width = requiredSize;
+		resdesc.Height = 1;
+		resdesc.DepthOrArraySize = 1;
+		resdesc.MipLevels = 1;
+		resdesc.Format = desc.Format;
+		resdesc.SampleDesc.Count = 1;
+		resdesc.SampleDesc.Quality = 0;
+		resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+		resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+		
+		src->init(resdesc, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 
 		char* data = src->map(0);
-		for (size_t i = 0; i < desc.Height; ++i)
+		for (size_t i = 0; i < numRows; ++i)
 		{
 			memcpy(data, buffer, (size_t)rowSize);
 			data += footprint.Footprint.RowPitch;
@@ -271,6 +287,53 @@ void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* b
 	executeResourceCommands([&](CommandList::Ref cmdlist){
 		cmdlist->transitionBarrier(res, D3D12_RESOURCE_STATE_COPY_DEST, -1, true);
 		copy(cmdlist, src, subresource);
+	});
+}
+
+void Renderer::updateBuffer(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size)
+{
+	updateResource(res, subresource, buffer, size, [dst = res, size](CommandList::Ref cmdlist, Resource::Ref src, UINT sub){
+		cmdlist->copyBuffer(dst, sub, src, 0, size);
+	});
+}
+
+void Renderer::updateTexture(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, bool srgb)
+{
+	updateResource(res, subresource, buffer, size, [dst = res, srgb = srgb, this, pso = mSRGBConv ](auto cmdlist, auto src, auto sub) {
+		if (srgb)
+		{
+			auto mid = Resource::create();
+			auto desc = dst->getDesc();
+
+			UINT64 requiredSize = 0;
+			UINT64 rowSize = 0;
+			UINT numRows = 0;
+			D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
+			Renderer::getSingleton()->getDevice()->GetCopyableFootprints(&desc, sub, 1, 0, &footprint, &numRows, &rowSize, &requiredSize);
+			
+			desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+			desc.Width = requiredSize;
+			desc.Height = 1;
+			desc.MipLevels = 1;
+			desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+			desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+			mid->init(desc,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+			cmdlist->transitionBarrier(src, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 1,true);
+
+			pso->setResource(Shader::ST_COMPUTE,"input", src->getShaderResource());
+			pso->setResource(Shader::ST_COMPUTE, "output", mid->getShaderResource());
+			pso->setVariable(Shader::ST_COMPUTE, "width", &rowSize);
+
+			cmdlist->setPipelineState(pso);
+			cmdlist->dispatch((UINT)rowSize, numRows,1);
+
+			cmdlist->transitionBarrier(mid, D3D12_RESOURCE_STATE_COPY_SOURCE, 1, true);
+			cmdlist->copyTexture(dst, sub, {0,0,0}, mid,0,nullptr);
+		}
+		else
+			cmdlist->copyTexture(dst, sub, { 0,0,0 }, src, 0, nullptr);
 	});
 }
 
@@ -427,7 +490,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 			char* data = new char[size];
 			file.read(data, size);
 			(*ppData) = data;
-			(*pBytes) = size;
+			(*pBytes) = (UINT)size;
 
 			std::hash<std::string> hash;
 			std::string hashcontext = std::string(data, size) + "" +target;
@@ -517,7 +580,7 @@ Renderer::Fence::Ptr Renderer::createFence()
 	return fence;
 }
 
-Renderer::Resource::Ref Renderer::createResource(size_t size, D3D12_HEAP_TYPE type, Resource::ResourceType restype )
+Renderer::Resource::Ref Renderer::createResource(size_t size, bool isShaderResource, D3D12_HEAP_TYPE type, Resource::ResourceType restype )
 {
 
 	D3D12_RESOURCE_DESC resdesc = {};
@@ -531,7 +594,7 @@ Renderer::Resource::Ref Renderer::createResource(size_t size, D3D12_HEAP_TYPE ty
 	resdesc.SampleDesc.Count = 1;
 	resdesc.SampleDesc.Quality = 0;
 	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	resdesc.Flags = D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
+	resdesc.Flags = isShaderResource ? D3D12_RESOURCE_FLAG_NONE : D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
 
 	if (restype == Resource::RT_TRANSIENT)
 	{
@@ -581,7 +644,21 @@ Renderer::Texture::Ref Renderer::createTexture(UINT width, UINT height, UINT dep
 	return tex;
 }
 
-Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
+Renderer::Texture::Ref Renderer::createTextureCube(UINT size, DXGI_FORMAT format, UINT nummips,D3D12_HEAP_TYPE type, D3D12_RESOURCE_FLAGS flags, Resource::ResourceType restype)
+{
+	auto texcube = createTexture(size, size, 6 ,format, nummips,type, flags,restype);
+	texcube->createTextureCube();
+	return texcube;
+}
+
+Renderer::Texture::Ref Renderer::createTextureCubeArray(UINT size, DXGI_FORMAT format, UINT arraySize, UINT nummips, D3D12_HEAP_TYPE type, D3D12_RESOURCE_FLAGS flags, Resource::ResourceType restype)
+{
+	auto texcube = createTexture(size, size, 6 * arraySize, format, nummips, type, flags, restype);
+	texcube->createTextureCubeArray();
+	return texcube;
+}
+
+Renderer::Texture::Ref Renderer::createTextureFromFile(const std::wstring& filename, bool srgb)
 {
 	auto ret = mTextureMap.find(filename);
 	if (ret != mTextureMap.end())
@@ -604,8 +681,7 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	}
 	ASSERT(data != nullptr,"cannot create texture");
 	
-	auto tex = createTexture(width, height, format, 0,data);
-
+	auto tex = createTexture2D(width, height, format,  0,data, srgb);
 	stbi_image_free(data);
 
 	mTextureMap[filename] = tex;
@@ -613,14 +689,20 @@ Renderer::Texture::Ref Renderer::createTexture(const std::wstring& filename)
 	return tex;
 }
 
-Renderer::Texture::Ref Renderer::createTexture(UINT width, UINT height, DXGI_FORMAT format, UINT miplevels, const void* data)
+Renderer::Texture::Ref Renderer::createTexture2D(UINT width, UINT height, DXGI_FORMAT format, UINT miplevels, const void* data, bool srgb)
 {
-	auto tex = createTexture(width, height, 1, format, miplevels,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_FLAG_NONE);
+	auto tex = createTexture(width, height, 1, format, miplevels,D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE);
+	tex->createTexture2D();
+
 	auto size = width * height * D3DHelper::sizeof_DXGI_FORMAT(format);
 
-	updateResource(tex, 0, data, size, [dst = tex](auto cmdlist, auto src, auto sub) {
-		cmdlist->copyTexture(dst, sub, { 0,0,0 }, src, 0, nullptr);
-	});
+	if (data == nullptr)
+	{
+		LOG("recommend to call createTexture instead, createTexture2D is used for the texture with pixel data prepared.");
+		return tex;
+	}
+		
+	updateTexture(tex, 0, data, size,srgb);
 
 	executeResourceCommands([&](auto cmdlist) {
 		cmdlist->generateMips(tex);
@@ -628,15 +710,11 @@ Renderer::Texture::Ref Renderer::createTexture(UINT width, UINT height, DXGI_FOR
 	return tex;
 }
 
-Renderer::Buffer::Ptr Renderer::createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* buffer, size_t count)
+Renderer::Buffer::Ptr Renderer::createBuffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type, const void* buffer, size_t count)
 {
-	auto vert = Buffer::Ptr(new Buffer(size, stride, type));
+	auto vert = Buffer::Ptr(new Buffer(size, stride, isShaderResource, type));
 	if (buffer)
-		updateResource(vert->getResource(), 0,buffer, size, [dst = vert->getResource(), size](CommandList::Ref cmdlist, Resource::Ref src, UINT sub){
-			
-			cmdlist->copyBuffer(dst,sub,src,0, size);
-		});
-		//updateBuffer(vert->getResource(), buffer,size);/
+		updateBuffer(vert->getResource(), 0, buffer, size);
 
 	return vert;
 }
@@ -652,6 +730,7 @@ void Renderer::destroyResource(Resource::Ref res)
 	
 	if (res->getType() == Resource::RT_TRANSIENT)
 	{
+		res->releaseShaderResourceAll();
 		mTransients[res->hash()].push_back(res);
 	}
 	else
@@ -854,15 +933,13 @@ void Renderer::initProfile()
 	desc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
 
 	CHECK(mDevice->CreateQueryHeap(&desc, IID_PPV_ARGS(&mTimeStampQueryHeap)));
-	mProfileReadBack = createResource(1024 * sizeof(uint64_t),D3D12_HEAP_TYPE_READBACK);
+	mProfileReadBack = createResource(1024 * sizeof(uint64_t),false,D3D12_HEAP_TYPE_READBACK);
 
 }
 
 void Renderer::initResources()
 {
 	mConstantBufferAllocator = ConstantBufferAllocator::create();
-
-
 
 	for (int i = 0; i < 4; ++i)
 	{
@@ -886,6 +963,24 @@ void Renderer::initResources()
 		mGenMipsPSO[i] = createComputePipelineState(shader);
 	}
 
+	{
+		auto shader = compileShaderFromFile("shaders/srgb_conv.hlsl", "main", SM_CS );
+		shader->enable32BitsConstants(true);
+		shader->registerStaticSampler({
+			D3D12_FILTER_MIN_MAG_MIP_POINT,
+			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+			0,0,
+			D3D12_COMPARISON_FUNC_NEVER,
+			D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+			0,
+			D3D12_FLOAT32_MAX,
+			0,0,
+			D3D12_SHADER_VISIBILITY_ALL
+			});
+		mSRGBConv = createComputePipelineState(shader);
+	}
 }
 
 Renderer::Shader::ShaderType Renderer::mapShaderType(const std::string & target)
@@ -1215,6 +1310,8 @@ Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXG
 		flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
 	}
 	mTexture = renderer->createTexture(width, height,1, format,1, D3D12_HEAP_TYPE_DEFAULT, flags,rt);
+	if ((flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE) == 0)
+		mTexture->createTexture2D();
 	mAutoRelease = true;
 
 	std::wstringstream ss;
@@ -1453,8 +1550,6 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 
 	mDesc = resdesc;
 	mState.resize(mDesc.MipLevels, state);
-
-	mHandle = createView();
 }
 
 
@@ -1537,27 +1632,39 @@ size_t Renderer::Resource::hash()
 	return mHashValue;
 }
 
-const D3D12_GPU_DESCRIPTOR_HANDLE& Renderer::Resource::getShaderResource()
+
+
+void Renderer::Resource::createShaderResource(const D3D12_SHADER_RESOURCE_VIEW_DESC* desc, UINT i)
 {
-	return mHandle;
+	auto texdesc = getDesc();
+	ASSERT((texdesc.Flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE) == 0, "resource cannot be a SRV");
+
+	DescriptorHandle handle = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
+	Renderer::getSingleton()->getDevice()->CreateShaderResourceView(get(), desc, handle.cpu);
+
+	if (i == UINT(-1))
+		mHandles.push_back(handle);
+	else
+	{
+		if (mHandles.size() <= i)
+			mHandles.resize(i + 1);
+
+		mHandles[i] = handle;
+	}
 }
 
-Renderer::DescriptorHandle Renderer::Resource::createView()
+void Renderer::Resource::releaseShaderResourceAll()
 {
-	auto desc = getDesc();
-	if (desc.Flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE)
-		return {};
-	DescriptorHandle handle = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
+	auto heap = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV);
+	for (auto& h: mHandles)
+		heap->dealloc(h);
+	mHandles.clear();
+}
 
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.Format = desc.Format;
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	//srvDesc.Buffer.FirstElement = 0;
-	//srvDesc.Buffer.NumElements = 1;
-	//srvDesc.Buffer.StructureByteStride = desc.Width;
-	Renderer::getSingleton()->getDevice()->CreateShaderResourceView(get(), &srvDesc, handle.cpu);
-	return handle;
+
+const D3D12_GPU_DESCRIPTOR_HANDLE& Renderer::Resource::getShaderResource(UINT i)
+{
+	return mHandles[i];
 }
 
 void Renderer::Texture::init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags)
@@ -1580,36 +1687,43 @@ void Renderer::Texture::init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_F
 
 }
 
-const D3D12_GPU_DESCRIPTOR_HANDLE& Renderer::Texture::getShaderResource(UINT i)
-{
-	if (i >= mHandles.size())
-	{
-		mHandles.resize(i + 1);
-		mHandles[i] = createView(i,1);
-	}
-	return mHandles[i];
-}
 
-Renderer::DescriptorHandle Renderer::Texture::createView()
-{
-	return createView(0,-1);
-}
-
-Renderer::DescriptorHandle Renderer::Texture::createView(UINT begin, UINT count)
+void Renderer::Texture::createTexture2D(UINT begin, UINT count, UINT i)
 {
 	auto desc = getDesc();
-	if (desc.Flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE)
-		return {};
-	DescriptorHandle handle = Renderer::getSingleton()->getDescriptorHeap(DHT_CBV_SRV_UAV)->alloc();
-
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.Format = desc.Format;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MostDetailedMip = begin;
 	srvDesc.Texture2D.MipLevels = count;
-	Renderer::getSingleton()->getDevice()->CreateShaderResourceView(get(), &srvDesc, handle.cpu);
-	return handle;
+	createShaderResource(&srvDesc,i);
+}
+
+void Renderer::Texture::createTextureCube(UINT begin, UINT count,UINT i)
+{
+	auto desc = getDesc();
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format = desc.Format;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+	srvDesc.TextureCube.MostDetailedMip = begin;
+	srvDesc.TextureCube.MipLevels = count;
+	createShaderResource(&srvDesc, i);
+}
+
+void Renderer::Texture::createTextureCubeArray(UINT begin, UINT count, UINT arrayBegin, UINT numCubes, UINT i)
+{
+	auto desc = getDesc();
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format = desc.Format;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBEARRAY;
+	srvDesc.TextureCubeArray.MostDetailedMip = begin;
+	srvDesc.TextureCubeArray.MipLevels = count;
+	srvDesc.TextureCubeArray.First2DArrayFace = arrayBegin;
+	srvDesc.TextureCubeArray.NumCubes = std::min(numCubes, (UINT)desc.DepthOrArraySize / 6);
+	createShaderResource(&srvDesc, i);
 }
 
 Renderer::Fence::Fence()
@@ -1956,7 +2070,7 @@ void Renderer::CommandList::generateMips(Texture::Ref texture)
 		return;
 
 	Texture::Ref dst = renderer->createTexture(
-		desc.Width,
+		(UINT)desc.Width,
 		desc.Height, 
 		desc.DepthOrArraySize,
 		desc.Format,
@@ -1965,6 +2079,7 @@ void Renderer::CommandList::generateMips(Texture::Ref texture)
 		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
 		Resource::RT_TRANSIENT
 	);
+	dst->createShaderResource();
 
 	transitionBarrier(texture, D3D12_RESOURCE_STATE_COPY_SOURCE,0);
 	transitionBarrier(dst, D3D12_RESOURCE_STATE_COPY_DEST,0, true);
@@ -2564,10 +2679,12 @@ void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
 	}
 }
 
-Renderer::Buffer::Buffer(UINT size, UINT stride, D3D12_HEAP_TYPE type)
+Renderer::Buffer::Buffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type)
 {
 	auto renderer = Renderer::getSingleton();
-	mResource = renderer->createResource(size, type);
+	mResource = renderer->createResource(size,isShaderResource, type);
+	if (isShaderResource)
+		mResource->createShaderResource();
 	mStride = stride;
 
 }
@@ -2628,7 +2745,7 @@ void Renderer::Profile::end()
 
 Renderer::ConstantBufferAllocator::ConstantBufferAllocator()
 {
-	mResource = Renderer::getSingleton()->createResource(cache_size,D3D12_HEAP_TYPE_UPLOAD);
+	mResource = Renderer::getSingleton()->createResource(cache_size,false,D3D12_HEAP_TYPE_UPLOAD);
 	mEnd = mCache.data();
 }
 

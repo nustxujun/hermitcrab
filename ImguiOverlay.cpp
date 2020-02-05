@@ -129,13 +129,13 @@ void ImGuiPass::draw(ImDrawData* data)
 	if (!VertexBuffer || VertexBuffer->getSize() < data->TotalVtxCount * sizeof(ImDrawVert))
 	{
 		auto size = data->TotalIdxCount;
-		VertexBuffer = renderer->createBuffer(size * sizeof(ImDrawVert), sizeof(ImDrawVert), D3D12_HEAP_TYPE_UPLOAD);
+		VertexBuffer = renderer->createBuffer(size * sizeof(ImDrawVert), sizeof(ImDrawVert), false, D3D12_HEAP_TYPE_UPLOAD);
 	}
 
 	if (!IndexBuffer || IndexBuffer->getSize() < data->TotalIdxCount * sizeof(ImDrawIdx))
 	{
 		auto size = data->TotalIdxCount ;
-		IndexBuffer = renderer->createBuffer(size * sizeof(ImDrawIdx), sizeof(ImDrawIdx), D3D12_HEAP_TYPE_UPLOAD);
+		IndexBuffer = renderer->createBuffer(size * sizeof(ImDrawIdx), sizeof(ImDrawIdx), false, D3D12_HEAP_TYPE_UPLOAD);
 	}
 
 	auto vertices = VertexBuffer->getResource()->map(0);
@@ -284,7 +284,7 @@ void ImGuiPass::initFonts()
 	io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
 
 	auto renderer = Renderer::getSingleton();
-	mFonts = renderer->createTexture(width, height, DXGI_FORMAT_R8G8B8A8_UNORM,1, pixels);
+	mFonts = renderer->createTexture2D(width, height, DXGI_FORMAT_R8G8B8A8_UNORM,1, pixels, false);
 
 	static_assert(sizeof(ImTextureID) >= sizeof(mFonts->getShaderResource().ptr), "Can't pack descriptor handle into TexID, 32-bit not supported yet.");
 	io.Fonts->TexID = (ImTextureID)mFonts->getShaderResource().ptr;

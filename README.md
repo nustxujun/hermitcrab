@@ -1,5 +1,5 @@
 # hermitcrab
 
 ## Todo
-- IBL
+- light probe
 - Muti-threading 

@@ -33,6 +33,7 @@ public:
 		const std::string& name,
 		int width, int height, 
 		DXGI_FORMAT format,
+		bool srgb,
 		const void* data
 		);
 

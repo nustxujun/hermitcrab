@@ -41,17 +41,29 @@ void Material::applyTextures()
 	{
 		pipelineState->setPSResource(t.first, t.second->texture->getShaderResource());
 	}
+
+	pipelineState->setPSResource("ReflectionEnvs", ReflectionProbe::textureCubeArray->getShaderResource());
+	pipelineState->setPSResource("PreintegratedGF", Texture::LUT->getShaderResource());
+
 }
 
-const char * Material::genShaderContent(Visualizaion v)
+std::string Material::genShaderContent(Visualizaion v)
 {
-	static std::string content;
-	content.clear();
+	std::string content;
 	switch (v)
 	{
 	case Visualizaion::Final:
-		content += "half3 _final = (half3)directBRDF(Roughness, Metallic, F0_DEFAULT, Base_Color.rgb, _normal.xyz,-sundir, campos - input.worldPos);";
-		content += " return half4(_final * suncolor.rgb + Emissive_Color.rgb,1);";
+		content += "	half3 V = normalize(campos.xyz - input.worldPos.xyz);\n";
+		content += "	half3 R = normalize(reflect(-V.xyz, _normal.xyz));\n";
+		content += "	half3 _directLitColor = (half3)directBRDF(Roughness, Metallic, F0_DEFAULT, Base_Color.rgb, _normal.xyz,-sundir, V);\n";
+		content += "	half4 refenvscoord = half4(R.xyz, 0);\n";
+		// get mip from roughness (ue4)
+		content += Common::format("	half _mip = ", ReflectionProbe::miplevels - 1, " - 1 -", 1, " + 1.2f * log2(Roughness);\n");
+		content += "	half3 _prefiltered = ReflectionEnvs.SampleLevel(linearSampler, refenvscoord, _mip).rgb;\n";
+		content += "	half3 _lutvalue = LUT(_normal.xyz, V, Roughness, PreintegratedGF,linearSampler);\n";
+		content += "	half3 _iblcolor = indirectBRDF(0, _prefiltered, _lutvalue, Roughness, Metallic, F0_DEFAULT, Base_Color.rgb, _normal.xyz, V);\n";
+		content += "	return half4(_directLitColor * suncolor.rgb + Emissive_Color.rgb + _iblcolor.rgb,1);\n";
+		//content += "	return half4(_lutvalue.xyz,1);";
 		break;
 	case Visualizaion::BaseColor:
 		content += "return half4(Base_Color.rgb + Emissive_Color.rgb, 1) ;";
@@ -71,7 +83,16 @@ const char * Material::genShaderContent(Visualizaion v)
 	}
 
 
-	return content.c_str();
+	return content;
+}
+
+std::string Material::genBoundResouces()
+{
+	std::string ret;
+	ret += "TextureCubeArray ReflectionEnvs;\n";
+	ret += "Texture2D PreintegratedGF;\n";
+
+	return ret;
 }
 
 void Material::compileShaders(Visualizaion v)
@@ -88,9 +109,25 @@ void Material::compileShaders(Visualizaion v)
 	std::string blob = shaders.psblob;
 	const char content_macro[] = "__SHADER_CONTENT__";
 	blob.replace(blob.find(content_macro),sizeof(content_macro),genShaderContent(v));
+	const char resource_macro[] = "__BOUND_RESOURCE__";
+	blob.replace(blob.find(resource_macro), sizeof(resource_macro), genBoundResouces());
 	auto ps = renderer->compileShader(shaders.ps, blob, "ps", SM_PS);
 	ps->enable32BitsConstantsByName("PSConstant");
 	std::vector<Renderer::Shader::Ptr> ss = { vs, ps };
+	ps->registerStaticSampler({
+		D3D12_FILTER_MIN_MAG_MIP_POINT,
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+		0,0,
+		D3D12_COMPARISON_FUNC_NEVER,
+		D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+		0,
+		D3D12_FLOAT32_MAX,
+		0,0,
+		D3D12_SHADER_VISIBILITY_PIXEL
+		});
+
 	ps->registerStaticSampler({
 		D3D12_FILTER_MIN_MAG_MIP_LINEAR,
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,
@@ -101,7 +138,21 @@ void Material::compileShaders(Visualizaion v)
 		D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
 		0,
 		D3D12_FLOAT32_MAX,
+		1,0,
+		D3D12_SHADER_VISIBILITY_PIXEL
+		});
+
+	ps->registerStaticSampler({
+		D3D12_FILTER_ANISOTROPIC,
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,
 		0,0,
+		D3D12_COMPARISON_FUNC_NEVER,
+		D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+		0,
+		D3D12_FLOAT32_MAX,
+		2,0,
 		D3D12_SHADER_VISIBILITY_PIXEL
 		});
 	Renderer::RenderState rs = Renderer::RenderState::GeneralSolid;
@@ -130,21 +181,51 @@ void Material::init(const std::string& vsname, const std::string& psname, const 
 	compileShaders(Visualizaion::Final);
 }
 
-void ReflectionProbe::init(UINT cubesize, const void* data, UINT size)
+Renderer::Texture::Ref ReflectionProbe::textureCubeArray;
+void ReflectionProbe::initTextureCubeArray(const std::vector<Ptr>& probes)
 {
-	UINT textureSize = cubesize * cubesize * 64;
+	auto renderer = Renderer::getSingleton();
+	if (textureCubeArray)
+		renderer->destroyResource(textureCubeArray);
+	auto texcube = renderer->createTextureCubeArray(cubeSize, DXGI_FORMAT_R16G16B16A16_FLOAT, (UINT)probes.size(),miplevels );
+	texcube->setName(L"ReflectionEnvs");
+	textureCubeArray = texcube;
 
-	UINT miplevels = 0;
-	UINT total = 0;
-	while (total < size)
+	UINT arrayIndex = 0;
+	for (auto& p : probes)
 	{
-		total += textureSize;
-		textureSize /= 4;
-		miplevels++;
+		UINT textureSize = cubeSize * cubeSize * 8;
+		
+		const char* buffer = p->textureData.data();
+		for (UINT i = 0; i < miplevels; ++i)
+		{
+			for (UINT j = 0; j < 6; ++j)
+			{
+				renderer->updateTexture(texcube, i + j * miplevels + arrayIndex * miplevels * 6, buffer, textureSize, false);
+				buffer += textureSize;
+			}
+			textureSize /= 4;
+		}
+
+		arrayIndex++;
 	}
 
-	auto renderer = Renderer::getSingleton();
-	auto texcube = renderer->createTexture(cubesize,cubesize,1,DXGI_FORMAT_R16G16B16A16_FLOAT, miplevels);
+}
 
+void ReflectionProbe::init(UINT cubesize, const void* data, UINT size)
+{
+	Common::Assert(cubesize == cubeSize, "all reflection cubemap must be the same size");
+	Common::Assert(dataSize == size, "reflection probe data is invalid.");
+	textureData.reserve(size);
+	memcpy(textureData.data(), data, size);
+}
 
+Renderer::Texture::Ref Texture::LUT;
+
+void Texture::createLUT()
+{
+	if (LUT)
+		Renderer::getSingleton()->destroyResource(LUT);
+
+	LUT = Renderer::getSingleton()->createTextureFromFile(L"lut.png", false);
 }

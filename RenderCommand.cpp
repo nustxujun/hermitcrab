@@ -72,12 +72,12 @@ void RenderCommand::createMesh(
 
 }
 
-void RenderCommand::createTexture(const std::string & name, int width, int height, DXGI_FORMAT format,const void* data)
+void RenderCommand::createTexture(const std::string & name, int width, int height, DXGI_FORMAT format, bool srgb, const void* data)
 {
 	mIPC << "createTexture";
 
 	UINT32 size = D3DHelper::sizeof_DXGI_FORMAT(format) * width * height;
-	mIPC << name << width << height << format << size ;
+	mIPC << name << width << height << format << srgb << size ;
 	mIPC.send(data, size);
 }
 
@@ -167,8 +167,9 @@ void RenderCommand::record()
 	processors["createTexture"] = [&ipc = mIPC]() {
 		UINT32 width, height, size;
 		DXGI_FORMAT fmt;
+		bool srgb;
 		std::string name;
-		ipc >> name >>  width >> height >> fmt >> size ;
+		ipc >> name >>  width >> height >> fmt >> srgb >> size ;
 		std::vector<char> data;
 		data.resize(size);
 
@@ -176,7 +177,7 @@ void RenderCommand::record()
 
 		auto context = RenderContext::getSingleton();
 		auto tex = context->createObject<Texture>(name);
-		tex->init(width,height, fmt, data.data());
+		tex->init(width,height, fmt, data.data(),srgb);
 		return true;
 	};
 
@@ -229,7 +230,6 @@ void RenderCommand::record()
 		}
 
 		material->init(vs, ps, pscontent);
-		material->applyTextures();
 		return true;
 	};
 
@@ -261,13 +261,23 @@ void RenderCommand::record()
 		UINT cubesize, size;
 		ipc >> cubesize >> size;
 		std::vector<char> data(size);
-
+		ipc.receive(data.data(),size);
 		probe->init(cubesize, data.data(), size);
 		return true;
 	};
 
 
 	processors["done"] = []() {
+		
+		auto context = RenderContext::getSingleton();
+
+		std::vector<ReflectionProbe::Ptr> probes;
+		context->visiteObjects<ReflectionProbe>([&](ReflectionProbe::Ptr probe) {
+			probes.push_back(probe);
+		});
+		ReflectionProbe::initTextureCubeArray(probes);
+
+		Texture::createLUT();
 		return false;
 	};
 

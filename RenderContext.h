@@ -30,12 +30,16 @@ struct Texture: public Object
 {
 	using Ptr = std::shared_ptr<Texture>;
 
-	void init(int width, int height, DXGI_FORMAT format, const void* data)
+	void init(int width, int height, DXGI_FORMAT format, const void* data, bool srgb)
 	{
-		texture = Renderer::getSingleton()->createTexture((UINT)width, (UINT)height, format,0, data);
+		texture = Renderer::getSingleton()->createTexture2D((UINT)width, (UINT)height, format,0, data, srgb);
 		texture->setName(M2U("Texture " + name));
 	}
 	Renderer::Texture::Ref texture;
+
+
+	static Renderer::Texture::Ref LUT;
+	static void createLUT();
 };
 
 struct Mesh : public Object
@@ -56,8 +60,8 @@ struct Mesh : public Object
 
 	void init(const std::vector<char>& vs, const std::vector<char>& is, size_t vsstride, size_t isstride, size_t ni)
 	{
-		vertices = Renderer::getSingleton()->createBuffer((UINT)vs.size(), (UINT)vsstride, D3D12_HEAP_TYPE_DEFAULT, vs.data(), (UINT)vs.size());
-		indices = Renderer::getSingleton()->createBuffer((UINT)is.size(), (UINT)isstride, D3D12_HEAP_TYPE_DEFAULT, is.data(), (UINT)is.size());
+		vertices = Renderer::getSingleton()->createBuffer((UINT)vs.size(), (UINT)vsstride,false, D3D12_HEAP_TYPE_DEFAULT, vs.data(), (UINT)vs.size());
+		indices = Renderer::getSingleton()->createBuffer((UINT)is.size(), (UINT)isstride, false, D3D12_HEAP_TYPE_DEFAULT, is.data(), (UINT)is.size());
 		numIndices = ni;
 
 		vertices->getResource()->setName(M2U("Vertex " + name));
@@ -96,10 +100,14 @@ struct Material: public Object
 
 	void applyTextures();
 
-	const char* genShaderContent(Visualizaion v);
-	void compileShaders(Visualizaion v);
-	void init(const std::string& vsname, const std::string& psname, const std::string& pscontent);
 
+	void init(const std::string& vsname, const std::string& psname, const std::string& pscontent);
+	void compileShaders(Visualizaion v);
+
+private:
+	std::string genShaderContent(Visualizaion v);
+	std::string genBoundResouces();
+	
 };
 
 struct Model : public Object
@@ -140,12 +148,21 @@ struct ReflectionProbe :public Object
 {
 	using Ptr = std::shared_ptr<ReflectionProbe>;
 	
+	// instance
 	Matrix transform;
-	float influence;
-	float brightness;
-	Renderer::Texture::Ref texture;
+	float influence = 1.0f;
+	float brightness = 1.0f;
 
+	std::vector<char> textureData;
 	void init(UINT cubesize, const void* data, UINT size);
+
+	// shared
+	const static UINT miplevels = 8;
+	const static UINT cubeSize = 128;
+	const static UINT dataSize = 1048560; // cubeSize * cubeSize * 6 (faces) * 8 (half float) with all mips
+	static Renderer::Texture::Ref textureCubeArray;
+	static void initTextureCubeArray(const std::vector<Ptr>& probes);
+
 };
 
 class RenderContext
@@ -187,6 +204,16 @@ public:
 		else
 			return std::static_pointer_cast<T>(ret->second);
 
+	}
+
+	template<class T>
+	void visiteObjects(const std::function<void(std::shared_ptr<T>)>& f)
+	{
+		auto& type = typeid(T);
+		for (auto& o : mObjects[type.name()])
+		{
+			f(std::static_pointer_cast<T>(o.second));
+		}
 	}
 
 	void resize(int width, int height);

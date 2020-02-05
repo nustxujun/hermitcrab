@@ -259,9 +259,9 @@ public:
 		static size_t hash(const D3D12_RESOURCE_DESC& desc);
 		size_t hash();
 		UINT64 getSize()const{return mDesc.Width;}
-		const D3D12_GPU_DESCRIPTOR_HANDLE& getShaderResource();
-	protected:
-		virtual DescriptorHandle createView();
+		const D3D12_GPU_DESCRIPTOR_HANDLE& getShaderResource(UINT i = 0);
+		void createShaderResource(const D3D12_SHADER_RESOURCE_VIEW_DESC* desc = nullptr, UINT i = -1);
+		void releaseShaderResourceAll();
 	private:
 		ComPtr<ID3D12Resource> mResource;
 		D3D12_RESOURCE_DESC mDesc;
@@ -269,7 +269,7 @@ public:
 		ResourceType mType = RT_PERSISTENT;
 		size_t mHashValue = 0;
 		std::wstring mName;
-		DescriptorHandle mHandle;
+		std::vector<DescriptorHandle> mHandles;
 
 	};
 
@@ -311,14 +311,11 @@ public:
 		using Resource::init;
 		void init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags );
 
-		using Resource::getShaderResource;
-		const D3D12_GPU_DESCRIPTOR_HANDLE& getShaderResource(UINT i);
-
+		void createTexture2D(UINT begin = 0, UINT count = -1, UINT i = -1);
+		void createTextureCube(UINT begin = 0, UINT count = -1, UINT i = -1);
+		void createTextureCubeArray(UINT begin = 0, UINT count = -1, UINT arrayBegin = 0, UINT numCubes = -1, UINT i = -1);
 	private:
-		DescriptorHandle createView() override;
-		DescriptorHandle createView(UINT begin, UINT count);
 
-		std::vector<D3D12_GPU_DESCRIPTOR_HANDLE> mHandles;
 	};
 
 	class ResourceView final:public Interface<ResourceView>
@@ -355,7 +352,7 @@ public:
 	public:
 		using Ptr = std::shared_ptr<Buffer>;
 
-		Buffer(UINT size, UINT stride, D3D12_HEAP_TYPE type);
+		Buffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type);
 
 		Resource::Ref getResource()const{return mResource;}
 		void blit(const void* buffer, size_t size);
@@ -686,6 +683,7 @@ public:
 	static void destory();
 	static Renderer::Ptr getSingleton();
 
+
 	Renderer();
 	~Renderer();
 	void initialize(HWND window);
@@ -706,18 +704,23 @@ public:
 	UINT getCurrentFrameIndex();
 	void flushCommandQueue();
 	void updateResource(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref, UINT)>& copy);
+	void updateBuffer(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size);
+	void updateTexture(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, bool srgb);
 	void executeResourceCommands(const std::function<void(CommandList::Ref)>& dofunc, Renderer::CommandAllocator::Ptr alloc = {});
 
 	Shader::Ptr compileShaderFromFile(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 	Shader::Ptr compileShader(const std::string& name, const std::string& context, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {}, const std::string& cachename = {});
 	Fence::Ptr createFence();
-	Resource::Ref createResource(size_t size, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, Resource::ResourceType restype = Resource::RT_PERSISTENT);
+	Resource::Ref createResource(size_t size, bool isShaderResource, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 	void destroyResource(Resource::Ref res);
 	Texture::Ref createTexture(UINT width, UINT height, UINT depth, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
-	Texture::Ref createTexture(const std::wstring& filename);
-	Texture::Ref createTexture(UINT width, UINT height, DXGI_FORMAT format ,UINT miplevels, const void* data);
+	Texture::Ref createTextureCube(UINT size, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
+	Texture::Ref createTextureCubeArray(UINT size, DXGI_FORMAT format, UINT arraySize, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
 
-	Buffer::Ptr createBuffer(UINT size, UINT stride, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
+	Texture::Ref createTextureFromFile(const std::wstring& filename, bool srgb);
+	Texture::Ref createTexture2D(UINT width, UINT height, DXGI_FORMAT format ,UINT miplevels, const void* data, bool srgb);
+
+	Buffer::Ptr createBuffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	ConstantBuffer::Ptr createConstantBuffer(UINT size);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
 	PipelineState::Ref createComputePipelineState(const Shader::Ptr& shader);
@@ -791,8 +794,9 @@ private:
 	Resource::Ref mProfileReadBack;
 	CommandAllocator::Ptr mProfileCmdAlloc;
 	ConstantBufferAllocator::Ptr mConstantBufferAllocator;
-	std::array<PipelineState::Ref, 4> mGenMipsPSO;
 	std::vector<ResourceView::Ptr> mResourceViews;
+	std::array<PipelineState::Ref, 4> mGenMipsPSO;
+	PipelineState::Ref mSRGBConv;
 	bool mVSync = false;
 
 };
