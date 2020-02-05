@@ -2751,24 +2751,14 @@ void Renderer::Profile::begin()
 		D3D12_QUERY_TYPE_TIMESTAMP,
 		mIndex * 2);
 
-	mDuration = GetTickCount();
-
+	mCPUTime = std::chrono::high_resolution_clock::now();
 }
 
 void Renderer::Profile::end()
 {
-	mDuration = GetTickCount() - mDuration;
-	mAccum += mDuration;
-	mFrameCount++;
-	if (mAccum >= INTERVAL)
-	{
-		float dtime = 0;
-		dtime =  (float)mAccum / (float)mFrameCount;
-		mCPUHistory = mCPUHistory * 0.9f + dtime * 0.1f;
+	float dtime = float((double)(std::chrono::high_resolution_clock::now() - mCPUTime).count() / 1000000000.0);
+	mCPUHistory = mCPUHistory * 0.9f + dtime * 0.1f;
 
-		mFrameCount = 0;
-		mAccum = 0;
-	}
 	auto renderer = Renderer::getSingleton();
 	renderer->getCommandList()->endQuery(
 		renderer->getTimeStampQueryHeap(),

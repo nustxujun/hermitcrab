@@ -20,6 +20,7 @@
 #include <sstream>
 #include <iostream>
 #include <bitset>
+#include <chrono>
 
 // windows
 #if defined(NO_UE4) || defined(_CONSOLE)

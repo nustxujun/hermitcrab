@@ -608,7 +608,6 @@ public:
 	class Profile:public Interface<Profile>
 	{
 		friend class Renderer;
-		const static DWORD INTERVAL = 1;
 	public:
 		Profile(UINT index);
 
@@ -621,9 +620,7 @@ public:
 		UINT mIndex;
 		float mCPUHistory = 0;
 		float mGPUHistory = 0;
-		DWORD mDuration;
-		DWORD mAccum = 0;
-		UINT mFrameCount = 0;
+		std::chrono::high_resolution_clock::time_point mCPUTime;
 	};
 
 	class CommandList final : public Interface<CommandList>
