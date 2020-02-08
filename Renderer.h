@@ -13,6 +13,7 @@
 	#define SM_CS	"cs_5_0"
 #else
 	#define SM_VS	"vs_5_0"
+	#define SM_GS	"gs_5_0"
 	#define SM_PS	"ps_5_0"
 	#define SM_CS	"cs_5_0"
 #endif

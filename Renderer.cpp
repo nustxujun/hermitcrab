@@ -1006,6 +1006,7 @@ Renderer::Shader::ShaderType Renderer::mapShaderType(const std::string & target)
 	case 'v': type = Shader::ST_VERTEX; break;
 	case 'p': type = Shader::ST_PIXEL; break;
 	case 'c': type = Shader::ST_COMPUTE; break;
+	case 'g': type = Shader::ST_GEOMETRY; break;
 	default:
 		ASSERT(false, "unsupported!");
 		break;
