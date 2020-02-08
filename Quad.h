@@ -18,7 +18,6 @@ public:
 		mPipelineState->setPSVariable(name, &val);
 	}
 
-	Renderer::Buffer::Ptr getSharedVertices()const;
 	const D3D12_RECT& getRect()const {return mRect;}
 	void setRect(const D3D12_RECT& r){mRect = r;}
 	void fitToScreen();
@@ -26,6 +25,5 @@ private:
 	D3D12_RECT mRect;
 	Renderer::PipelineState::Ref mPipelineState;
 	Renderer::ConstantBuffer::Ptr mConstant;
-	Renderer::Buffer::Ptr mVertices;
 };
 
