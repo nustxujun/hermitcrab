@@ -727,11 +727,17 @@ Renderer::Texture::Ref Renderer::createTexture2D(UINT width, UINT height, DXGI_F
 
 Renderer::Buffer::Ptr Renderer::createBuffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type, const void* buffer, size_t count)
 {
-	auto vert = Buffer::Ptr(new Buffer(size, stride, isShaderResource, type));
+	auto b = Buffer::Ptr(new Buffer(size, stride, isShaderResource, type));
 	if (buffer)
-		updateBuffer(vert->getResource(), 0, buffer, size);
-
-	return vert;
+	{
+		if (type == D3D12_HEAP_TYPE_UPLOAD)
+		{
+			b->blit(buffer, std::min(count, (size_t)size));
+		}
+		else
+			updateBuffer(b->getResource(), 0, buffer, size);
+	}
+	return b;
 }
 
 Renderer::ConstantBuffer::Ptr Renderer::createConstantBuffer(UINT size)
