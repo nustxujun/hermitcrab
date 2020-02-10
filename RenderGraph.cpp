@@ -21,7 +21,7 @@ ResourceHandle::~ResourceHandle()
 {
 	auto renderer = Renderer::getSingleton();
 	if (renderer)
-		renderer->destroyResourceView(mView);
+		renderer->destroyResource(mView);
 }
 
 Renderer::ViewType ResourceHandle::getType() const
@@ -63,10 +63,29 @@ void ResourceHandle::prepare()
 
 }
 
-const Renderer::ResourceView::Ref& ResourceHandle::getView()
+const Renderer::Resource::Ref& ResourceHandle::getView()
 {
 	if (!mView)
-		mView = Renderer::getSingleton()->createResourceView(mWidth, mHeight,mFormat,mType, Renderer::Resource::RT_TRANSIENT);
+	{
+		D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
+		switch (mType)
+		{
+		case Renderer::VT_RENDERTARGET: flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET; break;
+		case Renderer::VT_DEPTHSTENCIL: flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL; break;
+		case Renderer::VT_UNORDEREDACCESS: flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS; break;
+		}
+		mView = Renderer::getSingleton()->createTexture(mWidth, mHeight,1,mFormat,1,D3D12_HEAP_TYPE_DEFAULT, flags, Renderer::Resource::RT_TRANSIENT);
+		static int index = 0;
+		std::stringstream ss;
+		ss << "transient"<< index++;
+		mView->setName(ss.str());
+		switch (mType)
+		{
+		case Renderer::VT_RENDERTARGET: mView->createRenderTargetView(nullptr); mView->createTexture2D(); break;
+		case Renderer::VT_DEPTHSTENCIL: mView->createDepthStencilView(nullptr); break;
+		case Renderer::VT_UNORDEREDACCESS: mView->createUnorderedAccessView(nullptr); mView->createTexture2D(); break;
+		}
+	}
 	return mView; 
 }
 
@@ -231,7 +250,7 @@ void RenderGraph::RenderPass::prepareResources()
 {
 
 	auto cmdlist = Renderer::getSingleton()->getCommandList();
-	std::vector<Renderer::ResourceView::Ref> rtvs;
+	std::vector<Renderer::Resource::Ref> rtvs;
 	std::vector<std::function<void(void)>> clears;
 	for (size_t i = 0; i < mResources.getNumRenderTargets(); ++i)
 	{
@@ -254,13 +273,13 @@ void RenderGraph::RenderPass::prepareResources()
 		}
 		else
 		{
-			cmdlist->transitionBarrier(rt->getView()->getTexture(),D3D12_RESOURCE_STATE_RENDER_TARGET);
+			cmdlist->transitionBarrier(rt->getView(),D3D12_RESOURCE_STATE_RENDER_TARGET);
 			rtvs.push_back(rt->getView());
 		}
 	}
 
 	auto ds = mResources.getDepthStencil();
-	Renderer::ResourceView::Ref dsv;
+	Renderer::Resource::Ref dsv;
 	if (ds)
 	{
 		ds->prepare();
@@ -277,14 +296,14 @@ void RenderGraph::RenderPass::prepareResources()
 
 		if (mInitialTypes[&(*ds)] != IT_NOUSE)
 		{
-			cmdlist->transitionBarrier(ds->getView()->getTexture(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
+			cmdlist->transitionBarrier(ds->getView(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
 			dsv = ds->getView();
 		}
 	}
 
 	for (auto& srv : mShaderResources)
 	{
-		cmdlist->transitionBarrier(srv->getView()->getTexture(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		cmdlist->transitionBarrier(srv->getView(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	}
 
 	cmdlist->flushResourceBarrier();

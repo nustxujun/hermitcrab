@@ -32,7 +32,7 @@ public:
 	//void release();
 
 	void prepare();
-	const Renderer::ResourceView::Ref& getView() ;
+	const Renderer::Resource::Ref& getView() ;
 private:
 	size_t mRefCount = 0;
 	std::wstring mName;
@@ -40,7 +40,7 @@ private:
 	int mWidth;
 	int mHeight;
 	DXGI_FORMAT mFormat;
-	Renderer::ResourceView::Ref mView;
+	Renderer::Resource::Ref mView;
 	ClearValue mClearValue = {};
 };
 

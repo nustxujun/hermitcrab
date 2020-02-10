@@ -21,7 +21,7 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::present()
 			cmdlist->setRenderTarget(bb);
 
 		
-			quad->setResource("tex",srvs[0]->getView()->getTexture()->getShaderResource());
+			quad->setResource("tex",srvs[0]->getView()->getShaderResource());
 		
 			quad->fitToScreen();
 			RenderContext::getSingleton()->renderScreen(quad.get());
@@ -74,7 +74,7 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::postprocess(const std::string& ps, 
 			if (prepare)
 				prepare(pso);
 			quad->fitToScreen();
-			quad->setResource("frame",srvs[0]->getView()->getTexture()->getShaderResource());
+			quad->setResource("frame",srvs[0]->getView()->getShaderResource());
 			//pso->setPSResource("frame",srvs[0]->getView()->getHandle());
 			RenderContext::getSingleton()->renderScreen(quad.get());
 		}) };

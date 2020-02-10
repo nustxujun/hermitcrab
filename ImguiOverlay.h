@@ -35,7 +35,7 @@ private:
 	Renderer::Buffer::Ptr mIndexBuffer[Renderer::NUM_BACK_BUFFERS];
 	std::vector<char> mCaches[2];
 	Renderer::ConstantBuffer::Ptr mConstant;
-	Renderer::Texture::Ref mFonts;
+	Renderer::Resource::Ref mFonts;
 	int mWidth = 0;
 	int mHeight = 0;
 };
@@ -356,7 +356,7 @@ struct ImGuiSelectable : public ImGuiObject
 
 struct ImGuiImage : public ImGuiObject
 {
-	Renderer::Texture::Ref texture;
+	Renderer::Resource::Ref texture;
 	void update() override
 	{
 		if (!texture)

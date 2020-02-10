@@ -180,14 +180,14 @@ void Material::init(const std::string& vsname, const std::string& psname, const 
 	compileShaders(Visualizaion::Final);
 }
 
-Renderer::Texture::Ref ReflectionProbe::textureCubeArray;
+Renderer::Resource::Ref ReflectionProbe::textureCubeArray;
 void ReflectionProbe::initTextureCubeArray(const std::vector<Ptr>& probes)
 {
 	auto renderer = Renderer::getSingleton();
 	if (textureCubeArray)
 		renderer->destroyResource(textureCubeArray);
 	auto texcube = renderer->createTextureCubeArray(cubeSize, DXGI_FORMAT_R16G16B16A16_FLOAT, (UINT)probes.size(),miplevels );
-	texcube->setName(L"ReflectionEnvs");
+	texcube->setName("ReflectionEnvs");
 	textureCubeArray = texcube;
 
 	UINT arrayIndex = 0;
@@ -219,12 +219,12 @@ void ReflectionProbe::init(UINT cubesize, const void* data, UINT size)
 	memcpy(textureData.data(), data, size);
 }
 
-Renderer::Texture::Ref Texture::LUT;
+Renderer::Resource::Ref Texture::LUT;
 
 void Texture::createLUT()
 {
 	if (LUT)
 		Renderer::getSingleton()->destroyResource(LUT);
 
-	LUT = Renderer::getSingleton()->createTextureFromFile(L"lut.png", false);
+	LUT = Renderer::getSingleton()->createTextureFromFile("lut.png", false);
 }

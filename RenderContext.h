@@ -33,12 +33,12 @@ struct Texture: public Object
 	void init(int width, int height, DXGI_FORMAT format, const void* data, bool srgb)
 	{
 		texture = Renderer::getSingleton()->createTexture2D((UINT)width, (UINT)height, format,0, data, srgb);
-		texture->setName(M2U("Texture " + name));
+		texture->setName(("Texture " + name));
 	}
-	Renderer::Texture::Ref texture;
+	Renderer::Resource::Ref texture;
 
 
-	static Renderer::Texture::Ref LUT;
+	static Renderer::Resource::Ref LUT;
 	static void createLUT();
 };
 
@@ -64,8 +64,8 @@ struct Mesh : public Object
 		indices = Renderer::getSingleton()->createBuffer((UINT)is.size(), (UINT)isstride, false, D3D12_HEAP_TYPE_DEFAULT, is.data(), (UINT)is.size());
 		numIndices = ni;
 
-		vertices->getResource()->setName(M2U("Vertex " + name));
-		indices->getResource()->setName(M2U("Index " + name ));
+		vertices->getResource()->setName(("Vertex " + name));
+		indices->getResource()->setName(("Index " + name ));
 
 	}
 };
@@ -160,7 +160,7 @@ struct ReflectionProbe :public Object
 	const static UINT miplevels = 8;
 	const static UINT cubeSize = 128;
 	const static UINT dataSize = 1048560; // cubeSize * cubeSize * 6 (faces) * 8 (half float) with all mips
-	static Renderer::Texture::Ref textureCubeArray;
+	static Renderer::Resource::Ref textureCubeArray;
 	static void initTextureCubeArray(const std::vector<Ptr>& probes);
 
 };
