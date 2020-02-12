@@ -24,6 +24,7 @@ private:
 	HWND mWindow;
 	std::wstring mWindowClass = L"_frame_window";
 	Renderer::Ptr mRenderer;
+	static bool needPaint;
 
 	static std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> processor;
 };

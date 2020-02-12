@@ -2,6 +2,7 @@
 #include "RenderContext.h"
 
 std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> Framework::processor;
+bool Framework::needPaint = true;
 
 Framework::Framework()
 {
@@ -10,7 +11,6 @@ Framework::Framework()
 	registerWindow();
 	createWindow();
 	mRenderer = Renderer::create();
-
 }
 
 Framework::~Framework()
@@ -26,14 +26,14 @@ void Framework::resize(int width, int height)
 void Framework::update()
 {
 	MSG msg = {};
-	while (WM_QUIT != msg.message && WM_CLOSE != msg.message)
+	while (WM_QUIT != msg.message )
 	{
 		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 		{
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 		}
-		else
+		else if (Framework::needPaint)
 		{
 			mRenderer->beginFrame();
 			updateImpl();
@@ -59,8 +59,7 @@ HWND Framework::createWindow()
 	mWindow = CreateWindowW(mWindowClass.c_str(), L"", WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, 0, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, instance, nullptr);
 
-	ShowWindow(mWindow, true);
-	UpdateWindow(mWindow);
+	ShowWindow(mWindow, SW_SHOW);
 
 	return mWindow;
 }
@@ -94,7 +93,7 @@ LRESULT Framework::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 	case WM_CLOSE:
 	case WM_DESTROY:
 		{
-			PostMessage(hWnd, WM_CLOSE, 0, 0);
+			PostMessage(hWnd, WM_QUIT, 0, 0);
 		}
 		return 0;
 	case WM_SIZE:
@@ -106,6 +105,17 @@ LRESULT Framework::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 			resize(hWnd, w,h);
 		}
 		return 0 ;
+	case WM_PAINT:
+		{
+			Framework::needPaint = true;
+		}
+		break;
+	case WM_ACTIVATEAPP:
+		{
+			if (wParam == FALSE)
+				Framework::needPaint = false; 
+		}
+		break;
 	}
 
 	if (processor)

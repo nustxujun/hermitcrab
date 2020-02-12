@@ -2,13 +2,13 @@
 #include "Common.h"
 
 
-//#if WINVER  < _WIN32_WINNT_WIN10
-	//#define D3D12ON7
-	//#include "D3D12Downlevel.h"
-//#endif
+//#define D3D12ON7
 
-#if defined(D3D12ON7)
+#if defined(D3D12ON7) 
+	#include "D3D12Downlevel.h"
+
 	#define SM_VS	"vs_5_0"
+	#define SM_GS	"gs_5_0"
 	#define SM_PS	"ps_5_0"
 	#define SM_CS	"cs_5_0"
 #else

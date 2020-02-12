@@ -105,7 +105,11 @@ void Renderer::resize(int width, int height)
 	CHECK(mDevice.As(&deviceDownlevel));
 
 	for (auto& b: mBackbuffers)
-		b = ResourceView::create(VT_RENDERTARGET, width, height, swapChainDesc.Format);
+	{
+		b = Resource::create();
+		b->init(width,height,D3D12_HEAP_TYPE_DEFAULT,swapChainDesc.Format,D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+		b->createRenderTargetView(nullptr);
+	}
 	mCurrentFrame = 0;
 #else
 	if (mSwapChain)
@@ -1151,7 +1155,7 @@ void Renderer::present()
 	CHECK(mCommandQueue.As(&commandQueueDownlevel));
 	CHECK(commandQueueDownlevel->Present(
 		mCommandList->get(),
-		mBackbuffers[mCurrentFrame]->getTexture()->get(),
+		mBackbuffers[mCurrentFrame]->get(),
 		mWindow,
 		mVSync? D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK: D3D12_DOWNLEVEL_PRESENT_FLAG_NONE));
 #else
