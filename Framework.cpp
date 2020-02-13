@@ -97,25 +97,19 @@ LRESULT Framework::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 		}
 		return 0;
 	case WM_SIZE:
-		if (wParam == SIZE_RESTORED || wParam == SIZE_MINIMIZED || wParam == SIZE_MAXIMIZED)
+		if (wParam == SIZE_RESTORED  || wParam == SIZE_MAXIMIZED ||wParam == SIZE_MAXSHOW)
 		{
 			auto w = LOWORD(lParam); 
 			auto h = HIWORD(lParam); 
 
 			resize(hWnd, w,h);
-		}
-		return 0 ;
-	case WM_PAINT:
-		{
 			Framework::needPaint = true;
 		}
-		break;
-	case WM_ACTIVATEAPP:
+		else if (wParam == SIZE_MINIMIZED || wParam == SIZE_MAXHIDE)
 		{
-			if (wParam == FALSE)
-				Framework::needPaint = false; 
+			Framework::needPaint = false;
 		}
-		break;
+		return 0 ;
 	}
 
 	if (processor)
