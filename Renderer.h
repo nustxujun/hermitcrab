@@ -2,8 +2,6 @@
 #include "Common.h"
 
 
-//#define D3D12ON7
-
 #if defined(D3D12ON7) 
 	#include "D3D12Downlevel.h"
 
@@ -623,7 +621,9 @@ public:
 		void clearDepthStencil(const Resource::Ref& rt, float depth, UINT8 stencil);
 
 		void setViewport(const D3D12_VIEWPORT& vp);
+		void setViewportToScreen();
 		void setScissorRect(const D3D12_RECT& rect);
+		void setScissorRectToScreen();
 		void setRenderTarget(const Resource::Ref& rt, const Resource::Ref& ds = {});
 		void setRenderTargets(const std::vector<Resource::Ref>& rts, const Resource::Ref& ds = {});
 		void setPipelineState(PipelineState::Ref ps);

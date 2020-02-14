@@ -1969,9 +1969,21 @@ void Renderer::CommandList::setViewport(const D3D12_VIEWPORT& vp)
 	mCmdList->RSSetViewports(1, &vp);
 }
 
+void Renderer::CommandList::setViewportToScreen()
+{
+	auto size = Renderer::getSingleton()->getSize();
+	setViewport({0,0, (float)size[0],(float)size[1],0.0f, 1.0f});
+}
+
 void Renderer::CommandList::setScissorRect(const D3D12_RECT& rect)
 {
 	mCmdList->RSSetScissorRects(1, &rect);
+}
+
+void Renderer::CommandList::setScissorRectToScreen()
+{
+	auto size = Renderer::getSingleton()->getSize();
+	setScissorRect({0,0, size[0],size[1]});
 }
 
 void Renderer::CommandList::setRenderTarget(const Resource::Ref& rt, const Resource::Ref& ds)
