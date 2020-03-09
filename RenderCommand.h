@@ -76,6 +76,13 @@ public:
 		UINT size
 	);
 
+	void createSky(
+		const std::string& name, 
+		const std::string& mesh,
+		const std::string& material ,
+		const Matrix& transform
+	);
+
 	void done();
 	void invalid();
 	void invalidSelf();

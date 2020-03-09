@@ -124,6 +124,11 @@ void RenderCommand::createReflectionProbe(const std::string& name, const Matrix&
 	mIPC.send(data, size);
 }
 
+void RenderCommand::createSky(const std::string & name, const std::string & mesh, const std::string & material,const Matrix& transform)
+{
+	mIPC << "createSky" << name << mesh << material << transform;
+}
+
 
 void RenderCommand::record()
 {
