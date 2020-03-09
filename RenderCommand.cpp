@@ -266,6 +266,18 @@ void RenderCommand::record()
 		return true;
 	};
 
+	processors["createSky"] = [&ipc = mIPC]() {
+		auto context = RenderContext::getSingleton();
+		std::string name, mesh, material;
+		Matrix world;
+		ipc >> name >> mesh >> material >> world;
+
+		auto env = context->createObject<Environment>(name);
+		env->mesh = context->getObject<Mesh>(mesh);
+		env->material = context->getObject<Material>(material);
+		env->transform = world;
+		return true;
+	};
 
 	processors["done"] = []() {
 		

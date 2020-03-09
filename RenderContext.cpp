@@ -52,14 +52,13 @@ std::string Material::genShaderContent(Visualizaion v)
 	switch (v)
 	{
 	case Visualizaion::Final:
-		content += "	half3 V = normalize(campos.xyz - input.worldPos.xyz);\n";
 		content += "	half3 R = normalize(reflect(-V.xyz, _normal.xyz));\n";
 		content += "	half3 _directLitColor = (half3)directBRDF(Roughness, Metallic, F0_DEFAULT, Base_Color.rgb, _normal.xyz,-sundir, V);\n";
 		content += "	half4 refenvscoord = half4(R.xyz, 0);\n";
 		// get mip from roughness (ue4)
 		content += Common::format("	half _mip = ", ReflectionProbe::miplevels - 1, " - 1 -", 1, " + 1.2f * log2(Roughness);\n");
 		content += "	half3 _prefiltered = ReflectionEnvs.SampleLevel(linearSampler, refenvscoord, _mip).rgb;\n";
-		content += "	half3 _lutvalue = LUT(_normal.xyz, V, Roughness, PreintegratedGF,linearSampler);\n";
+		content += "	half3 _lutvalue = LUT(_normal.xyz, V, Roughness, PreintegratedGF,linearClamp);\n";
 		content += "	half3 _iblcolor = indirectBRDF(0, _prefiltered, _lutvalue, Roughness, Metallic, F0_DEFAULT, Base_Color.rgb, _normal.xyz, V);\n";
 		content += "	return half4(_directLitColor * suncolor.rgb + Emissive_Color.rgb + _iblcolor.rgb,1);\n";
 		//content += "	return half4(_lutvalue.xyz,1);";
@@ -142,6 +141,20 @@ void Material::compileShaders(Visualizaion v)
 		});
 
 	ps->registerStaticSampler({
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+		0,0,
+		D3D12_COMPARISON_FUNC_NEVER,
+		D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+		0,
+		D3D12_FLOAT32_MAX,
+		2,0,
+		D3D12_SHADER_VISIBILITY_PIXEL
+		});
+
+	ps->registerStaticSampler({
 		D3D12_FILTER_ANISOTROPIC,
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,
@@ -151,7 +164,7 @@ void Material::compileShaders(Visualizaion v)
 		D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
 		0,
 		D3D12_FLOAT32_MAX,
-		2,0,
+		3,0,
 		D3D12_SHADER_VISIBILITY_PIXEL
 		});
 	Renderer::RenderState rs = Renderer::RenderState::GeneralSolid;
@@ -227,4 +240,16 @@ void Texture::createLUT()
 		Renderer::getSingleton()->destroyResource(LUT);
 
 	LUT = Renderer::getSingleton()->createTextureFromFile("lut.png", false);
+}
+
+void Environment::init()
+{
+	model = RenderContext::getSingleton()->createObject<Model>(name +  "_model");
+
+	model->meshs.push_back(mesh);
+	model->materials.push_back(material);
+	model->transform = transform;
+	model->normTransform = transform;
+	model->init();
+	
 }

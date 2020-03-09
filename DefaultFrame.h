@@ -15,7 +15,7 @@ public:
 	RenderCommand rendercmd ;
 	std::shared_ptr<DefaultPipeline> pipeline;
 	Renderer::ConstantBuffer::Ptr commonConsts;
-
+	float deltaTime = 0;
 
 public:
 	void init(bool runwithipc = false)
@@ -40,27 +40,17 @@ public:
 
 	void updateConsts()
 	{
-		struct {
-			Vector4 campos;
-			Vector4 camdir;
-
-			struct 
-			{
-				Vector4 pos; // pos and range
-				Vector4 dir;
-				Vector4 color;
-			} lights[4];
-			int numlights;
-
-			Vector3 sundir;
-			Vector4 suncolor;
-		}infos = {};
-
+		if (!commonConsts)
+			return;
+	
+		Vector3 sundir;
+		Vector4 camdir, campos;
+		Color suncolor;
 		for (auto& l : mLights)
 		{
 			switch (l->type)
 			{
-			case Light::LT_DIR:{infos.sundir = l->dir; infos.suncolor = l->color;} break;
+			case Light::LT_DIR:{sundir = l->dir; suncolor = l->color;} break;
 			case Light::LT_POINT:
 			case Light::LT_SPOT:
 			default:
@@ -69,12 +59,18 @@ public:
 		}
 
 		auto cam = getObject<Camera>("main");
-		infos.camdir = { cam->dir[0],cam->dir[1],cam->dir[2],0 };
-		infos.campos = { cam->pos[0],cam->pos[1],cam->pos[2],0 };
+		camdir = { cam->dir[0],cam->dir[1],cam->dir[2],0 };
+		campos = { cam->pos[0],cam->pos[1],cam->pos[2],0 };
 
-		infos.suncolor = { infos.suncolor[0] ,infos.suncolor[1] ,infos.suncolor[2]  };
-		if (commonConsts)
-			commonConsts->blit(&infos,0, sizeof(infos));
+
+		commonConsts->setVariable("campos", &campos);
+		commonConsts->setVariable("camdir", &camdir);
+		int numlights = 0;
+		commonConsts->setVariable("numlights", &numlights);
+		commonConsts->setVariable("sundir", &sundir);
+		commonConsts->setVariable("suncolor", &suncolor);
+		commonConsts->setVariable("deltatime", &deltaTime);
+
 	}
 
 	void updateImpl()
@@ -87,10 +83,10 @@ public:
 		if (delta > 0)
 		{
 			lastTime = cur;
-			float time = (float)framecount * 1000.0f / (float)delta;
+			deltaTime = (float)framecount * 1000.0f / (float)delta;
 			framecount = 0;
-			static float history = time;
-			history = history * 0.99f + time * 0.01f;
+			static float history = deltaTime;
+			history = history * 0.99f + deltaTime * 0.01f;
 
 			std::stringstream ss;
 			ss.precision(4);
