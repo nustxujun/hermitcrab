@@ -165,6 +165,18 @@ struct ReflectionProbe :public Object
 
 };
 
+struct Environment : public Object
+{
+	using Ptr = std::shared_ptr<Environment>;
+
+	Mesh::Ptr mesh;
+	Material::Ptr material;
+	Matrix transform;
+	void init();
+
+	Model::Ptr model;
+};
+
 class RenderContext
 {
 	static RenderContext* instance;

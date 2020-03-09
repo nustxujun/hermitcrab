@@ -36,6 +36,9 @@ cbuffer CommonConstants
 	// directional light
 	float3 sundir;
 	float4 suncolor;
+
+	float deltatime;
+
 };
 
 half3 calNormal(

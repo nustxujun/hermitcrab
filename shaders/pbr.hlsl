@@ -86,13 +86,14 @@ float3 FresnelSchlickRoughness(float3 v, float3 n, float3 f0, float roughness)
 	float NdotV = max(dot(v, n), 0.0f);
 	float r1 = 1.0f - roughness;
 	return f0 + (max(float3(r1, r1, r1), f0) - f0) * pow(1 - NdotV, 5.0f);
+
 }
 
 float3 LUT(float3 normal, float3 viewDir, float roughness, Texture2D lut, SamplerState smp)
 {
 	float NdotV = dot(normal, viewDir);
 	NdotV = max(NdotV, 0.0f);
-	float2 uv = float2(NdotV, roughness);
+	float2 uv = float2(NdotV, 1 - roughness);
 	return lut.Sample(smp, uv).rgb;
 }
 
