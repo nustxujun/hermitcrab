@@ -3,7 +3,7 @@
 
 #include "DefaultFrame.h"
 
-#if defined(NO_UE4) || defined(_CONSOLE)
+#if defined(_EXAMPLE)
 
 struct End
 {
