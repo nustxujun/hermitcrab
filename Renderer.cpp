@@ -2765,7 +2765,7 @@ void Renderer::Profile::begin()
 
 void Renderer::Profile::end()
 {
-	float dtime = float((double)(std::chrono::high_resolution_clock::now() - mCPUTime).count() / 1000000000.0);
+	float dtime = float((double)(std::chrono::high_resolution_clock::now() - mCPUTime).count() / 1000000.0);
 	mCPUHistory = mCPUHistory * 0.9f + dtime * 0.1f;
 
 	auto renderer = Renderer::getSingleton();

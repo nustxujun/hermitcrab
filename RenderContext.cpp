@@ -64,7 +64,10 @@ std::string Material::genShaderContent(Visualizaion v)
 		//content += "	return half4(_lutvalue.xyz,1);";
 		break;
 	case Visualizaion::BaseColor:
-		content += "return half4(Base_Color.rgb + Emissive_Color.rgb, 1) ;";
+		content += "return half4(Base_Color.rgb , 1) ;";
+		break;
+	case Visualizaion::EmissiveColor:
+		content += "return half4(Emissive_Color.rgb, 1) ;";
 		break;
 	case Visualizaion::VertexColor:
 		content += "return input.color;";
@@ -89,6 +92,11 @@ std::string Material::genBoundResouces()
 	std::string ret;
 	ret += "TextureCubeArray ReflectionEnvs;\n";
 	ret += "Texture2D PreintegratedGF;\n";
+	ret +=	"cbuffer PSConstant\n"
+			"{\n"
+			"	float3	objpos;\n"
+			"	float	objradius;\n"
+			"};\n";
 
 	return ret;
 }
@@ -110,7 +118,7 @@ void Material::compileShaders(Visualizaion v)
 	const char resource_macro[] = "__BOUND_RESOURCE__";
 	blob.replace(blob.find(resource_macro), sizeof(resource_macro), genBoundResouces());
 	auto ps = renderer->compileShader(shaders.ps, blob, "ps", SM_PS);
-	ps->enable32BitsConstantsByName("PSConstant");
+	//ps->enable32BitsConstantsByName("PSConstant");
 	std::vector<Renderer::Shader::Ptr> ss = { vs, ps };
 	ps->registerStaticSampler({
 		D3D12_FILTER_MIN_MAG_MIP_POINT,
@@ -242,14 +250,42 @@ void Texture::createLUT()
 	LUT = Renderer::getSingleton()->createTextureFromFile("lut.png", false);
 }
 
-void Environment::init()
+void Sky::init()
 {
 	model = RenderContext::getSingleton()->createObject<Model>(name +  "_model");
 
-	model->meshs.push_back(mesh);
+	model->mesh = (mesh);
 	model->materials.push_back(material);
 	model->transform = transform;
 	model->normTransform = transform;
+	model->aabb = aabb;
 	model->init();
 	
+}
+
+void Model::init()
+{
+
+	for (auto& m : materials)
+	{
+		cbuffers.push_back({
+			m->pipelineState->createConstantBuffer(Renderer::Shader::ST_VERTEX, "VSConstant"),
+			{},{},{},
+			m->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL, "PSConstant"),
+		});
+	}
+
+	boundingradius = std::max(aabb.extent[0], std::max(aabb.extent[1], aabb.extent[2]));
+}
+
+void Model::visitConstant(Renderer::Shader::ShaderType type,UINT index, const std::function<void(Renderer::ConstantBuffer::Ptr&)>& visitor)
+{
+	if (index >= cbuffers.size())
+		return;
+
+	auto& cb = cbuffers[index];
+	if (!cb[type])
+		return;
+
+	visitor(cb[type]);
 }

@@ -80,8 +80,8 @@ struct Material: public Object
 		BaseColor,
 		Roughness,
 		Metallic,
-
 		Normal,
+		EmissiveColor,
 		Num,
 	};
 
@@ -114,19 +114,17 @@ struct Model : public Object
 {
 	using Ptr = std::shared_ptr<Model>;
 
-	std::vector<Mesh::Ptr> meshs;
+	Mesh::Ptr mesh;
 	Matrix transform;
 	Matrix normTransform;
+	AABB aabb;
+	float boundingradius;
 	std::vector<Material::Ptr> materials;
-	Renderer::ConstantBuffer::Ptr vcbuffer;
-	//Renderer::ConstantBuffer::Ptr pcbuffer;
+	std::vector<std::array<Renderer::ConstantBuffer::Ptr, Renderer::Shader::ST_MAX_NUM>> cbuffers;
 
-	void init()
-	{
-		vcbuffer = materials[0]->pipelineState->createConstantBuffer(Renderer::Shader::ST_VERTEX,"VSConstant");
-		//pcbuffer = m->pipelineState->createConstantBuffer(Renderer::Shader::ST_PIXEL, "PSConstant");
+	void init();
 
-	}
+	void visitConstant( Renderer::Shader::ShaderType type,UINT index, const std::function<void (Renderer::ConstantBuffer::Ptr&)>& visitor);
 };
 
 struct Light : public Object
@@ -165,13 +163,14 @@ struct ReflectionProbe :public Object
 
 };
 
-struct Environment : public Object
+struct Sky : public Object
 {
-	using Ptr = std::shared_ptr<Environment>;
+	using Ptr = std::shared_ptr<Sky>;
 
 	Mesh::Ptr mesh;
 	Material::Ptr material;
 	Matrix transform;
+	AABB aabb;
 	void init();
 
 	Model::Ptr model;

@@ -136,6 +136,7 @@ DefaultPipeline::DefaultPipeline()
 		ImGui::RadioButton("metallic", &cur, 4);
 
 		ImGui::RadioButton("normal", &cur, 5);
+		ImGui::RadioButton("emissive color", &cur, 6);
 
 		if (cur != selected)
 		{

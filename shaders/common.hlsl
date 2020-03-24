@@ -31,14 +31,14 @@ cbuffer CommonConstants
 
 	// lights
 	LightInfo lights[4];
-	int numlights;
 
-	// directional light
-	float3 sundir;
-	float4 suncolor;
+	int numlights;
+	float3 sundir; // directional light dir
+	
+	float4 suncolor;// directional light color
 
 	float deltatime;
-
+	float time;
 };
 
 half3 calNormal(
