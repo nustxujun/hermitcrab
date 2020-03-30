@@ -166,6 +166,7 @@ void Renderer::beginFrame()
 
 void Renderer::endFrame()
 {
+	mRenderTaskExecutor->execute();
 	commitCommands();
 
 	present();
@@ -806,6 +807,11 @@ ComPtr<ID3D12QueryHeap> Renderer::getTimeStampQueryHeap()
 	return mTimeStampQueryHeap;
 }
 
+void Renderer::addRenderTask(RenderTask&& task)
+{
+	mRenderTaskExecutor->addTask(std::move(task));
+}
+
 
 
 void Renderer::uninitialize()
@@ -904,6 +910,8 @@ void Renderer::initCommands()
 	mResourceCommandList->close();
 	mCurrentFrame = 0;
 	mQueueFence = createFence();
+
+	mRenderTaskExecutor = decltype(mRenderTaskExecutor)(new RenderTaskExecutor({mCommandList}));
 }
 
 void Renderer::initDescriptorHeap()
@@ -1082,6 +1090,12 @@ void Renderer::resetCommands()
 #else
 	mCurrentFrame = (mCurrentFrame + 1) % NUM_BACK_BUFFERS;
 #endif
+
+
+}
+
+void Renderer::executeCommands()
+{
 
 
 }
@@ -2891,4 +2905,60 @@ void Renderer::ConstantBuffer::blit(const void * buffer, UINT64 offset , UINT64 
 D3D12_GPU_DESCRIPTOR_HANDLE Renderer::ConstantBuffer::getHandle() const
 {
 	return mView.gpu;
+}
+
+Renderer::RenderTaskExecutor::RenderTaskExecutor(const std::vector<CommandList::Ref>& cmdlists)
+{
+	mCmdlists = cmdlists;
+
+	for (auto& c: cmdlists)
+		mWorkers.emplace_back([this]() {
+			mDispatcher.run();
+		});
+}
+
+void Renderer::RenderTaskExecutor::addTask(RenderTask&& task)
+{
+	mDispatcher.execute_strand([this, task = std::move(task)](){
+		mTasks.push_back(task);
+	});
+}
+
+void Renderer::RenderTaskExecutor::execute()
+{
+	std::mutex mutex;
+	std::unique_lock<std::mutex> lock(mutex);
+	std::condition_variable cv;
+
+	std::function<void()> imp;
+	imp = [&,this]() {
+		if (mCmdlists.empty() )
+			return;
+
+		auto count = std::min(mCmdlists.size(), mTasks.size());
+		for (auto i = 0; i < count; ++i)
+		{
+			auto t = mTasks.back();
+			auto c = mCmdlists.back();
+			mDispatcher.invoke([&,this,task = std::move(t), cmdlist = std::move(c) ]() {
+				task(cmdlist);
+				mDispatcher.execute_strand([&,this,cmdlist = std::move(cmdlist)]() {
+					mCmdlists.emplace_back(cmdlist);
+					if (!mTasks.empty())
+						imp();
+				});
+			});
+		}
+
+		mTasks.erase(mTasks.begin() + count - 1, mTasks.end());
+		mCmdlists.erase(mCmdlists.begin() + count - 1, mCmdlists.end());
+	};
+
+
+	imp();
+	mDispatcher.invoke_strand([&](){
+		cv.notify_one();
+	});
+	cv.wait(lock);
+
 }

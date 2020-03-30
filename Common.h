@@ -22,9 +22,6 @@
 #include <bitset>
 #include <chrono>
 
-// windows
-#define WIN32_LEAN_AND_MEAN 
-
 #if defined(NO_UE4) || defined(_CONSOLE)
 #include <Windows.h>
 #else

@@ -15,18 +15,27 @@ TaskExecutor::~TaskExecutor()
 		t.join();
 }
 
-void TaskExecutor::addTask(const Dispatcher::Handler& task, bool immediate)
+void TaskExecutor::addTask(Dispatcher::Handler&& task)
 {
-	if (immediate)
-		mDispatcher.execute(task);
-	else
-		mDispatcher.invoke(task);
+	mDispatcher.invoke(task);
 }
 
-void TaskExecutor::addTaskInQueue(const Dispatcher::Handler& task, bool immediate)
+void TaskExecutor::addQueuingTask(Dispatcher::Handler&& task)
 {
-	if (immediate)
-		mDispatcher.execute_strand(task);
-	else
-		mDispatcher.invoke_strand(task);
+	mDispatcher.invoke_strand(task);
 }
+
+void TaskExecutor::complete()
+{
+	std::mutex m;
+	std::unique_lock<std::mutex> lock;
+	std::condition_variable cv;
+
+	mDispatcher.invoke_strand([&](){
+		cv.notify_one();
+	});
+
+	cv.wait(lock);
+}
+
+

@@ -1,6 +1,6 @@
 #pragma once
 #include "Common.h"
-
+#include "TaskExecutor.h"
 
 #if defined(D3D12ON7) 
 	#include "D3D12Downlevel.h"
@@ -57,6 +57,7 @@ public:
 public:
 	using Ptr = std::shared_ptr<Renderer>;
 	using MemoryData = std::shared_ptr<std::vector<char>>;
+
 
 	enum ViewType
 	{
@@ -661,7 +662,24 @@ public:
 		std::map<ID3D12Resource*, Resource::Ref> mUAVBarrier;
 	};
 
+	using RenderTask = std::function<void(CommandList::Ref)>;
+	class RenderTaskExecutor final 
+	{
+	public:
+		using Ptr = std::shared_ptr<RenderTaskExecutor>;
 
+		RenderTaskExecutor(const std::vector<CommandList::Ref>& cmdlists);
+
+		void addTask(RenderTask&& task);
+
+		void execute();
+	private:
+		std::vector<CommandList::Ref> mCmdlists;
+		std::vector<RenderTask> mTasks;
+
+		std::vector<std::thread> mWorkers;
+		Dispatcher mDispatcher;
+	};
 
 	static Renderer::Ptr create();
 	static void destory();
@@ -712,6 +730,8 @@ public:
 	Profile::Ref createProfile();
 	ComPtr<ID3D12QueryHeap> getTimeStampQueryHeap();
 
+	void addRenderTask(RenderTask&& task);
+
 private:
 	MemoryData createMemoryData(size_t size = 0)
 	{
@@ -731,6 +751,7 @@ private:
 	void recycleCommandAllocator(CommandAllocator::Ptr ca);
 	void commitCommands();
 	void resetCommands();
+	void executeCommands();
 	void syncFrame();
 
 	ComPtr<IDXGIFACTORY> getDXGIFactory();
@@ -776,5 +797,8 @@ private:
 	std::array<PipelineState::Ref, 4> mGenMipsPSO;
 	PipelineState::Ref mSRGBConv;
 	bool mVSync = false;
+
+
+	RenderTaskExecutor::Ptr mRenderTaskExecutor;
 
 };
