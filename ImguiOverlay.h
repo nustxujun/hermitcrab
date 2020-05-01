@@ -6,19 +6,15 @@
 #include "RenderGraph.h"
 
 class ImGuiObject;
-class ImGuiPass final: public RenderGraph::RenderPass
+class ImGuiPass 
 {
-	void operator=(RenderPass&) = delete;
 public:
 	using Ptr = std::shared_ptr<ImGuiPass>;
 public:
 	ImGuiPass();
 	~ImGuiPass();
 
-	void setup();
-	void compile(const RenderGraph::Inputs& inputs);
-	void execute() ;
-
+	Renderer::RenderTask execute() ;
 
 	void resize(HWND win, int width, int height);
 
@@ -26,7 +22,7 @@ private:
 	void initImGui();
 	void initRendering();
 	void initFonts();
-	void draw(ImDrawData* data);
+	Renderer::RenderTask draw(ImDrawData* data);
 
 	LRESULT process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 private:

@@ -3,7 +3,6 @@
 
 ImGuiPass::ImGuiPass()
 {
-	setName("ImGui");
 	initImGui();
 	initRendering();
 	initFonts();
@@ -118,10 +117,10 @@ void ImGuiPass::initRendering()
 }
 
 
-void ImGuiPass::draw(ImDrawData* data)
+Renderer::RenderTask ImGuiPass::draw(ImDrawData* data)
 {
 	if (data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f || data->TotalIdxCount <= 0 )
-		return;
+		return {};
 
 	auto renderer = Renderer::getSingleton();
 	auto& VertexBuffer = mVertexBuffer[renderer->getCurrentFrameIndex()];
@@ -168,53 +167,63 @@ void ImGuiPass::draw(ImDrawData* data)
 		{ 0.0f,  0.0f,   0.0f,       1.0f },
 	};
 
-	auto cmdlist = renderer->getCommandList();
-	cmdlist->setPipelineState(mPipelineState);
+	//auto cmdlist = renderer->getCommandList();
 
-	//mConstant->blit(mvp);
-	//mPipelineState->setVSConstant("vertexBuffer", mConstant);
-	mPipelineState->setVSVariable("ProjectionMatrix", mvp);
+	std::shared_ptr<ImDrawData> d(new ImDrawData());
+	memcpy(&*d, data, sizeof(ImDrawData));
 
-	//cmdlist->set32BitConstants(1,16,mvp,0);
 
-	D3D12_VIEWPORT vp = {0};
-	vp.Width = data->DisplaySize.x;
-	vp.Height = data->DisplaySize.y;
-	vp.MinDepth = 0.0f;
-	vp.MaxDepth = 1.0f;
-	vp.TopLeftX = vp.TopLeftX = 0;
-	cmdlist->setViewport(vp);
-	cmdlist->setVertexBuffer(VertexBuffer);
-	cmdlist->setIndexBuffer(IndexBuffer);
-	cmdlist->setPrimitiveType();
 
-	int global_idx_offset = 0;
-	int global_vtx_offset = 0;
-	ImVec2 clip_off = data->DisplayPos;
-	for (int n = 0; n < data->CmdListsCount; n++)
-	{
-		const ImDrawList* cmd_list = data->CmdLists[n];
-		for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
+	return [=, data = std::move(d)](auto cmdlist) {
+		cmdlist->setPipelineState(mPipelineState);
+
+		//mConstant->blit(mvp);
+		//mPipelineState->setVSConstant("vertexBuffer", mConstant);
+		mPipelineState->setVSVariable("ProjectionMatrix", mvp);
+
+		//cmdlist->set32BitConstants(1,16,mvp,0);
+
+		D3D12_VIEWPORT vp = { 0 };
+		vp.Width = data->DisplaySize.x;
+		vp.Height = data->DisplaySize.y;
+		vp.MinDepth = 0.0f;
+		vp.MaxDepth = 1.0f;
+		vp.TopLeftX = vp.TopLeftX = 0;
+		cmdlist->setViewport(vp);
+		cmdlist->setVertexBuffer(VertexBuffer);
+		cmdlist->setIndexBuffer(IndexBuffer);
+		cmdlist->setPrimitiveType();
+
+		int global_idx_offset = 0;
+		int global_vtx_offset = 0;
+		ImVec2 clip_off = data->DisplayPos;
+		for (int n = 0; n < data->CmdListsCount; n++)
 		{
-			const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-			if (pcmd->UserCallback != NULL)
+			const ImDrawList* cmd_list = data->CmdLists[n];
+			for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
 			{
+				const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
+				if (pcmd->UserCallback != NULL)
+				{
 
+				}
+				else
+				{
+					const D3D12_RECT r = { (LONG)(pcmd->ClipRect.x - clip_off.x), (LONG)(pcmd->ClipRect.y - clip_off.y), (LONG)(pcmd->ClipRect.z - clip_off.x), (LONG)(pcmd->ClipRect.w - clip_off.y) };
+					cmdlist->setScissorRect(r);
+					auto handle = (D3D12_GPU_DESCRIPTOR_HANDLE*)&pcmd->TextureId;
+					mPipelineState->setPSResource("texture0", *handle);
+					//cmdlist->get()->SetGraphicsRootDescriptorTable(0, *handle);
+					//cmdlist->setTexture(0, mFonts);
+					cmdlist->drawIndexedInstanced(pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
+				}
 			}
-			else
-			{
-				const D3D12_RECT r = { (LONG)(pcmd->ClipRect.x - clip_off.x), (LONG)(pcmd->ClipRect.y - clip_off.y), (LONG)(pcmd->ClipRect.z - clip_off.x), (LONG)(pcmd->ClipRect.w - clip_off.y) };
-				cmdlist->setScissorRect(r);
-				auto handle = (D3D12_GPU_DESCRIPTOR_HANDLE*)&pcmd->TextureId;
-				mPipelineState->setPSResource("texture0", *handle);
-				//cmdlist->get()->SetGraphicsRootDescriptorTable(0, *handle);
-				//cmdlist->setTexture(0, mFonts);
-				cmdlist->drawIndexedInstanced(pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
-			}
+			global_idx_offset += cmd_list->IdxBuffer.Size;
+			global_vtx_offset += cmd_list->VtxBuffer.Size;
 		}
-		global_idx_offset += cmd_list->IdxBuffer.Size;
-		global_vtx_offset += cmd_list->VtxBuffer.Size;
-	}
+
+	};
+
 }
 #define GET_X_LPARAM(lp)	((int)(short)LOWORD(lp))
 #define GET_Y_LPARAM(lp)	((int)(short)HIWORD(lp))
@@ -237,21 +246,13 @@ LRESULT ImGuiPass::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 	return DefWindowProcW(hWnd, message, wParam, lParam);
 }
 
-void ImGuiPass::setup()
+
+Renderer::RenderTask ImGuiPass::execute()
 {
 	HWND win = Renderer::getSingleton()->getWindow();
 	RECT rect;
-	::GetClientRect(win,&rect);
-	resize(win, std::max(1L, rect.right), std::max(1L,rect.bottom));
-}
-
-void ImGuiPass::compile(const RenderGraph::Inputs & inputs)
-{
-	write(inputs[0]->getRenderTarget());
-}
-
-void ImGuiPass::execute()
-{
+	::GetClientRect(win, &rect);
+	resize(win, std::max(1L, rect.right), std::max(1L, rect.bottom));
 	
 	ImGui::NewFrame();
 	//ImGui::ShowDemoWindow();
@@ -260,7 +261,7 @@ void ImGuiPass::execute()
 	ImGui::Render();
 
 	auto data = ImGui::GetDrawData();
-	draw(data);
+	return draw(data);
 }
 
 void ImGuiPass::resize(HWND win, int width, int height)

@@ -77,7 +77,6 @@ public:
 		size_t drawcallCount = 0;
 		size_t primitiveCount = 0;
 		size_t numResources = 0;
-		size_t numTransientOnUse = 0;
 		size_t videoMemory = 0;
 
 		void reset()
@@ -85,7 +84,6 @@ public:
 			drawcallCount = 0;
 			primitiveCount = 0;
 			numResources = 0;
-			numTransientOnUse = 0;
 			videoMemory = 0;
 		}
 
@@ -94,7 +92,6 @@ public:
 			drawcallCount = di.drawcallCount;
 			primitiveCount = di.primitiveCount;
 			numResources = di.numResources;
-			numTransientOnUse = di.numTransientOnUse;
 			videoMemory = di.videoMemory;
 		}
 	};
@@ -252,13 +249,8 @@ public:
 			HT_Num
 		};
 	public:
-		enum ResourceType
-		{
-			RT_PERSISTENT,
-			RT_TRANSIENT,
-		};
 
-		Resource(ResourceType type = RT_PERSISTENT);
+		Resource();
 		Resource(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);
 		virtual ~Resource();
 		void init(UINT64 size, D3D12_HEAP_TYPE ht, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
@@ -277,9 +269,6 @@ public:
 
 		ID3D12Resource* get()const{return mResource.Get();}
 		const D3D12_RESOURCE_DESC& getDesc()const{return mDesc;}
-		ResourceType getType()const{return mType;}
-		static size_t hash(const D3D12_RESOURCE_DESC& desc);
-		size_t hash();
 		UINT64 getSize()const{return mDesc.Width;}
 		
 		void releaseAllHandle();
@@ -305,8 +294,6 @@ public:
 		ComPtr<ID3D12Resource> mResource;
 		D3D12_RESOURCE_DESC mDesc;
 		std::vector<D3D12_RESOURCE_STATES> mState;
-		ResourceType mType = RT_PERSISTENT;
-		size_t mHashValue = 0;
 		std::string mName;
 		std::array<std::vector<DescriptorHandle>, HT_Num> mHandles;
 	};
@@ -579,34 +566,18 @@ public:
 		std::map<Shader::ShaderType, std::map<UINT, std::vector<char>>> mCBuffersBy32Bits;
 	};
 
-	class Profile:public Interface<Profile>
-	{
-		friend class Renderer;
-	public:
-		Profile(UINT index);
 
-		float getCPUTime();
-		float getGPUTime();
-
-		void begin();
-		void end();
-	private:
-		UINT mIndex;
-		float mCPUHistory = 0;
-		float mGPUHistory = 0;
-		std::chrono::high_resolution_clock::time_point mCPUTime;
-	};
 
 	class CommandList final : public Interface<CommandList>
 	{
 	public:
-		CommandList(const CommandAllocator::Ref& alloc);
+		CommandList();
 		~CommandList();
 		ID3D12GraphicsCommandList* get();
 
 
 		void close();
-		void reset(const CommandAllocator::Ref& alloc);
+		void reset();
 
 		void transitionBarrier( Resource::Ref res, D3D12_RESOURCE_STATES state, UINT subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool autoflush = false);
 		void uavBarrier(Resource::Ref res, bool autoflush = false);
@@ -645,9 +616,10 @@ public:
 		void generateMips(Resource::Ref texture);
 
 		Fence::Ptr getFence(){return mAllocator->mFence;}
+		CommandAllocator::Ref getAllocator(){return mAllocator;}
 	private:
 		
-		CommandAllocator::Ref mAllocator;
+		CommandAllocator::Ptr mAllocator;
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
 		PipelineState::Ref mCurrentPipelineState;
 
@@ -662,6 +634,24 @@ public:
 		std::map<ID3D12Resource*, Resource::Ref> mUAVBarrier;
 	};
 
+	class Profile :public Interface<Profile>
+	{
+		friend class Renderer;
+	public:
+		Profile(UINT index);
+
+		float getCPUTime();
+		float getGPUTime();
+
+		void begin(Renderer::CommandList::Ref cl);
+		void end(Renderer::CommandList::Ref cl);
+	private:
+		UINT mIndex;
+		float mCPUHistory = 0;
+		float mGPUHistory = 0;
+		std::chrono::high_resolution_clock::time_point mCPUTime;
+	};
+
 	using RenderTask = std::function<void(CommandList::Ref)>;
 	class RenderTaskExecutor final 
 	{
@@ -669,16 +659,18 @@ public:
 		using Ptr = std::shared_ptr<RenderTaskExecutor>;
 
 		RenderTaskExecutor(const std::vector<CommandList::Ref>& cmdlists);
-
-		void addTask(RenderTask&& task);
+		~RenderTaskExecutor();
+		void addTask(RenderTask&& task, bool strand = false);
 
 		void execute();
 	private:
 		std::vector<CommandList::Ref> mCmdlists;
-		std::vector<RenderTask> mTasks;
+		std::vector<std::pair<RenderTask, bool>> mTasks;
 
 		std::vector<std::thread> mWorkers;
-		Dispatcher mDispatcher;
+		std::mutex mMutex;
+		std::condition_variable mCondition;
+		bool mRunning{true};
 	};
 
 	static Renderer::Ptr create();
@@ -701,23 +693,22 @@ public:
 	HWND getWindow()const;
 	ID3D12Device* getDevice();
 	ID3D12CommandQueue* getCommandQueue();
-	CommandList::Ref getCommandList();
 	Resource::Ref getBackBuffer();
 	UINT getCurrentFrameIndex();
 	void flushCommandQueue();
 	void updateResource(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref, UINT)>& copy);
 	void updateBuffer(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size);
 	void updateTexture(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, bool srgb);
-	void executeResourceCommands(const std::function<void(CommandList::Ref)>& dofunc, Renderer::CommandAllocator::Ptr alloc = {});
+	void executeResourceCommands(const std::function<void(CommandList::Ref)>& dofunc);
 
 	Shader::Ptr compileShaderFromFile(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 	Shader::Ptr compileShader(const std::string& name, const std::string& context, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {}, const std::string& cachename = {});
 	Fence::Ptr createFence();
-	Resource::Ref createResource(size_t size, bool isShaderResource, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, Resource::ResourceType restype = Resource::RT_PERSISTENT);
+	Resource::Ref createResource(size_t size, bool isShaderResource, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
 	void destroyResource(Resource::Ref res);
-	Resource::Ref createTexture(UINT width, UINT height, UINT depth, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
-	Resource::Ref createTextureCube(UINT size, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
-	Resource::Ref createTextureCubeArray(UINT size, DXGI_FORMAT format, UINT arraySize, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, Resource::ResourceType restype = Resource::RT_PERSISTENT);
+	Resource::Ref createTexture(UINT width, UINT height, UINT depth, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+	Resource::Ref createTextureCube(UINT size, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+	Resource::Ref createTextureCubeArray(UINT size, DXGI_FORMAT format, UINT arraySize, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
 
 	Resource::Ref createTextureFromFile(const std::string& filename, bool srgb);
 	Resource::Ref createTexture2D(UINT width, UINT height, DXGI_FORMAT format ,UINT miplevels, const void* data, bool srgb);
@@ -728,9 +719,9 @@ public:
 	PipelineState::Ref createComputePipelineState(const Shader::Ptr& shader);
 
 	Profile::Ref createProfile();
-	ComPtr<ID3D12QueryHeap> getTimeStampQueryHeap();
 
-	void addRenderTask(RenderTask&& task);
+
+	void addRenderTask(RenderTask&& task, bool strand = false);
 
 private:
 	MemoryData createMemoryData(size_t size = 0)
@@ -773,19 +764,18 @@ private:
 	ComPtr<IDXGISwapChain3> mSwapChain;
 	ComPtr<ID3D12CommandQueue> mCommandQueue;
 	Fence::Ptr mQueueFence;
-	CommandList::Ptr mCommandList;
+	//CommandList::Ptr mCommandList;
+	std::vector<CommandList::Ptr> mCommandLists;
 	CommandList::Ptr mResourceCommandList;
 
 	std::vector<CommandAllocator::Ptr> mCommandAllocators;
 	UINT mCurrentFrame;
-	CommandAllocator::Ptr mCurrentCommandAllocator;
 
 
 	std::array< Resource::Ptr, NUM_BACK_BUFFERS> mBackbuffers;
 	std::array<DescriptorHeap::Ptr, DHT_MAX_NUM> mDescriptorHeaps;
 	std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
 	std::vector<Resource::Ptr> mResources;
-	std::unordered_map<size_t, std::vector<Resource::Ref>> mTransients;
 
 	std::unordered_map<std::string, Resource::Ref> mTextureMap;
 	std::vector<PipelineState::Ptr> mPipelineStates;

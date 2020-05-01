@@ -1,3 +1,4 @@
+#include "Profile.h"
 #include "Renderer.h"
 
 #pragma comment(lib,"d3d12.lib")
@@ -156,12 +157,14 @@ void Renderer::beginFrame()
 	//resetCommands();
 
 
-	mCommandList->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_RENDER_TARGET, 0, true);
+	mCommandLists[0]->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_RENDER_TARGET, 0, true);
 
 
 	auto heap = mDescriptorHeaps[DHT_CBV_SRV_UAV]->get();
-	mCommandList->get()->SetDescriptorHeaps(1, &heap);
+	//mCommandList->get()->SetDescriptorHeaps(1, &heap);
 
+	for (auto& cl: mCommandLists)
+		cl->get()->SetDescriptorHeaps(1, &heap);
 }
 
 void Renderer::endFrame()
@@ -170,10 +173,6 @@ void Renderer::endFrame()
 	commitCommands();
 
 	present();
-
-	mCurrentCommandAllocator->signal();
-	recycleCommandAllocator(mCurrentCommandAllocator);
-	mCurrentCommandAllocator = allocCommandAllocator();
 
 	resetCommands();
 
@@ -218,11 +217,6 @@ ID3D12Device* Renderer::getDevice()
 ID3D12CommandQueue* Renderer::getCommandQueue()
 {
 	return mCommandQueue.Get();
-}
-
-Renderer::CommandList::Ref Renderer::getCommandList() 
-{
-	return mCommandList;
 }
 
 Renderer::Resource::Ref Renderer::getBackBuffer()
@@ -353,16 +347,10 @@ void Renderer::updateTexture(Resource::Ref res, UINT subresource, const void* bu
 	});
 }
 
-void Renderer::executeResourceCommands(const std::function<void(CommandList::Ref)>& dofunc, Renderer::CommandAllocator::Ptr alloc)
+void Renderer::executeResourceCommands(const std::function<void(CommandList::Ref)>& dofunc)
 {
-	bool recycle = false;
-	if (!alloc)
-	{
-		alloc = allocCommandAllocator();
-		recycle = true;
-	}
 
-	mResourceCommandList->reset(alloc);
+	mResourceCommandList->reset();
 
 	auto heap = mDescriptorHeaps[DHT_CBV_SRV_UAV]->get();
 	mResourceCommandList->get()->SetDescriptorHeaps(1, &heap);
@@ -373,11 +361,9 @@ void Renderer::executeResourceCommands(const std::function<void(CommandList::Ref
 	ID3D12CommandList* ppCommandLists[] = { mResourceCommandList->get() };
 	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
-	alloc->signal();
-	alloc->wait();
+	mResourceCommandList->getAllocator()->signal();
+	mResourceCommandList->getAllocator()->wait();
 
-	if (recycle)
-		recycleCommandAllocator(alloc);
 }
 
 Renderer::Shader::Ptr Renderer::compileShaderFromFile(const std::string & absfilepath, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros)
@@ -596,7 +582,7 @@ Renderer::Fence::Ptr Renderer::createFence()
 	return fence;
 }
 
-Renderer::Resource::Ref Renderer::createResource(size_t size, bool isShaderResource, D3D12_HEAP_TYPE type, Resource::ResourceType restype )
+Renderer::Resource::Ref Renderer::createResource(size_t size, bool isShaderResource, D3D12_HEAP_TYPE type )
 {
 
 	D3D12_RESOURCE_DESC resdesc = {};
@@ -612,21 +598,14 @@ Renderer::Resource::Ref Renderer::createResource(size_t size, bool isShaderResou
 	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 	resdesc.Flags = isShaderResource ? D3D12_RESOURCE_FLAG_NONE : D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
 
-	if (restype == Resource::RT_TRANSIENT)
-	{
-		auto res = findTransient(resdesc);
-		if (res)
-			return res;
-	}
-	
-	auto res = Resource::create(restype);
+	auto res = Resource::create();
 	res->init(resdesc, type, D3D12_RESOURCE_STATE_COMMON);
 	addResource(res);
 
 	return res;
 }
 
-Renderer::Resource::Ref Renderer::createTexture(UINT width, UINT height, UINT depth,  DXGI_FORMAT format, UINT nummips, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags, Resource::ResourceType restype)
+Renderer::Resource::Ref Renderer::createTexture(UINT width, UINT height, UINT depth,  DXGI_FORMAT format, UINT nummips, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags)
 {
 	if (width == 0 || height == 0)
 	{
@@ -642,7 +621,7 @@ Renderer::Resource::Ref Renderer::createTexture(UINT width, UINT height, UINT de
 
 	unsigned long maxmips;
 	_BitScanReverse(&maxmips, width | height);
-	nummips = std::max((UINT)maxmips + 1, nummips);
+	nummips = std::min((UINT)maxmips + 1, nummips);
 
 	D3D12_RESOURCE_DESC resdesc = {};
 	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -657,14 +636,7 @@ Renderer::Resource::Ref Renderer::createTexture(UINT width, UINT height, UINT de
 	resdesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	resdesc.Flags = flags;
 
-	if (restype == Resource::RT_TRANSIENT)
-	{
-		auto res = findTransient(resdesc);
-		if (res)
-			return res;
-	}
-
-	auto tex = Resource::create(restype);
+	auto tex = Resource::create();
 	tex->init(resdesc, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON);
 
 	addResource(tex);
@@ -672,16 +644,16 @@ Renderer::Resource::Ref Renderer::createTexture(UINT width, UINT height, UINT de
 	return tex;
 }
 
-Renderer::Resource::Ref Renderer::createTextureCube(UINT size, DXGI_FORMAT format, UINT nummips,D3D12_HEAP_TYPE type, D3D12_RESOURCE_FLAGS flags, Resource::ResourceType restype)
+Renderer::Resource::Ref Renderer::createTextureCube(UINT size, DXGI_FORMAT format, UINT nummips,D3D12_HEAP_TYPE type, D3D12_RESOURCE_FLAGS flags)
 {
-	auto texcube = createTexture(size, size, 6 ,format, nummips,type, flags,restype);
+	auto texcube = createTexture(size, size, 6 ,format, nummips,type, flags);
 	texcube->createTextureCube();
 	return texcube;
 }
 
-Renderer::Resource::Ref Renderer::createTextureCubeArray(UINT size, DXGI_FORMAT format, UINT arraySize, UINT nummips, D3D12_HEAP_TYPE type, D3D12_RESOURCE_FLAGS flags, Resource::ResourceType restype)
+Renderer::Resource::Ref Renderer::createTextureCubeArray(UINT size, DXGI_FORMAT format, UINT arraySize, UINT nummips, D3D12_HEAP_TYPE type, D3D12_RESOURCE_FLAGS flags)
 {
-	auto texcube = createTexture(size, size, 6 * arraySize, format, nummips, type, flags, restype);
+	auto texcube = createTexture(size, size, 6 * arraySize, format, nummips, type, flags);
 	texcube->createTextureCubeArray();
 	return texcube;
 }
@@ -761,22 +733,13 @@ Renderer::ConstantBuffer::Ptr Renderer::createConstantBuffer(UINT size)
 
 void Renderer::destroyResource(Resource::Ref res)
 {
-	
-	if (res->getType() == Resource::RT_TRANSIENT)
+	auto endi = mResources.end();
+	for (auto i = mResources.begin(); i != endi; ++i)
 	{
-		res->releaseAllHandle();
-		mTransients[res->hash()].push_back(res);
-	}
-	else
-	{
-		auto endi = mResources.end();
-		for (auto i = mResources.begin(); i != endi; ++i)
+		if (res == *i)
 		{
-			if (res == *i)
-			{
-				mResources.erase(i);
-				return;
-			}
+			mResources.erase(i);
+			return;
 		}
 	}
 }
@@ -802,14 +765,10 @@ Renderer::Profile::Ref Renderer::createProfile()
 	return ptr;
 }
 
-ComPtr<ID3D12QueryHeap> Renderer::getTimeStampQueryHeap()
-{
-	return mTimeStampQueryHeap;
-}
 
-void Renderer::addRenderTask(RenderTask&& task)
+void Renderer::addRenderTask(RenderTask&& task, bool strand)
 {
-	mRenderTaskExecutor->addTask(std::move(task));
+	mRenderTaskExecutor->addTask(std::move(task), strand);
 }
 
 
@@ -818,13 +777,15 @@ void Renderer::uninitialize()
 {
 	flushCommandQueue();
 
+	mRenderTaskExecutor.reset();
+
 	// clear all commands
 	mCommandAllocators.clear();
-	mCurrentCommandAllocator.reset();
 	mProfileCmdAlloc.reset();
-	mCommandQueue.Reset();
-	mCommandList.reset();
+	mCommandLists.clear();
 	mResourceCommandList.reset();
+	mCommandQueue.Reset();
+	//mCommandList.reset();
 	mQueueFence.reset();
 
 	//clear resources
@@ -903,15 +864,20 @@ void Renderer::initCommands()
 		CHECK(mDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(&mCommandQueue)));
 	}
 
-	mCurrentCommandAllocator = allocCommandAllocator();
-	mCommandList = CommandList::create(mCurrentCommandAllocator);
-	mCommandList->close();
-	mResourceCommandList = CommandList::create(mCurrentCommandAllocator);
+	//mCommandList = CommandList::create();
+	//mCommandList->close();
+	mResourceCommandList = CommandList::create();
 	mResourceCommandList->close();
 	mCurrentFrame = 0;
 	mQueueFence = createFence();
 
-	mRenderTaskExecutor = decltype(mRenderTaskExecutor)(new RenderTaskExecutor({mCommandList}));
+	mCommandLists.emplace_back(CommandList::create());
+	mCommandLists[0]->close();
+
+	std::vector<CommandList::Ref> cmdlist;
+	for (auto& c: mCommandLists)
+		cmdlist.emplace_back(c);
+	mRenderTaskExecutor = decltype(mRenderTaskExecutor)(new RenderTaskExecutor(cmdlist));
 }
 
 void Renderer::initDescriptorHeap()
@@ -1007,7 +973,6 @@ Renderer::Shader::ShaderType Renderer::mapShaderType(const std::string & target)
 void Renderer::collectDebugInfo()
 {
 	debugInfo.numResources = mResources.size();
-	debugInfo.numTransientOnUse = mResources.size() - mTransients.size();
 
 	for (auto& r: mResources)
 	{
@@ -1069,7 +1034,7 @@ void Renderer::recycleCommandAllocator(CommandAllocator::Ptr ca)
 
 void Renderer::commitCommands()
 {
-	mCommandList->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_PRESENT, 0, true);
+	mCommandLists.back()->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_PRESENT, 0, true);
 
 #ifndef D3D12ON7
 	mCommandList->close();
@@ -1080,10 +1045,9 @@ void Renderer::commitCommands()
 
 void Renderer::resetCommands()
 {
-
-	mCurrentCommandAllocator->reset();
-
-	mCommandList->reset(mCurrentCommandAllocator);
+	//mCommandList->reset();
+	for (auto& c: mCommandLists)
+		c->reset();
 
 #ifndef D3D12ON7
 	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
@@ -1146,17 +1110,7 @@ Renderer::DescriptorHeap::Ref Renderer::getDescriptorHeap(DescriptorHeapType typ
 {
 	return mDescriptorHeaps[type];
 }
-Renderer::Resource::Ref Renderer::findTransient(const D3D12_RESOURCE_DESC& desc)
-{
-	auto hash = Resource::hash(desc);
-	auto ret = mTransients.find(hash);
-	if (ret == mTransients.end() || ret->second.empty())
-		return {};
-	auto& list = ret->second;
-	auto res = list.back();
-	list.pop_back();
-	return res;
-}
+
 void Renderer::addResource(Resource::Ptr res)
 {
 	mResources.push_back(res);
@@ -1168,7 +1122,7 @@ void Renderer::present()
 
 	CHECK(mCommandQueue.As(&commandQueueDownlevel));
 	CHECK(commandQueueDownlevel->Present(
-		mCommandList->get(),
+		mCommandLists[0]->get(),
 		mBackbuffers[mCurrentFrame]->get(),
 		mWindow,
 		mVSync? D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK: D3D12_DOWNLEVEL_PRESENT_FLAG_NONE));
@@ -1214,7 +1168,7 @@ void Renderer::updateTimeStamp()
 		mProfileCmdAlloc = allocCommandAllocator();
 
 	mProfileCmdAlloc->reset();
-	mResourceCommandList->reset(mProfileCmdAlloc);
+	mResourceCommandList->reset();
 
 	mResourceCommandList->get()->ResolveQueryData(
 		mTimeStampQueryHeap.Get(),
@@ -1501,8 +1455,7 @@ Renderer::Resource::Resource(ComPtr<ID3D12Resource> res, D3D12_RESOURCE_STATES s
 	mState.resize(mDesc.MipLevels, state);
 }
 
-Renderer::Resource::Resource(ResourceType type):
-	mType (type)
+Renderer::Resource::Resource()
 {
 }
 
@@ -1616,44 +1569,6 @@ void Renderer::Resource::setName(const std::string& name)
 	mName = ss.str();
 	mResource->SetName(M2U(mName).c_str());
 }
-
-size_t Renderer::Resource::hash(const D3D12_RESOURCE_DESC & desc)
-{
-	struct DescHash
-	{
-		size_t operator()(const D3D12_RESOURCE_DESC& desc)
-		{
-			size_t value = 0;
-			auto hash = [](auto v)
-			{
-				return std::hash<decltype(v)>{}(v);
-			};
-
-			value = hash(desc.Dimension);
-			value ^= hash(desc.Alignment) << 1;
-			value ^= hash(desc.Width) << 1;
-			value ^= hash(desc.Height) << 1;
-			value ^= hash(desc.DepthOrArraySize) << 1;
-			value ^= hash(desc.MipLevels) << 1;
-			value ^= hash(desc.Format) << 1;
-			value ^= hash(desc.SampleDesc.Count) << 1;
-			value ^= hash(desc.SampleDesc.Quality) << 1;
-			value ^= hash(desc.Layout) << 1;
-			value ^= hash(desc.Flags) << 1;
-
-			return value;
-		}
-	};
-	return DescHash{}(desc);
-}
-
-size_t Renderer::Resource::hash()
-{
-	mHashValue = mHashValue? mHashValue: hash(mDesc);
-	return mHashValue;
-}
-
-
 
 void Renderer::Resource::releaseAllHandle()
 {
@@ -1811,10 +1726,12 @@ bool Renderer::Fence::completed()
 	return  value >= mFenceValue;
 }
 
-Renderer::CommandList::CommandList(const CommandAllocator::Ref & alloc)
+Renderer::CommandList::CommandList()
 {
-	auto device = Renderer::getSingleton()->getDevice();
-	CHECK(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, alloc->get(), nullptr, IID_PPV_ARGS(&mCmdList)));
+	auto renderer = Renderer::getSingleton();
+	auto device = renderer->getDevice();
+	mAllocator = renderer->allocCommandAllocator();
+	CHECK(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, mAllocator->get(), nullptr, IID_PPV_ARGS(&mCmdList)));
 }
 
 Renderer::CommandList::~CommandList()
@@ -2136,8 +2053,7 @@ void Renderer::CommandList::generateMips(Resource::Ref texture)
 		desc.Format,
 		desc.MipLevels ,
 		D3D12_HEAP_TYPE_DEFAULT, 
-		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
-		Resource::RT_TRANSIENT
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
 	);
 	dst->createShaderResource();
 
@@ -2208,10 +2124,15 @@ void Renderer::CommandList::close()
 	CHECK(mCmdList->Close());
 }
 
-void Renderer::CommandList::reset(const CommandAllocator::Ref& alloc)
+void Renderer::CommandList::reset()
 {
-	mAllocator = alloc;
-	CHECK(mCmdList->Reset(alloc->get(), nullptr));
+	auto r = Renderer::getSingleton();
+	mAllocator->signal();
+	r->recycleCommandAllocator(mAllocator);
+	mAllocator = r->allocCommandAllocator();
+
+	mAllocator->reset();
+	CHECK(mCmdList->Reset(mAllocator->get(), nullptr));
 }
 
 ID3D12GraphicsCommandList * Renderer::CommandList::get()
@@ -2766,27 +2687,30 @@ float Renderer::Profile::getGPUTime()
 	return mGPUHistory;
 }
 
-void Renderer::Profile::begin()
+void Renderer::Profile::begin(Renderer::CommandList::Ref cl)
 {
 	auto renderer = Renderer::getSingleton();
-	renderer->getCommandList()->endQuery(
-		renderer->getTimeStampQueryHeap(),
-		D3D12_QUERY_TYPE_TIMESTAMP,
-		mIndex * 2);
+	if (cl)
+		cl->endQuery(
+			renderer->mTimeStampQueryHeap,
+			D3D12_QUERY_TYPE_TIMESTAMP,
+			mIndex * 2);
 
 	mCPUTime = std::chrono::high_resolution_clock::now();
 }
 
-void Renderer::Profile::end()
+
+void Renderer::Profile::end(Renderer::CommandList::Ref cl)
 {
 	float dtime = float((double)(std::chrono::high_resolution_clock::now() - mCPUTime).count() / 1000000.0);
 	mCPUHistory = mCPUHistory * 0.9f + dtime * 0.1f;
 
 	auto renderer = Renderer::getSingleton();
-	renderer->getCommandList()->endQuery(
-		renderer->getTimeStampQueryHeap(),
-		D3D12_QUERY_TYPE_TIMESTAMP,
-		mIndex * 2 + 1);
+	if (cl)
+		cl->endQuery(
+			renderer->mTimeStampQueryHeap,
+			D3D12_QUERY_TYPE_TIMESTAMP,
+			mIndex * 2 + 1);
 }
 
 
@@ -2909,56 +2833,57 @@ D3D12_GPU_DESCRIPTOR_HANDLE Renderer::ConstantBuffer::getHandle() const
 
 Renderer::RenderTaskExecutor::RenderTaskExecutor(const std::vector<CommandList::Ref>& cmdlists)
 {
-	mCmdlists = cmdlists;
 
 	for (auto& c: cmdlists)
-		mWorkers.emplace_back([this]() {
-			mDispatcher.run();
+		mWorkers.emplace_back([this, cmdlist = c]() {
+			while (mRunning)
+			{
+				std::unique_lock<std::mutex> lock(mMutex);
+				mCondition.wait(lock,[this, cmdlist](){
+					return !mTasks.empty() || !mRunning;
+				});
+
+				if (!mRunning)
+					return;
+
+				auto t = std::move(mTasks.back());
+				mTasks.pop_back();
+
+				if (!t.second)
+					lock.unlock();
+
+				t.first(cmdlist);
+
+				if (!t.second)
+					lock.lock();
+				mCondition.notify_one();
+			}
 		});
 }
 
-void Renderer::RenderTaskExecutor::addTask(RenderTask&& task)
+Renderer::RenderTaskExecutor::~RenderTaskExecutor()
 {
-	mDispatcher.execute_strand([this, task = std::move(task)](){
-		mTasks.push_back(task);
-	});
+	{
+		std::unique_lock<std::mutex> lock(mMutex);
+		mRunning = false;
+		mCondition.notify_all();
+	}
+
+	for (auto& t: mWorkers)
+		t.join();
+}
+
+void Renderer::RenderTaskExecutor::addTask(RenderTask&& task, bool strand)
+{
+	std::unique_lock<std::mutex> lock(mMutex);
+	mTasks.emplace_back(std::make_pair(std::move(task), strand));
+	mCondition.notify_one();
 }
 
 void Renderer::RenderTaskExecutor::execute()
 {
-	std::mutex mutex;
-	std::unique_lock<std::mutex> lock(mutex);
-	std::condition_variable cv;
-
-	std::function<void()> imp;
-	imp = [&,this]() {
-		if (mCmdlists.empty() )
-			return;
-
-		auto count = std::min(mCmdlists.size(), mTasks.size());
-		for (auto i = 0; i < count; ++i)
-		{
-			auto t = mTasks.back();
-			auto c = mCmdlists.back();
-			mDispatcher.invoke([&,this,task = std::move(t), cmdlist = std::move(c) ]() {
-				task(cmdlist);
-				mDispatcher.execute_strand([&,this,cmdlist = std::move(cmdlist)]() {
-					mCmdlists.emplace_back(cmdlist);
-					if (!mTasks.empty())
-						imp();
-				});
-			});
-		}
-
-		mTasks.erase(mTasks.begin() + count - 1, mTasks.end());
-		mCmdlists.erase(mCmdlists.begin() + count - 1, mCmdlists.end());
-	};
-
-
-	imp();
-	mDispatcher.invoke_strand([&](){
-		cv.notify_one();
+	std::unique_lock<std::mutex> lock(mMutex);
+	mCondition.wait(lock, [this](){
+		return mTasks.empty();
 	});
-	cv.wait(lock);
-
 }

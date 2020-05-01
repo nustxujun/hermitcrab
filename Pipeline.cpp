@@ -2,85 +2,73 @@
 #include "Renderer.h"
 #include "RenderContext.h"
 #include <sstream>
+#include "Profile.h"
+#include "ResourceViewAllocator.h"
 
-
-RenderGraph::LambdaRenderPass::Ptr Pipeline::present()
+Renderer::RenderTask Pipeline::present(RenderGraph::Builder& b, ResourceHandle::Ptr src)
 {
-	Quad::Ptr quad = Quad::Ptr(new Quad());
-	auto rs = Renderer::RenderState::Default;
-	rs.setRenderTargetFormat({DXGI_FORMAT_R8G8B8A8_UNORM});
-	quad->init("shaders/drawtexture.hlsl",rs);
-	auto pass = RenderGraph::LambdaRenderPass::Ptr{new  RenderGraph::LambdaRenderPass({},[](auto* pass, const auto& inputs)mutable {
-			pass->read(inputs[0]->getRenderTarget());
-		}, [quad](auto srvs)mutable
+	static Quad::Ptr quad ;
+	if (!quad)
+	{
+		quad = Quad::Ptr(new Quad());
+		auto rs = Renderer::RenderState::Default;
+		rs.setRenderTargetFormat({DXGI_FORMAT_R8G8B8A8_UNORM});
+		quad->init("shaders/drawtexture.hlsl",rs);
+	}
+	auto tmp = quad;
+	b.read(src, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	return  [ src](auto cmdlist)mutable
 		{
-
 			auto renderer = Renderer::getSingleton();
-			auto cmdlist = renderer->getCommandList();
+			
 			auto bb = renderer->getBackBuffer();
 			cmdlist->setRenderTarget(bb);
 
-		
-			quad->setResource("tex",srvs[0]->getView()->getShaderResource());
-		
+			quad->setResource("tex", src->getView()->getShaderResource());
+
 			quad->fitToScreen();
-			RenderContext::getSingleton()->renderScreen(quad.get());
+			RenderContext::getSingleton()->renderScreen(quad.get(), cmdlist);
 
-
-			//auto renderer = Renderer::getSingleton();
-			//auto device = renderer->getDevice();
-			//auto cmdlist = renderer->getCommandList();
-			//auto bb = renderer->getBackBuffer();
-			//auto src = srvs[0]->getView()->getTexture();
-			////cmdlist->copyTexture(bb->getTexture(),0,{0,0,0},src,0,nullptr);
-			//cmdlist->transitionTo(bb->getTexture(), D3D12_RESOURCE_STATE_COPY_DEST);
-			////cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			//cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_COPY_SOURCE);
-			//cmdlist->get()->CopyResource(bb->getTexture()->get(), src->get());
-			//cmdlist->transitionTo(bb->getTexture(), D3D12_RESOURCE_STATE_RENDER_TARGET);
-			//cmdlist->transitionTo(src, D3D12_RESOURCE_STATE_RENDER_TARGET);
-
-		})};
-	pass->setName("present");
-	return pass;
+		};
 }
 
-RenderGraph::LambdaRenderPass::Ptr Pipeline::drawScene(Camera::Ptr cam, UINT flags , UINT mask)
-{
-	auto pass = RenderGraph::LambdaRenderPass::Ptr{new RenderGraph::LambdaRenderPass({},[](auto* pass, const auto& inputs) {
-		pass->write(inputs[0]->getRenderTarget());
-		pass->write(inputs[0]->getDepthStencil());
+//RenderGraph::LambdaRenderPass::Ptr Pipeline::drawScene(Camera::Ptr cam, UINT flags , UINT mask)
+//{
+//	//auto pass = RenderGraph::LambdaRenderPass::Ptr{new RenderGraph::LambdaRenderPass({},[](auto* pass, const auto& inputs) {
+//	//	pass->write(inputs[0]->getRenderTarget());
+//	//	pass->write(inputs[0]->getDepthStencil());
+//
+//	//	},[=](auto srvs){
+//	//		RenderContext::getSingleton()->renderScene(cam,flags, mask);
+//	//	} )};
+//
+//	//pass->setName("draw scene");
+//	return {};
+//}
 
-		},[=](auto srvs){
-			RenderContext::getSingleton()->renderScene(cam,flags, mask);
-		} )};
-
-	pass->setName("draw scene");
-	return pass;
-}
-
-RenderGraph::LambdaRenderPass::Ptr Pipeline::postprocess(const std::string& ps, const std::function<void(Renderer::PipelineState::Ref)>& prepare)
-{
-	std::shared_ptr<Quad> quad = std::shared_ptr<Quad>(new Quad());
-	auto rs = Renderer::RenderState::Default;
-	quad->init(ps,rs);
-
-	auto pass = RenderGraph::LambdaRenderPass::Ptr{ new  RenderGraph::LambdaRenderPass({},[=](auto* pass, const auto& inputs) {
-			pass->read(inputs[0]->getRenderTarget());
-			pass->write(ResourceHandle::create(Renderer::VT_RENDERTARGET, 0, 0, DXGI_FORMAT_UNKNOWN));
-		}, [quad, prepare](auto srvs)
-		{
-			auto pso = quad->getPipelineState();
-			if (prepare)
-				prepare(pso);
-			quad->fitToScreen();
-			quad->setResource("frame",srvs[0]->getView()->getShaderResource());
-			//pso->setPSResource("frame",srvs[0]->getView()->getHandle());
-			RenderContext::getSingleton()->renderScreen(quad.get());
-		}) };
-	pass->setName(ps);
-	return pass;
-}
+//RenderGraph::LambdaRenderPass::Ptr Pipeline::postprocess(const std::string& ps, const std::function<void(Renderer::PipelineState::Ref)>& prepare)
+//{
+//	//std::shared_ptr<Quad> quad = std::shared_ptr<Quad>(new Quad());
+//	//auto rs = Renderer::RenderState::Default;
+//	//quad->init(ps,rs);
+//
+//	//auto pass = RenderGraph::LambdaRenderPass::Ptr{ new  RenderGraph::LambdaRenderPass({},[=](auto* pass, const auto& inputs) {
+//	//		pass->read(inputs[0]->getRenderTarget());
+//	//		pass->write(ResourceHandle::create(Renderer::VT_RENDERTARGET, 0, 0, DXGI_FORMAT_UNKNOWN));
+//	//	}, [quad, prepare](auto srvs)
+//	//	{
+//	//		auto pso = quad->getPipelineState();
+//	//		if (prepare)
+//	//			prepare(pso);
+//	//		quad->fitToScreen();
+//	//		quad->setResource("frame",srvs[0]->getView()->getShaderResource());
+//	//		//pso->setPSResource("frame",srvs[0]->getView()->getHandle());
+//	//		RenderContext::getSingleton()->renderScreen(quad.get());
+//	//	}) };
+//	//pass->setName(ps);
+//	//return pass;
+//	return {};
+//}
 
 
 //void ForwardPipeline::update()
@@ -100,9 +88,8 @@ RenderGraph::LambdaRenderPass::Ptr Pipeline::postprocess(const std::string& ps, 
 
 DefaultPipeline::DefaultPipeline()
 {
-	mPresent = present();
-	mDrawScene = drawScene(RenderContext::getSingleton()->getMainCamera());
-	mColorGrading = postprocess("shaders/colorgrading.hlsl");
+	//mDrawScene = drawScene(RenderContext::getSingleton()->getMainCamera());
+	//mColorGrading = postprocess("shaders/colorgrading.hlsl");
 
 	mProfileWindow = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("profile");
 	mDebugInfo = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("debuginfo");
@@ -164,40 +151,47 @@ DefaultPipeline::DefaultPipeline()
 void DefaultPipeline::update()
 {
 	RenderGraph graph;
-	auto* next = &(graph.begin() >> mDrawScene );
-	if (mSettings.colorGrading)
-		next = &next->operator>>( mColorGrading); 
-	
-	next->operator>>(mGui) >> mPresent;
+
+	mProfileWindow->drawCallback = [profiles = std::move(Profile::Singleton.output())](auto gui) {
+		for (auto& profile: profiles)
+			ImGui::Text("%s: cpu: %f ms, gpu: %f ms", profile.name.c_str(), profile.cpu, profile.gpu );
+		return true;
+	};
+
+	Profile::Singleton.reset();
+	auto r = Renderer::getSingleton();
+	auto s = r->getSize();
+	auto rt = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UNORM);
+	auto d = ResourceHandle::create(Renderer::VT_DEPTHSTENCIL, s[0], s[1], DXGI_FORMAT_D24_UNORM_S8_UINT);
+
+	rt->setClearValue({0,0,0,0});
+	d->setClearValue({1.0f, 0});
+	graph.addPass("scene", [this, rt, d](auto& builder) {
+		builder.write(rt, RenderGraph::Builder::IT_CLEAR, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		builder.write(d, RenderGraph::Builder::IT_CLEAR, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+		return [=](auto cmdlist) {
+			auto context = RenderContext::getSingleton();
+			auto cam = context->getMainCamera();
+			cmdlist->setRenderTarget(rt->getView(), d->getView());
+			context->renderScene(cmdlist,cam);
+		};
+	});
 
 
+	graph.addPass("gui",[this, rt](auto& builder) {
+		builder.write(rt, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-	graph.setup();
-	graph.compile();
-	graph.execute(
-		[&profiles = mProfiles, profilewin = mProfileWindow](RenderGraph::RenderPass* pass) {
-			if (pass->getName() == "begin pass" || 
-				pass->getName().empty())
-				return ;
-			if (!profiles[pass->getName()].first )
-			{
-				profiles[pass->getName()] = {
-					Renderer::getSingleton()->createProfile(),
-					profilewin->createChild<ImGuiOverlay::ImGuiText>(""),
-				};
-			}
-			profiles[pass->getName()].first->begin();
-		},
-		[&profiles = mProfiles](RenderGraph::RenderPass* pass)
-		{
-			if (!profiles[pass->getName()].first)
-				return;
-			auto& p = profiles[pass->getName()].first;
-			p->end();
-			std::stringstream ss;
-			ss.precision(3);
-			ss << pass->getName() << ": " << p->getCPUTime()<< "(" << p->getGPUTime() << ")" << "ms";
-			profiles[pass->getName()].second->text = ss.str();
-		}
-	);
+		auto task = mGui.execute();
+		return [this, rt, task = std::move(task)](auto cmdlist){
+			cmdlist->setRenderTarget(rt->getView());
+			task(cmdlist);
+		};
+	});
+
+	graph.addPass("present", [this, rt](auto& builder) {
+		builder.read(rt, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		return present(builder, rt);
+	});
+
+	graph.execute();
 }

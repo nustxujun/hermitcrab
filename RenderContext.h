@@ -32,7 +32,7 @@ struct Texture: public Object
 
 	void init(int width, int height, DXGI_FORMAT format, const void* data, bool srgb)
 	{
-		texture = Renderer::getSingleton()->createTexture2D((UINT)width, (UINT)height, format,0, data, srgb);
+		texture = Renderer::getSingleton()->createTexture2D((UINT)width, (UINT)height, format,-1, data, srgb);
 		texture->setName(("Texture " + name));
 	}
 	Renderer::Resource::Ref texture;
@@ -181,8 +181,8 @@ class RenderContext
 	static RenderContext* instance;
 public:
 	void recompileMaterials(Material::Visualizaion v);
-	virtual void renderScene(Camera::Ptr cam, UINT flags = 0, UINT mask = 0xffffffff) = 0;
-	virtual void renderScreen(const Quad* quad) ;
+	virtual void renderScene(Renderer::CommandList::Ref cmdlist, Camera::Ptr cam, UINT flags = 0, UINT mask = 0xffffffff) = 0;
+	virtual void renderScreen(const Quad* quad, Renderer::CommandList::Ref cmdlist) ;
 
 	template<class T>
 	std::shared_ptr<T> createObject(const std::string& name)

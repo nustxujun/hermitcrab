@@ -10,18 +10,17 @@ void RenderContext::recompileMaterials(Material::Visualizaion v)
 		m->compileShaders(v);
 }
 
-void RenderContext::renderScreen(const Quad* quad)
+void RenderContext::renderScreen(const Quad* quad, Renderer::CommandList::Ref cmdlist)
 {
 	auto renderer = Renderer::getSingleton();
-	auto cmdlist = renderer->getCommandList();
-
 	auto rect = quad->getRect();
 	cmdlist->setScissorRect(rect);
-	cmdlist->setViewport({0,0, (float)rect.right, (float)rect.bottom, 0.0f, 1.0f});
+	cmdlist->setViewport({ 0,0, (float)rect.right, (float)rect.bottom, 0.0f, 1.0f });
 	cmdlist->setPipelineState(quad->getPipelineState());
 	cmdlist->setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 	// draw without vertexbuffer
 	cmdlist->drawInstanced(4);
+
 }
 
 void RenderContext::resize(int width, int height)
