@@ -163,7 +163,7 @@ void DefaultPipeline::update()
 
 	auto r = Renderer::getSingleton();
 	auto s = r->getSize();
-	auto rt = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UNORM);
+	auto rt = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R16G16B16A16_FLOAT);
 	auto d = ResourceHandle::create(Renderer::VT_DEPTHSTENCIL, s[0], s[1], DXGI_FORMAT_D24_UNORM_S8_UINT);
 
 	rt->setClearValue({0,0,0,0});

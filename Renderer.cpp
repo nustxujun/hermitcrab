@@ -1134,9 +1134,14 @@ void Renderer::commitCommands()
 	mCommandLists.back()->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_PRESENT, 0, true);
 
 #ifndef D3D12ON7
-	mCommandList->close();
-	ID3D12CommandList* ppCommandLists[] = { mCommandList->get() };
-	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	std::vector<ID3D12CommandList*> ppCommandLists;
+
+	for (auto& cl : mCommandLists)
+	{
+		cl->close();
+		ppCommandLists.push_back(cl->get());
+	}
+	mCommandQueue->ExecuteCommandLists(UINT(ppCommandLists.size()), ppCommandLists.data());
 #endif
 }
 
