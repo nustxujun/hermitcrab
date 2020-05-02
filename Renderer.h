@@ -613,7 +613,6 @@ public:
 		void drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount = 1U, UINT startIndex = 0, INT startVertex = 0, UINT startInstance = 0);
 		void dispatch(UINT x, UINT y , UINT z);
 		void endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx);
-		void generateMips(Resource::Ref texture);
 
 		Fence::Ptr getFence(){return mAllocator->mFence;}
 		CommandAllocator::Ref getAllocator(){return mAllocator;}
@@ -717,8 +716,8 @@ public:
 	ConstantBuffer::Ptr createConstantBuffer(UINT size);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
 	PipelineState::Ref createComputePipelineState(const Shader::Ptr& shader);
-
 	Profile::Ref createProfile();
+	void generateMips(Resource::Ref texture);
 
 
 	void addRenderTask(RenderTask&& task, bool strand = false);
@@ -781,6 +780,7 @@ private:
 	std::vector<PipelineState::Ptr> mPipelineStates;
 	ComPtr<ID3D12QueryHeap> mTimeStampQueryHeap;
 	std::vector<Profile::Ptr> mProfiles;
+	Profile::Ref mRenderProfile;
 	Resource::Ref mProfileReadBack;
 	CommandAllocator::Ptr mProfileCmdAlloc;
 	ConstantBufferAllocator::Ptr mConstantBufferAllocator;

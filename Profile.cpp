@@ -1,10 +1,10 @@
 #include "Profile.h"
 
 
-Profile Profile::Singleton;
-std::string Profile::table;
+ProfileMgr ProfileMgr::Singleton;
+std::string ProfileMgr::table;
 
-Renderer::Profile::Ref Profile::begin(const std::string& name, Renderer::CommandList::Ref cl)
+Renderer::Profile::Ref ProfileMgr::begin(const std::string& name, Renderer::CommandList::Ref cl)
 {
 	auto r = Renderer::getSingleton();
 	while (mAllocatteds.size() < mCount + 1) 
@@ -21,21 +21,21 @@ Renderer::Profile::Ref Profile::begin(const std::string& name, Renderer::Command
 	return p.second;
 }
 
-void Profile::end(Renderer::Profile::Ref p, Renderer::CommandList::Ref cl)
+void ProfileMgr::end(Renderer::Profile::Ref p, Renderer::CommandList::Ref cl)
 {
 	table.pop_back();
 	p->end(cl);
 }
 
 
-void Profile::reset()
+void ProfileMgr::reset()
 {
 	mCount = 0;
 }
 
-std::vector<Profile::Output> Profile::output()
+std::vector<ProfileMgr::Output> ProfileMgr::output()
 {
-	std::vector<Profile::Output> o;
+	std::vector<ProfileMgr::Output> o;
 	for (auto i = 0; i < mCount; ++i)
 	{
 		auto& p = mAllocatteds[i];

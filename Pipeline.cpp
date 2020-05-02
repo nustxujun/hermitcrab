@@ -152,13 +152,15 @@ void DefaultPipeline::update()
 {
 	RenderGraph graph;
 
-	mProfileWindow->drawCallback = [profiles = std::move(Profile::Singleton.output())](auto gui) {
+	mProfileWindow->drawCallback = [profiles = std::move(ProfileMgr::Singleton.output())](auto gui) {
 		for (auto& profile: profiles)
-			ImGui::Text("%s: cpu: %f ms, gpu: %f ms", profile.name.c_str(), profile.cpu, profile.gpu );
+			ImGui::Text("%s: cpu: %.3f ms, gpu: %.3f ms", profile.name.c_str(), profile.cpu, profile.gpu );
 		return true;
 	};
 
-	Profile::Singleton.reset();
+	ProfileMgr::Singleton.reset();
+	PROFILE("main thread", {});
+
 	auto r = Renderer::getSingleton();
 	auto s = r->getSize();
 	auto rt = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UNORM);

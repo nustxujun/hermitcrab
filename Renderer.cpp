@@ -1,6 +1,5 @@
-#include "Profile.h"
 #include "Renderer.h"
-
+#include "Profile.h"
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"dxgi.lib")
 #pragma comment(lib,"d3dcompiler.lib")
@@ -165,11 +164,16 @@ void Renderer::beginFrame()
 
 	for (auto& cl: mCommandLists)
 		cl->get()->SetDescriptorHeaps(1, &heap);
+
+	mRenderProfile = ProfileMgr::Singleton.begin("render", *mCommandLists.begin());
 }
 
 void Renderer::endFrame()
 {
 	mRenderTaskExecutor->execute();
+
+	ProfileMgr::Singleton.end(mRenderProfile, mCommandLists.back());
+
 	commitCommands();
 
 	present();
@@ -681,7 +685,7 @@ Renderer::Resource::Ref Renderer::createTextureFromFile(const std::string& filen
 	}
 	ASSERT(data != nullptr,"cannot create texture");
 	
-	auto tex = createTexture2D(width, height, format,  0,data, srgb);
+	auto tex = createTexture2D(width, height, format,  -1,data, srgb);
 	stbi_image_free(data);
 
 	mTextureMap[filename] = tex;
@@ -704,9 +708,8 @@ Renderer::Resource::Ref Renderer::createTexture2D(UINT width, UINT height, DXGI_
 		
 	updateTexture(tex, 0, data, size,srgb);
 
-	executeResourceCommands([&](auto cmdlist) {
-		cmdlist->generateMips(tex);
-	});
+	generateMips(tex); 
+	
 	return tex;
 }
 
@@ -763,6 +766,91 @@ Renderer::Profile::Ref Renderer::createProfile()
 	auto ptr = Profile::create((UINT)mProfiles.size());
 	mProfiles.push_back(ptr);
 	return ptr;
+}
+
+void Renderer::generateMips(Resource::Ref texture)
+{
+	auto desc = texture->getDesc();
+
+	if (desc.MipLevels == 1)
+		return;
+
+	Resource::Ref dst = createTexture(
+		(UINT)desc.Width,
+		desc.Height,
+		desc.DepthOrArraySize,
+		desc.Format,
+		desc.MipLevels,
+		D3D12_HEAP_TYPE_DEFAULT,
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
+	);
+	dst->createShaderResource();
+
+	executeResourceCommands([=](auto cmdlist){
+		cmdlist->transitionBarrier(texture, D3D12_RESOURCE_STATE_COPY_SOURCE, 0);
+		cmdlist->transitionBarrier(dst, D3D12_RESOURCE_STATE_COPY_DEST, 0, true);
+		cmdlist->copyTexture(dst, 0, { 0,0,0 }, texture, 0, nullptr);
+		cmdlist->transitionBarrier(dst, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 0, true);
+
+
+		for (auto i = 1; i < desc.MipLevels; ++i)
+		{
+			D3D12_UNORDERED_ACCESS_VIEW_DESC uavd = {};
+			uavd.Format = desc.Format;
+			uavd.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+			uavd.Texture2D.PlaneSlice = 0;
+			uavd.Texture2D.MipSlice = i;
+
+			dst->createUnorderedAccessView(&uavd, i);
+		}
+
+		for (auto mip = 0; mip < desc.MipLevels - 1; )
+		{
+			UINT32 width = std::max(1U, (UINT32)desc.Width >> mip);
+			UINT32 height = std::max(1U, (UINT32)desc.Height >> mip);
+
+			UINT non_power_of_two = (height & 1) << 1 | (width & 1);
+			auto pso = mGenMipsPSO[non_power_of_two];
+			cmdlist->setPipelineState(pso);
+
+			pso->setVariable(Shader::ST_COMPUTE, "SrcMipLevel", &mip);
+
+			UINT32 nummips = std::min(4, desc.MipLevels - mip - 1);
+			pso->setVariable(Shader::ST_COMPUTE, "NumMipLevels", &nummips);
+
+			UINT32 outputWidth = std::max(1U, width >> 1);
+			UINT32 outputHeight = std::max(1U, height >> 1);
+
+			float texelSize[] = {
+				1.0f / (float)outputWidth,
+				1.0f / (float)outputHeight
+			};
+
+			pso->setVariable(Shader::ST_COMPUTE, "TexelSize", &texelSize);
+
+			pso->setResource(Shader::ST_COMPUTE, "SrcMip", dst->getShaderResource());
+
+			for (UINT i = 0; i < nummips; ++i)
+				pso->setResource(Shader::ST_COMPUTE, Common::format("OutMip", i + 1), dst->getUnorderedAccess(i + mip + 1));
+
+			cmdlist->dispatch(outputWidth, outputHeight, 1);
+			cmdlist->uavBarrier(dst, true);
+
+			mip += nummips;
+		}
+
+		cmdlist->transitionBarrier(texture, D3D12_RESOURCE_STATE_COPY_DEST, -1);
+		cmdlist->transitionBarrier(dst, D3D12_RESOURCE_STATE_COPY_SOURCE, -1, true);
+
+		cmdlist->copyResource(texture, dst);
+
+		cmdlist->transitionBarrier(texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, -1, true);
+
+	});
+
+
+	destroyResource(dst);
+
 }
 
 
@@ -871,8 +959,17 @@ void Renderer::initCommands()
 	mCurrentFrame = 0;
 	mQueueFence = createFence();
 
-	mCommandLists.emplace_back(CommandList::create());
-	mCommandLists[0]->close();
+#ifdef D3D12ON7
+	size_t maxworkers = 1;
+#else
+	size_t maxworkers = std::thread::hardware_concurrency() - 1;
+#endif 
+	for (auto i = 0; i < maxworkers; ++i)
+	{
+		mCommandLists.emplace_back(CommandList::create());
+		mCommandLists.back()->close();
+	}
+
 
 	std::vector<CommandList::Ref> cmdlist;
 	for (auto& c: mCommandLists)
@@ -1160,7 +1257,7 @@ void Renderer::updateTimeStamp()
 				continue;
 
 			auto dtime = float(tickdelta * (td.end - td.begin));
-			p->mGPUHistory = p->mGPUHistory * 0.9f + dtime * 0.1f;
+			p->mGPUHistory = p->mGPUHistory * 0.99f + dtime * 0.01f;
 		}
 		mProfileReadBack->unmap(0);
 	}
@@ -2036,87 +2133,6 @@ void Renderer::CommandList::dispatch(UINT x, UINT y, UINT z)
 void Renderer::CommandList::endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx)
 {
 	mCmdList->EndQuery(queryheap.Get(),type, queryidx);
-}
-
-void Renderer::CommandList::generateMips(Resource::Ref texture)
-{
-	auto renderer = Renderer::getSingleton();
-	auto desc = texture->getDesc();
-
-	if (desc.MipLevels == 1)
-		return;
-
-	Resource::Ref dst = renderer->createTexture(
-		(UINT)desc.Width,
-		desc.Height, 
-		desc.DepthOrArraySize,
-		desc.Format,
-		desc.MipLevels ,
-		D3D12_HEAP_TYPE_DEFAULT, 
-		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
-	);
-	dst->createShaderResource();
-
-	transitionBarrier(texture, D3D12_RESOURCE_STATE_COPY_SOURCE,0);
-	transitionBarrier(dst, D3D12_RESOURCE_STATE_COPY_DEST,0, true);
-	copyTexture(dst, 0,{0,0,0}, texture, 0,  nullptr);
-	transitionBarrier(dst, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 0,true);
-	
-
-	for (auto i = 1; i < desc.MipLevels ; ++i)
-	{
-		D3D12_UNORDERED_ACCESS_VIEW_DESC uavd = {};
-		uavd.Format = desc.Format;
-		uavd.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		uavd.Texture2D.PlaneSlice = 0;
-		uavd.Texture2D.MipSlice = i;
-
-		dst->createUnorderedAccessView(&uavd,i);
-	}
-
-	for (auto mip = 0; mip < desc.MipLevels - 1 ; )
-	{
-		UINT32 width = std::max(1U, (UINT32)desc.Width >> mip);
-		UINT32 height = std::max(1U, (UINT32)desc.Height >> mip);
-
-		UINT non_power_of_two = (height & 1) << 1 | (width & 1);
-		auto pso = renderer->mGenMipsPSO[non_power_of_two];
-		setPipelineState(pso);
-
-		pso->setVariable(Shader::ST_COMPUTE,"SrcMipLevel", &mip);
-
-		UINT32 nummips = std::min(4, desc.MipLevels - mip - 1);
-		pso->setVariable(Shader::ST_COMPUTE, "NumMipLevels", &nummips);
-
-		UINT32 outputWidth = std::max(1U, width >> 1);
-		UINT32 outputHeight = std::max(1U,height >> 1);
-
-		float texelSize[] = {
-			1.0f / (float)outputWidth,
-			1.0f / (float)outputHeight
-		};
-
-		pso->setVariable(Shader::ST_COMPUTE, "TexelSize", &texelSize);
-
-		pso->setResource(Shader::ST_COMPUTE, "SrcMip", dst->getShaderResource());
-
-		for (UINT i = 0; i < nummips; ++i )
-			pso->setResource(Shader::ST_COMPUTE, Common::format("OutMip", i + 1), dst->getUnorderedAccess(i + mip + 1 ));
-			
-		dispatch(outputWidth , outputHeight , 1);
-		uavBarrier(dst, true);
-
-		mip += nummips;
-	}
-
-	transitionBarrier(texture, D3D12_RESOURCE_STATE_COPY_DEST, -1);
-	transitionBarrier(dst, D3D12_RESOURCE_STATE_COPY_SOURCE, -1, true);
-
-	copyResource(texture, dst);
-
-	transitionBarrier(texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,-1, true);
-
-	renderer->destroyResource(dst);
 }
 
 void Renderer::CommandList::close()

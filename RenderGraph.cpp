@@ -80,7 +80,7 @@ void RenderGraph::execute()
 {
 	Renderer::getSingleton()->addRenderTask([tasks = std::move(mTasks)](auto cmdlist) mutable
 	{
-		PROFILE("total", cmdlist);
+		PROFILE("cmdlist", cmdlist);
 		while(!tasks.empty())
 		{
 			tasks.begin()->second(cmdlist);

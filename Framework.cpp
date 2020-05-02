@@ -1,5 +1,6 @@
 #include "Framework.h"
 #include "RenderContext.h"
+#include "Profile.h"
 
 std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> Framework::processor;
 bool Framework::needPaint = true;
@@ -35,6 +36,7 @@ void Framework::update()
 		}
 		else if (Framework::needPaint)
 		{
+			PROFILE("frame", {});
 			mRenderer->beginFrame();
 			updateImpl();
 			mRenderer->endFrame();

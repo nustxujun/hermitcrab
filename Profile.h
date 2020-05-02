@@ -2,10 +2,10 @@
 
 #include "Renderer.h"
 
-class Profile
+class ProfileMgr
 {
 public:
-	static Profile Singleton;
+	static ProfileMgr Singleton;
 
 	class Auto
 	{
@@ -15,14 +15,14 @@ public:
 	public:
 		Auto(const std::string& name, Renderer::CommandList::Ref cl)
 		{
-			profile = Profile::Singleton.begin(name, cl);
+			profile = ProfileMgr::Singleton.begin(name, cl);
 			this->name = table + name;
 			cmdlist = cl;
 		}
 
 		~Auto()
 		{
-			Profile::Singleton.end(profile, cmdlist);
+			ProfileMgr::Singleton.end(profile, cmdlist);
 		}
 	};
 	
@@ -45,4 +45,4 @@ private:
 	size_t mCount = 0;
 };
 
-#define PROFILE(name, cl) Profile::Auto __autoProfile(name, cl)
+#define PROFILE(name, cl) ProfileMgr::Auto __autoProfile(name, cl)
