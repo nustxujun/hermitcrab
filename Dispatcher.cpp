@@ -1,5 +1,7 @@
 #include "Dispatcher.h"
 
+asio::io_context Dispatcher::sharedContext;
+
 Dispatcher::~Dispatcher()
 {
 	mContext.stop();
@@ -28,17 +30,18 @@ void Dispatcher::execute_strand(const Handler& handler)
 void Dispatcher::poll_one(bool block)
 {
 	if (block)
-		mContext.run_one();
+		sharedContext.run_one();
 	else
-		mContext.poll_one();
+		sharedContext.poll_one();
 }
 
 void Dispatcher::run()
 {
-	mContext.run();
+	asio::io_context::work work(sharedContext);
+	sharedContext.run();
 }
 
 void Dispatcher::stop()
 {
-	mContext.stop();
+	sharedContext.stop();
 }

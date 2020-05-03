@@ -6,9 +6,9 @@
 class Pipeline
 {
 public:
-	Renderer::RenderTask present(RenderGraph::Builder& b, ResourceHandle::Ptr src);
-	//RenderGraph::LambdaRenderPass::Ptr drawScene(Camera::Ptr cam,UINT flags = 0, UINT mask = -1);
-	//RenderGraph::LambdaRenderPass::Ptr postprocess(const std::string& ps, const std::function<void(Renderer::PipelineState::Ref)>& prepare = {});
+	using RenderPass = std::function<void (Renderer::CommandList::Ref&, const std::map<std::string,D3D12_GPU_DESCRIPTOR_HANDLE>&, const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>&, D3D12_CPU_DESCRIPTOR_HANDLE)>;
+
+	RenderPass postprocess(const std::string& ps, DXGI_FORMAT fmt );
 };
 
 class DefaultPipeline: public Pipeline
@@ -20,7 +20,6 @@ public:
 
 protected:
 	ImGuiPass mGui;
-
 	
 	std::map<std::string, std::pair<Renderer::Profile::Ref, ImGuiOverlay::ImGuiText*>> mProfiles;
 	ImGuiOverlay::ImGuiObject* mProfileWindow;
@@ -31,10 +30,9 @@ protected:
 
 	struct RenderSettings
 	{
-		bool colorGrading = true;
+		bool tonemapping = true;
 	}
 	mSettings;
 
-	Quad::Ptr mPresentQuad;
-
+	std::map<std::string, RenderPass> mPasses;
 };

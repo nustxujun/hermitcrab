@@ -64,14 +64,9 @@ void RenderGraph::addPass(const std::string& name, std::function<RenderTask(Buil
 		mTasks.emplace_back(name,[task = std::move(task), b = std::move(b), name](auto cmdlist) mutable
 		{
 			PROFILE(name, cmdlist);
-			{
-				PROFILE("prepare", cmdlist);
+				
 			b.prepare(cmdlist);
-			}
-			{
-			PROFILE("task", cmdlist);
 			task(cmdlist);
-			}
 		});
 }
 
@@ -86,7 +81,7 @@ void RenderGraph::execute()
 			tasks.begin()->second(cmdlist);
 			tasks.pop_front();
 		}
-	},true);
+	});
 }
 
 //RenderGraph::BeginPass::BeginPass()

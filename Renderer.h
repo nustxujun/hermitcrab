@@ -1,6 +1,7 @@
 #pragma once
 #include "Common.h"
 #include "TaskExecutor.h"
+#include "Fence.h"
 
 #if defined(D3D12ON7) 
 	#include "D3D12Downlevel.h"
@@ -598,6 +599,7 @@ public:
 		void setScissorRectToScreen();
 		void setRenderTarget(const Resource::Ref& rt, const Resource::Ref& ds = {});
 		void setRenderTargets(const std::vector<Resource::Ref>& rts, const Resource::Ref& ds = {});
+		void setRenderTargets(const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& rts, D3D12_CPU_DESCRIPTOR_HANDLE ds = {0});
 		void setPipelineState(PipelineState::Ref ps);
 		void setVertexBuffer(const std::vector<Buffer::Ptr>& vertices);
 		void setVertexBuffer(const Buffer::Ptr& vertices);
@@ -652,24 +654,21 @@ public:
 	};
 
 	using RenderTask = std::function<void(CommandList::Ref)>;
-	class RenderTaskExecutor final 
+	class RenderTaskExecutor  
 	{
 	public:
 		using Ptr = std::shared_ptr<RenderTaskExecutor>;
 
-		RenderTaskExecutor(const std::vector<CommandList::Ref>& cmdlists);
+		RenderTaskExecutor();
 		~RenderTaskExecutor();
-		void addTask(RenderTask&& task, bool strand = false);
-
-		void execute();
+		void addTask(RenderTask&& task, CommandList::Ref&& cl);
+		void stop();
+		void wait();
+		void exec_one();
 	private:
-		std::vector<CommandList::Ref> mCmdlists;
-		std::vector<std::pair<RenderTask, bool>> mTasks;
-
-		std::vector<std::thread> mWorkers;
-		std::mutex mMutex;
-		std::condition_variable mCondition;
-		bool mRunning{true};
+		Dispatcher mDispatcher;
+		std::list<std::function<void()>> mTasks;
+		FenceObject mFence;
 	};
 
 	static Renderer::Ptr create();
@@ -720,7 +719,7 @@ public:
 	void generateMips(Resource::Ref texture);
 
 
-	void addRenderTask(RenderTask&& task, bool strand = false);
+	void addRenderTask(RenderTask&& task);
 
 private:
 	MemoryData createMemoryData(size_t size = 0)
@@ -789,6 +788,6 @@ private:
 	bool mVSync = false;
 
 
-	RenderTaskExecutor::Ptr mRenderTaskExecutor;
+	RenderTaskExecutor mRenderTaskExecutor;
 
 };

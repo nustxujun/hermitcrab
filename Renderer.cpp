@@ -1,5 +1,7 @@
 #include "Renderer.h"
 #include "Profile.h"
+#include "Fence.h"
+
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"dxgi.lib")
 #pragma comment(lib,"d3dcompiler.lib")
@@ -20,8 +22,12 @@ Renderer::Ptr Renderer::instance;
 #undef ASSERT
 #define ASSERT(x,y) Common::Assert(x, Common::format(y, " file: ", __FILE__, " line: ", __LINE__ ))
 #undef LOG
-#define LOG Common::log
 
+#if _DEBUG
+#define LOG Common::log
+#else
+#define LOG
+#endif
 
 static Renderer::DebugInfo debugInfo;
 static Renderer::DebugInfo debugInfoCache;
@@ -29,6 +35,7 @@ static Renderer::DebugInfo debugInfoCache;
 
 DXGI_FORMAT const Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
 
+static constexpr float weight = 0.999f;
 
 Renderer::Ptr Renderer::create()
 {
@@ -170,7 +177,7 @@ void Renderer::beginFrame()
 
 void Renderer::endFrame()
 {
-	mRenderTaskExecutor->execute();
+	mRenderTaskExecutor.wait();
 
 	ProfileMgr::Singleton.end(mRenderProfile, mCommandLists.back());
 
@@ -854,9 +861,9 @@ void Renderer::generateMips(Resource::Ref texture)
 }
 
 
-void Renderer::addRenderTask(RenderTask&& task, bool strand)
+void Renderer::addRenderTask(RenderTask&& task)
 {
-	mRenderTaskExecutor->addTask(std::move(task), strand);
+	mRenderTaskExecutor.addTask(std::move(task), mCommandLists[0]);
 }
 
 
@@ -865,7 +872,7 @@ void Renderer::uninitialize()
 {
 	flushCommandQueue();
 
-	mRenderTaskExecutor.reset();
+	mRenderTaskExecutor.stop();
 
 	// clear all commands
 	mCommandAllocators.clear();
@@ -974,7 +981,6 @@ void Renderer::initCommands()
 	std::vector<CommandList::Ref> cmdlist;
 	for (auto& c: mCommandLists)
 		cmdlist.emplace_back(c);
-	mRenderTaskExecutor = decltype(mRenderTaskExecutor)(new RenderTaskExecutor(cmdlist));
 }
 
 void Renderer::initDescriptorHeap()
@@ -1262,7 +1268,7 @@ void Renderer::updateTimeStamp()
 				continue;
 
 			auto dtime = float(tickdelta * (td.end - td.begin));
-			p->mGPUHistory = p->mGPUHistory * 0.99f + dtime * 0.01f;
+			p->mGPUHistory = p->mGPUHistory * weight + dtime * (1.0f - weight);
 		}
 		mProfileReadBack->unmap(0);
 	}
@@ -2052,6 +2058,16 @@ void Renderer::CommandList::setRenderTargets(const std::vector<Resource::Ref>& r
 
 }
 
+void Renderer::CommandList::setRenderTargets(const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& rts, D3D12_CPU_DESCRIPTOR_HANDLE ds)
+{
+	const D3D12_CPU_DESCRIPTOR_HANDLE* dshandle = 0;
+	if (ds.ptr != NULL)
+		dshandle = &ds;
+
+	mCmdList->OMSetRenderTargets((UINT)rts.size(), rts.data(), FALSE,dshandle);
+}
+		
+
 void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
 {
 	auto renderer = Renderer::getSingleton();
@@ -2720,11 +2736,10 @@ void Renderer::Profile::begin(Renderer::CommandList::Ref cl)
 	mCPUTime = std::chrono::high_resolution_clock::now();
 }
 
-
 void Renderer::Profile::end(Renderer::CommandList::Ref cl)
 {
 	float dtime = float((double)(std::chrono::high_resolution_clock::now() - mCPUTime).count() / 1000000.0);
-	mCPUHistory = mCPUHistory * 0.9f + dtime * 0.1f;
+	mCPUHistory = mCPUHistory * weight + dtime * (1.0f - weight);
 
 	auto renderer = Renderer::getSingleton();
 	if (cl)
@@ -2852,59 +2867,58 @@ D3D12_GPU_DESCRIPTOR_HANDLE Renderer::ConstantBuffer::getHandle() const
 	return mView.gpu;
 }
 
-Renderer::RenderTaskExecutor::RenderTaskExecutor(const std::vector<CommandList::Ref>& cmdlists)
+Renderer::RenderTaskExecutor::RenderTaskExecutor()
 {
-
-	for (auto& c: cmdlists)
-		mWorkers.emplace_back([this, cmdlist = c]() {
-			while (mRunning)
-			{
-				std::unique_lock<std::mutex> lock(mMutex);
-				mCondition.wait(lock,[this, cmdlist](){
-					return !mTasks.empty() || !mRunning;
-				});
-
-				if (!mRunning)
-					return;
-
-				auto t = std::move(mTasks.back());
-				mTasks.pop_back();
-
-				if (!t.second)
-					lock.unlock();
-
-				t.first(cmdlist);
-
-				if (!t.second)
-					lock.lock();
-				mCondition.notify_one();
-			}
-		});
 }
 
 Renderer::RenderTaskExecutor::~RenderTaskExecutor()
 {
-	{
-		std::unique_lock<std::mutex> lock(mMutex);
-		mRunning = false;
-		mCondition.notify_all();
-	}
-
-	for (auto& t: mWorkers)
-		t.join();
 }
 
-void Renderer::RenderTaskExecutor::addTask(RenderTask&& task, bool strand)
+void Renderer::RenderTaskExecutor::addTask(RenderTask&& task, CommandList::Ref&& cl)
 {
-	std::unique_lock<std::mutex> lock(mMutex);
-	mTasks.emplace_back(std::make_pair(std::move(task), strand));
-	mCondition.notify_one();
+	mDispatcher.invoke_strand([this, task = std::move(task), cmdlist = std::move(cl)]() {
+		mTasks.emplace_back([ task = std::move(task), cmdlist = std::move(cmdlist)]() {
+			task(cmdlist);
+		});
+	});
+	
+	exec_one();
+
 }
 
-void Renderer::RenderTaskExecutor::execute()
+
+
+void Renderer::RenderTaskExecutor::stop()
 {
-	std::unique_lock<std::mutex> lock(mMutex);
-	mCondition.wait(lock, [this](){
-		return mTasks.empty();
+	FenceObject f;
+	f.prepare();
+	mDispatcher.execute_strand([this, &f]() {
+		mTasks.clear();
+		f.signal();
+	});
+
+	f.wait();
+}
+
+void Renderer::RenderTaskExecutor::wait()
+{
+	mFence.prepare();
+	mDispatcher.invoke_strand([this]() {
+		mFence.signal();
+	});
+
+	mFence.wait();
+}
+
+void Renderer::RenderTaskExecutor::exec_one()
+{
+	mDispatcher.invoke_strand([this]() {
+		if (mTasks.empty())
+			return;
+		(*mTasks.begin())();
+		mTasks.pop_front();
+		mDispatcher.invoke_strand(std::bind(&RenderTaskExecutor::exec_one, this));
 	});
 }
+

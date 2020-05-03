@@ -1,6 +1,7 @@
 #include "Framework.h"
 #include "RenderContext.h"
 #include "Profile.h"
+#include "Dispatcher.h"
 
 std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> Framework::processor;
 bool Framework::needPaint = true;
@@ -12,11 +13,23 @@ Framework::Framework()
 	registerWindow();
 	createWindow();
 	mRenderer = Renderer::create();
+
+
+	auto maxworkers = std::thread::hardware_concurrency() - 1;
+	mThread.reserve(maxworkers);
+	for (auto i = 0; i < maxworkers; ++i)
+	{
+		mThread.emplace_back("worker", [](){
+			Dispatcher::run();
+		});
+	}
 }
 
 Framework::~Framework()
 {
 	Renderer::destory();
+
+	Dispatcher::stop();
 }
 
 void Framework::resize(int width, int height)
@@ -36,10 +49,14 @@ void Framework::update()
 		}
 		else if (Framework::needPaint)
 		{
-			PROFILE("frame", {});
-			mRenderer->beginFrame();
-			updateImpl();
-			mRenderer->endFrame();
+			{
+				PROFILE("frame", {});
+				mRenderer->beginFrame();
+				updateImpl();
+				mRenderer->endFrame();
+			}
+
+			ProfileMgr::Singleton.reset();
 		}
 	}
 }

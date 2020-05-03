@@ -17,12 +17,13 @@ public:
 	void execute(const Handler& handler);
 	void execute_strand(const Handler& handler);
 
-	void poll_one(bool block);
-	void run();
-	void stop();
+	static void poll_one(bool block);
+	static void run();
+	static void stop();
 private:
-	asio::io_context mContext;
-	asio::io_context::strand mStrand{mContext};
-	asio::io_context::work mWork{mContext};
+	static asio::io_context sharedContext;
+	asio::io_context& mContext = sharedContext;
+	asio::io_context::strand mStrand{ mContext };
+	asio::io_context::work mWork{ mContext };
 
 };

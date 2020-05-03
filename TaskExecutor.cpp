@@ -17,12 +17,12 @@ TaskExecutor::~TaskExecutor()
 
 void TaskExecutor::addTask(Dispatcher::Handler&& task)
 {
-	mDispatcher.invoke(task);
+	mDispatcher.invoke(std::move(task));
 }
 
 void TaskExecutor::addQueuingTask(Dispatcher::Handler&& task)
 {
-	mDispatcher.invoke_strand(task);
+	mDispatcher.invoke_strand(std::move(task));
 }
 
 void TaskExecutor::complete()

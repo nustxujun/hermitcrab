@@ -2,7 +2,7 @@
 
 #include "Common.h"
 #include "Renderer.h"
-
+#include "Thread.h"
 class Framework
 {
 public:
@@ -24,7 +24,9 @@ private:
 	HWND mWindow;
 	std::wstring mWindowClass = L"_frame_window";
 	Renderer::Ptr mRenderer;
-	static bool needPaint;
 
+	std::vector<Thread> mThread;
+
+	static bool needPaint;
 	static std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> processor;
 };

@@ -9,21 +9,12 @@ public:
 
 	class Auto
 	{
-		std::string name;
 		Renderer::CommandList::Ref cmdlist;
 		Renderer::Profile::Ref profile;
 	public:
-		Auto(const std::string& name, Renderer::CommandList::Ref cl)
-		{
-			profile = ProfileMgr::Singleton.begin(name, cl);
-			this->name = table + name;
-			cmdlist = cl;
-		}
+		Auto(const std::string& name, Renderer::CommandList::Ref cl);
 
-		~Auto()
-		{
-			ProfileMgr::Singleton.end(profile, cmdlist);
-		}
+		~Auto();
 	};
 	
 	struct Output
@@ -38,11 +29,13 @@ public:
 	void reset();
 
 	std::vector<Output> output();
+	
 private:
-	static std::string table;
-
+	static thread_local std::string table;
 	std::vector<std::pair<std::string, Renderer::Profile::Ref>> mAllocatteds;
+	std::vector<Output> mLastOutputs;
 	size_t mCount = 0;
+	std::mutex mMutex;
 };
 
 #define PROFILE(name, cl) ProfileMgr::Auto __autoProfile(name, cl)
