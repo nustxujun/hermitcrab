@@ -30,7 +30,6 @@ private:
 	Renderer::Buffer::Ptr mVertexBuffer[Renderer::NUM_BACK_BUFFERS];
 	Renderer::Buffer::Ptr mIndexBuffer[Renderer::NUM_BACK_BUFFERS];
 	std::vector<char> mCaches[2];
-	Renderer::ConstantBuffer::Ptr mConstant;
 	Renderer::Resource::Ref mFonts;
 	int mWidth = 0;
 	int mHeight = 0;

@@ -1,12 +1,18 @@
 #include "Quad.h"
 
-void Quad::init(const std::string & psname, const Renderer::RenderState& settingrs)
+void Quad::init(const std::string & psname, const Renderer::RenderState& rs)
+{
+	auto renderer = Renderer::getSingleton();
+	auto ps = renderer->compileShaderFromFile((psname), "ps", SM_PS);
+
+	init(ps, rs);
+}
+
+void Quad::init(Renderer::Shader::Ptr ps,const Renderer::RenderState& rs)
 {
 	auto renderer = Renderer::getSingleton();
 	auto vs = renderer->compileShaderFromFile("shaders/quad.hlsl", "vs", SM_VS);
-	auto ps = renderer->compileShaderFromFile((psname), "ps", SM_PS);
 	std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
-	ps->enable32BitsConstants(true);
 	ps->registerStaticSampler({
 			D3D12_FILTER_MIN_MAG_MIP_LINEAR,
 			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
@@ -33,11 +39,8 @@ void Quad::init(const std::string & psname, const Renderer::RenderState& setting
 			1,0,
 			D3D12_SHADER_VISIBILITY_PIXEL
 		});
-	Renderer::RenderState rs = settingrs;
 
-	mPipelineState = renderer->createPipelineState(shaders,rs);
-
-
+	mPipelineState = renderer->createPipelineState(shaders, rs);
 }
 
 Renderer::PipelineState::Ref Quad::getPipelineState() const
@@ -55,5 +58,21 @@ void Quad::fitToScreen()
 	auto renderer = Renderer::getSingleton();
 	auto size = renderer->getSize();
 	mRect = {0,0,(LONG)size[0], (LONG)size[1]};
+}
+
+void Quad::draw(Renderer::CommandList::Ref& cmdlist)const
+{
+	auto renderer = Renderer::getSingleton();
+	cmdlist->setScissorRect(mRect);
+	cmdlist->setViewport({ 0,0, (float)mRect.right, (float)mRect.bottom, 0.0f, 1.0f });
+	
+	for (auto& c: mConstants)
+		mPipelineState->setPSConstant(c.first, c.second);
+
+	cmdlist->setPipelineState(mPipelineState);
+	cmdlist->setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	
+	// draw without vertexbuffer
+	cmdlist->drawInstanced(4);
 }
 

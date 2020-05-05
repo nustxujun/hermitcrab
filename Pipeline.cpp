@@ -5,21 +5,6 @@
 #include "Profile.h"
 #include "ResourceViewAllocator.h"
 
-
-//RenderGraph::LambdaRenderPass::Ptr Pipeline::drawScene(Camera::Ptr cam, UINT flags , UINT mask)
-//{
-//	//auto pass = RenderGraph::LambdaRenderPass::Ptr{new RenderGraph::LambdaRenderPass({},[](auto* pass, const auto& inputs) {
-//	//	pass->write(inputs[0]->getRenderTarget());
-//	//	pass->write(inputs[0]->getDepthStencil());
-//
-//	//	},[=](auto srvs){
-//	//		RenderContext::getSingleton()->renderScene(cam,flags, mask);
-//	//	} )};
-//
-//	//pass->setName("draw scene");
-//	return {};
-//}
-
 Pipeline::RenderPass Pipeline::postprocess(const std::string& ps, DXGI_FORMAT fmt)
 {
 	Quad::Ptr quad = Quad::Ptr(new Quad());
@@ -27,17 +12,43 @@ Pipeline::RenderPass Pipeline::postprocess(const std::string& ps, DXGI_FORMAT fm
 	rs.setRenderTargetFormat({fmt});
 	quad->init(ps,rs);
 
-	return [quad](auto cmdlist, auto& srvs, auto& rtvs, auto dsv)
+	return [quad](auto cmdlist, auto& srvs, auto& rtvs,  auto& argvs)
 	{
-		cmdlist->setRenderTargets(rtvs, dsv);
+		cmdlist->setRenderTargets(rtvs);
 
 		for (auto& i : srvs)
 			quad->setResource(i.first, i.second);
+
+		if (argvs)
+			argvs(quad.get());
 
 		quad->fitToScreen();
 		RenderContext::getSingleton()->renderScreen(quad.get(), cmdlist);
 	};
 }
+
+ResourceHandle::Ptr Pipeline::addPostprocessPass(RenderGraph& rg, const std::string& name, RenderPass&& f, std::map<std::string, ResourceHandle::Ptr>&& srvs, std::function<void(Quad*)>&& argvs, DXGI_FORMAT targetfmt)
+{
+	auto r = Renderer::getSingleton();
+	auto s = r->getSize();
+	auto rt = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], targetfmt);
+
+	rg.addPass(name, [srvs = std::move(srvs), f = std::move(f), rt, argvs = std::move(argvs)](auto& builder){
+		builder.write(rt, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		for (auto& t: srvs)
+			builder.read(t.second, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		return [f = std::move(f), srvs = std::move(srvs), rt, argvs = std::move(argvs)](auto cmdlist) {
+			std::map<std::string, D3D12_GPU_DESCRIPTOR_HANDLE> inputs;
+			for (auto& t: srvs)
+				inputs[t.first] = t.second->getView()->getShaderResource();
+			f(cmdlist, inputs, {rt->getView()->getRenderTarget()}, argvs);
+		};
+	});
+
+	return rt;
+}
+
+
 
 
 DefaultPipeline::DefaultPipeline()
@@ -59,7 +70,8 @@ DefaultPipeline::DefaultPipeline()
 
 	mRenderSettingsWnd = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("rendersettings");
 	mRenderSettingsWnd->drawCallback = [&settings = mSettings](auto gui) {
-		ImGui::Checkbox("tonemapping", &settings.tonemapping);
+		for (auto&s : settings.switchers)
+		ImGui::Checkbox(s.first.c_str(), &s.second);
 
 		return true;
 	};
@@ -101,6 +113,11 @@ DefaultPipeline::DefaultPipeline()
 
 	mPasses["present"] = postprocess("shaders/drawtexture.hlsl", DXGI_FORMAT_R8G8B8A8_UNORM);
 	mPasses["tone"] = postprocess("shaders/tonemapping.hlsl", DXGI_FORMAT_R8G8B8A8_UNORM);
+
+
+
+	mSettings.switchers["tone"] = true;
+
 }
 
 void DefaultPipeline::update()
@@ -132,22 +149,28 @@ void DefaultPipeline::update()
 		};
 	});
 
+	
 	auto rt = hdr;
 
-	if (mSettings.tonemapping)
-	{ 
-		auto ldr = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UNORM);
-		rt = ldr;
-		graph.addPass("tone", [this, src = hdr, dst = ldr](auto& builder) {
-			builder.write(dst, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			builder.read(src, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-			return [this, dst, src](auto cmdlist) {
-				mPasses["tone"](cmdlist, { {"frame",src->getView()->getShaderResource()} }, { dst->getView()->getRenderTarget() }, {});
-			};
-		});
-	
-	}
+	auto connectPostprocess = [&](const std::string& name, std::map<std::string, ResourceHandle::Ptr>&& srvs, std::function<void(Quad*)>&& argvs, auto fmt)
+	{
+		if (mSettings.switchers[name])
+		{
+			rt = addPostprocessPass(graph, name, [this, name](auto& ... args) {
+				mPasses[name](args ...);
+				}, std::move(srvs), std::move(argvs), fmt);
+		}
+	};
 
+
+	//if (mSettings.switchers["atmosphere"])
+	//{
+	//	auto out = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R16G16B16A16_FLOAT);
+	//	graph.addPass("atmosphere", mAtmosphere.execute(rt, out));
+	//	rt = out;
+	//}
+
+	connectPostprocess("tone", { {"frame", hdr} }, {}, DXGI_FORMAT_R8G8B8A8_UNORM);
 
 	graph.addPass("gui",[this, dst = rt](auto& builder) {
 		builder.write(dst, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);

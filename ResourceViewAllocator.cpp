@@ -2,7 +2,7 @@
 
 ResourceViewAllocator ResourceViewAllocator::Singleton;
 
-Renderer::Resource::Ref ResourceViewAllocator::alloc(UINT width, UINT height, UINT depth, DXGI_FORMAT format, Renderer::ViewType type)
+std::pair<Renderer::Resource::Ref, size_t> ResourceViewAllocator::alloc(UINT width, UINT height, UINT depth, DXGI_FORMAT format, Renderer::ViewType type)
 {
 	
 	auto hv = hash(width, height, depth, format, type);
@@ -26,38 +26,37 @@ Renderer::Resource::Ref ResourceViewAllocator::alloc(UINT width, UINT height, UI
 		case Renderer::VT_UNORDEREDACCESS: res->createUnorderedAccessView(NULL); res->createTexture2D(); break;
 		}
 
-		return res;
+		return {res, hv};
 	}
 
 	auto res = stack.back();
 	stack.pop_back();
-	return res;
+	return {res, hv};
 }
 
-void ResourceViewAllocator::recycle(Renderer::Resource::Ref res)
+void ResourceViewAllocator::recycle(Renderer::Resource::Ref res, size_t hashvalue)
 {
 	auto& desc = res->getDesc();
-	auto hv = hash(desc.Width, desc.Height, desc.DepthOrArraySize, desc.Format, res->getViewType());
+	auto hv = hashvalue ? hashvalue : hash(desc.Width, desc.Height, desc.DepthOrArraySize, desc.Format, res->getViewType());
 	mResources[hv].emplace_back(std::move(res));
 }
 
 size_t ResourceViewAllocator::hash(UINT width, UINT height, UINT depth, DXGI_FORMAT format, Renderer::ViewType type)
 {
-	
 	auto cal = [=](){
-			size_t value = 0;
+		size_t value = 0;
 
-			auto combine = [&](auto v){
-				value ^= std::hash<decltype(v)>{}(v)+ 0x9e3779b9 + (value << 6) + (value >> 2);
-			};
+		auto combine = [&](auto v){
+			value ^= std::hash<decltype(v)>{}(v)+ 0x9e3779b9 + (value << 6) + (value >> 2);
+		};
 
-			combine(width);
-			combine(height) ;
-			combine(depth);
-			combine(format);
-			combine(type) ;
+		combine(width);
+		combine(height) ;
+		combine(depth);
+		combine(format);
+		combine(type) ;
 
-			return value;
+		return value;
 	};
 	return cal();
 }

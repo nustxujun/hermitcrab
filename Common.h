@@ -1,8 +1,6 @@
 #pragma once
 
-// std::wstring_convert is deprecated in c++17, but there is no easy way to replace it. 
-// display warnings and remain using it
-#define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
+
 
 
 //stl 
@@ -108,52 +106,6 @@ private:
 	}
 };
 
-template<class T>
-class UpValue
-{
-public:
-	UpValue()
-	{
-		mValue = std::shared_ptr<T>(new T);
-	};
-
-	//template<class ... Args>
-	//UpValue(Args&& ... args)
-	//{
-	//	mValue = std::shared_ptr<T>(new T(std::forward<Args>(args)...));
-	//}
-
-	UpValue(UpValue&& uv) :
-		mValue(uv.mValue)
-	{
-	}
-	UpValue(const UpValue& uv) :
-		mValue(uv.mValue)
-	{
-	}
-
-	void operator=(const T& v)
-	{
-		*mValue	= v;
-	}
-
-	T* operator->()
-	{
-		return mValue.get();
-	}
-
-	operator T&()
-	{
-		return *mValue.get();
-	}
-
-	T& get()
-	{
-		return *mValue.get();
-	}
-private:
-	std::shared_ptr<T> mValue;
-};
 
 using Vector2 = std::array<float, 2>;
 using Vector3 = std::array<float, 3>;

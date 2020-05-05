@@ -21,7 +21,7 @@ ResourceHandle::ResourceHandle(Renderer::ViewType t, int w, int h, DXGI_FORMAT f
 ResourceHandle::~ResourceHandle()
 {
 	if (mView)
-		ResourceViewAllocator::Singleton.recycle(mView);
+		ResourceViewAllocator::Singleton.recycle(mView, mHashValue);
 	mView = {};
 }
 
@@ -51,7 +51,11 @@ void ResourceHandle::prepare()
 const Renderer::Resource::Ref& ResourceHandle::getView()
 {
 	if (!mView)
-		mView = ResourceViewAllocator::Singleton.alloc(mWidth, mHeight, 1, mFormat,mType);
+	{
+		auto ret = ResourceViewAllocator::Singleton.alloc(mWidth, mHeight, 1, mFormat,mType);
+		mView = ret.first;
+		mHashValue = ret.second;
+	}
 	return mView; 
 }
 

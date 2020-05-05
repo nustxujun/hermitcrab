@@ -3,12 +3,15 @@
 #include "RenderGraph.h"
 #include "RenderContext.h"
 #include "ImGuiOverlay.h"
+
+#include "AtmosphericScattering.h"
 class Pipeline
 {
 public:
-	using RenderPass = std::function<void (Renderer::CommandList::Ref&, const std::map<std::string,D3D12_GPU_DESCRIPTOR_HANDLE>&, const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>&, D3D12_CPU_DESCRIPTOR_HANDLE)>;
+	using RenderPass = std::function<void (Renderer::CommandList::Ref&, const std::map<std::string,D3D12_GPU_DESCRIPTOR_HANDLE>&, const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>&,  const std::function<void(Quad*)>&) >;
 
 	RenderPass postprocess(const std::string& ps, DXGI_FORMAT fmt );
+	ResourceHandle::Ptr addPostprocessPass(RenderGraph& rg, const std::string& name, RenderPass&& f, std::map<std::string, ResourceHandle::Ptr>&& srvs, std::function<void(Quad*)>&& argvs, DXGI_FORMAT targetfmt);
 };
 
 class DefaultPipeline: public Pipeline
@@ -30,9 +33,11 @@ protected:
 
 	struct RenderSettings
 	{
-		bool tonemapping = true;
+		std::map<std::string, bool> switchers;
 	}
 	mSettings;
 
 	std::map<std::string, RenderPass> mPasses;
+
+	AtmosphericScattering mAtmosphere;
 };

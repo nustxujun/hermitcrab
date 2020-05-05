@@ -966,12 +966,9 @@ void Renderer::initCommands()
 	mCurrentFrame = 0;
 	mQueueFence = createFence();
 
-#ifdef D3D12ON7
-	size_t maxworkers = 1;
-#else
-	size_t maxworkers = std::thread::hardware_concurrency() - 1;
-#endif 
-	for (auto i = 0; i < maxworkers; ++i)
+	size_t count = 1;
+
+	for (auto i = 0; i < count; ++i)
 	{
 		mCommandLists.emplace_back(CommandList::create());
 		mCommandLists.back()->close();
@@ -1355,79 +1352,6 @@ ID3D12DescriptorHeap * Renderer::DescriptorHeap::get()
 {
 	return mHeap.Get();
 }
-
-//Renderer::ResourceView::ResourceView(ViewType type, UINT width, UINT height, DXGI_FORMAT format, Resource::ResourceType rt):
-//	mType(type)
-//{
-//	auto renderer = Renderer::getSingleton();
-//
-//	D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
-//	switch (format)
-//	{
-//	case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
-//	case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT:
-//	case DXGI_FORMAT_D32_FLOAT:
-//	case DXGI_FORMAT_D24_UNORM_S8_UINT:
-//	case DXGI_FORMAT_X24_TYPELESS_G8_UINT:
-//	case DXGI_FORMAT_D16_UNORM:
-//		flags |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
-//	case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS:
-//	case DXGI_FORMAT_R32_TYPELESS:
-//	case DXGI_FORMAT_R24G8_TYPELESS:
-//	case DXGI_FORMAT_R24_UNORM_X8_TYPELESS:
-//		flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-//		break;
-//	default:
-//		flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
-//	}
-//	mTexture = renderer->createTexture(width, height,1, format,1, D3D12_HEAP_TYPE_DEFAULT, flags,rt);
-//	if ((flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE) == 0)
-//	{
-//		mTexture->to<Texture>().createTexture2D();
-//	}
-//	mAutoRelease = true;
-//
-//	std::wstringstream ss;
-//
-//	if (rt == Resource::RT_TRANSIENT)
-//	{
-//		ss << "transient ";
-//	}
-//	{		
-//		static size_t seqid = 0;
-//		switch (type)
-//		{
-//		case VT_RENDERTARGET: ss << L"RenderTarget"; break;
-//		case VT_DEPTHSTENCIL: ss << L"DepthStencil"; break;
-//		case VT_UNORDEREDACCESS: ss << L"UnorderedAccess"; break;
-//		default: 
-//			ss << "Unknown";
-//		}
-//
-//		ss << seqid++;
-//		mTexture->setName(ss.str().c_str());
-//	}
-//
-//
-//	allocHeap();
-//	auto res = mTexture->get();
-//	auto device = renderer->getDevice();
-//	switch (mType)
-//	{
-//	case Renderer::VT_RENDERTARGET:
-//		device->CreateRenderTargetView(res, nullptr, mHandle);
-//		break;
-//	case Renderer::VT_DEPTHSTENCIL:
-//		device->CreateDepthStencilView(res, nullptr, mHandle);
-//		break;
-//	case Renderer::VT_UNORDEREDACCESS:
-//		device->CreateUnorderedAccessView(res, nullptr,nullptr, mHandle);
-//	default:
-//		ASSERT(false, "unsupported");
-//	}
-//
-//}
-
 
 void Renderer::Resource::createRenderTargetView(const D3D12_RENDER_TARGET_VIEW_DESC* desc, UINT index)
 {
@@ -2642,7 +2566,10 @@ Renderer::ConstantBuffer::Ptr Renderer::PipelineState::createConstantBuffer(Shad
 	auto& cbuffers = shader->second.cbuffers;
 	auto cbuffer = cbuffers.find(name);
 	if (cbuffer == cbuffers.end())
+	{
+		ASSERT(shader != mSemanticsMap.end(), "cannot find specify shader");
 		return {};
+	}
 	auto cb = renderer->createConstantBuffer(cbuffer->second.size);
 	cb->setReflection(cbuffer->second.variables);
 	return cb;

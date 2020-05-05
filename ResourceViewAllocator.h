@@ -7,8 +7,8 @@ class ResourceViewAllocator
 public:
 	static ResourceViewAllocator Singleton;
 
-	Renderer::Resource::Ref alloc(UINT width, UINT height, UINT depth, DXGI_FORMAT format, Renderer::ViewType type);
-	void recycle(Renderer::Resource::Ref res);
+	std::pair<Renderer::Resource::Ref, size_t> alloc(UINT width, UINT height, UINT depth, DXGI_FORMAT format, Renderer::ViewType type);
+	void recycle(Renderer::Resource::Ref res, size_t hashvalue = 0);
 
 private:
 	size_t hash(UINT width, UINT height, UINT depth, DXGI_FORMAT format, Renderer::ViewType type);

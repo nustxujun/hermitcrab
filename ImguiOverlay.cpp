@@ -112,7 +112,6 @@ void ImGuiPass::initRendering()
 	}
 
 	mPipelineState = renderer->createPipelineState(shaders, rs);
-	mConstant = mPipelineState->createConstantBuffer(Renderer::Shader::ST_VERTEX,"vertexBuffer");
 
 }
 
@@ -177,8 +176,6 @@ Renderer::RenderTask ImGuiPass::draw(ImDrawData* data)
 	return [=, data = std::move(d)](auto cmdlist) {
 		cmdlist->setPipelineState(mPipelineState);
 
-		//mConstant->blit(mvp);
-		//mPipelineState->setVSConstant("vertexBuffer", mConstant);
 		mPipelineState->setVSVariable("ProjectionMatrix", mvp);
 
 		//cmdlist->set32BitConstants(1,16,mvp,0);

@@ -28,13 +28,9 @@ public:
 	void setClearValue(const ClearValue& vec){mClearValue = vec;};
 	const ClearValue& getClearValue()const{return mClearValue;};
 
-	//void addRef();
-	//void release();
-
 	void prepare();
 	const Renderer::Resource::Ref& getView() ;
 private:
-	size_t mRefCount = 0;
 	std::wstring mName;
 	Renderer::ViewType mType;
 	int mWidth;
@@ -42,6 +38,7 @@ private:
 	DXGI_FORMAT mFormat;
 	Renderer::Resource::Ref mView;
 	ClearValue mClearValue = {};
+	size_t mHashValue = 0;
 };
 
 
@@ -77,8 +74,9 @@ public:
 
 public:
 	using RenderTask = std::function<void(Renderer::CommandList::Ref)>;
+	using RenderPass = std::function<RenderTask(Builder&)>;
 
-	void addPass(const std::string& name, std::function<RenderTask(Builder&)>&& callback );
+	void addPass(const std::string& name, RenderPass&& callback );
 	void execute();
 private:
 
