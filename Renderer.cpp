@@ -754,6 +754,18 @@ void Renderer::destroyResource(Resource::Ref res)
 	}
 }
 
+Renderer::Resource::Ref Renderer::createResourceView(UINT width, UINT height, DXGI_FORMAT format, ViewType type)
+{
+	D3D12_RESOURCE_FLAGS flag = D3D12_RESOURCE_FLAG_NONE;
+	switch (type)
+	{
+	case Renderer::VT_RENDERTARGET: flag = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET; break;
+	case Renderer::VT_DEPTHSTENCIL:flag = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL; break;
+	case Renderer::VT_UNORDEREDACCESS:flag = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS; break;
+	}
+	return createTexture(width, height, 1, format,1, D3D12_HEAP_TYPE_DEFAULT, flag);
+}
+
 Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs)
 {
 	auto pso = PipelineState::create(rs, shaders);

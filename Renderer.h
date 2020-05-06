@@ -704,6 +704,7 @@ public:
 	Fence::Ptr createFence();
 	Resource::Ref createResource(size_t size, bool isShaderResource, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
 	void destroyResource(Resource::Ref res);
+	Resource::Ref createResourceView(UINT width, UINT height, DXGI_FORMAT format, ViewType type);
 	Resource::Ref createTexture(UINT width, UINT height, UINT depth, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
 	Resource::Ref createTextureCube(UINT size, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
 	Resource::Ref createTextureCubeArray(UINT size, DXGI_FORMAT format, UINT arraySize, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);

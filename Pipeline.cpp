@@ -163,12 +163,12 @@ void DefaultPipeline::update()
 	};
 
 
-	//if (mSettings.switchers["atmosphere"])
-	//{
-	//	auto out = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R16G16B16A16_FLOAT);
-	//	graph.addPass("atmosphere", mAtmosphere.execute(rt, out));
-	//	rt = out;
-	//}
+	if (mSettings.switchers["atmosphere"])
+	{
+		auto out = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UINT);
+		graph.addPass("atmosphere", mAtmosphere.execute(rt, out));
+		rt = out;
+	}
 
 	connectPostprocess("tone", { {"frame", hdr} }, {}, DXGI_FORMAT_R8G8B8A8_UNORM);
 
