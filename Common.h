@@ -5,6 +5,7 @@
 
 //stl 
 #include <string>
+#include <string_view>
 #include <vector>
 #include <array>
 #include <algorithm>
@@ -52,7 +53,7 @@ public :
 		OutputDebugStringA(context.c_str());
 	}
 
-	static void checkResult(HRESULT hr, const std::string& info = {})
+	static void checkResult(HRESULT hr, std::string_view info = {})
 	{
 		if (hr == S_OK) return;
 	
