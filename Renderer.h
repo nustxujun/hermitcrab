@@ -470,7 +470,12 @@ public:
 		~ConstantBuffer();
 
 		void setReflection(const std::map<std::string, Shader::Variable>& rft);
-		void setVariable(const std::string& name, const void* data);
+		template<class T>
+		void setVariable(const std::string& name, const T& v)
+		{
+			setVariable(name, &v, sizeof(v));
+		}
+		void setVariable(const std::string& name, const void* data, size_t size);
 		void blit(const void* buffer, UINT64 offset = 0, UINT64 size = -1);
 		D3D12_GPU_DESCRIPTOR_HANDLE getHandle()const;
 	private:
@@ -771,7 +776,7 @@ private:
 	std::vector<CommandList::Ptr> mCommandLists;
 	CommandList::Ptr mResourceCommandList;
 
-	std::vector<CommandAllocator::Ptr> mCommandAllocators;
+	std::list<CommandAllocator::Ptr> mCommandAllocators;
 	UINT mCurrentFrame;
 
 

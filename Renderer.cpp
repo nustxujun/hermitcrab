@@ -1114,34 +1114,28 @@ std::string Renderer::findFile(const std::string & filename)
 
 Renderer::CommandAllocator::Ptr Renderer::allocCommandAllocator()
 {
-	auto endi = mCommandAllocators.end();
-	for (auto i = mCommandAllocators.begin(); i != endi; ++i)
+	if (!mCommandAllocators.empty())
 	{
-		if ((*i)->completed())
+		auto& i = mCommandAllocators.begin();
+		if ((*i)->completed() || mCommandAllocators.size() >= 16)
 		{
 			auto ca = *i;
-			mCommandAllocators.erase(i);
+			mCommandAllocators.pop_front();
 			return ca;
 		}
 	}
 
-	if (mCommandAllocators.size() >= 16)
-	{
-		auto ca = mCommandAllocators.back();
-		mCommandAllocators.pop_back();
-		return ca;
-	}
-
 	auto a = CommandAllocator::Ptr(new CommandAllocator());
-	//mCommandAllocators.push_back(a);
 	return a;
 }
 
 void Renderer::recycleCommandAllocator(CommandAllocator::Ptr ca)
 {
+#ifdef _DEBUG
 	for (auto& c: mCommandAllocators)
 		if (c->get() == ca->get())
 			ASSERT(0, "faild");
+#endif
 	mCommandAllocators.push_back(ca);
 }
 
@@ -2796,12 +2790,14 @@ void Renderer::ConstantBuffer::setReflection(const std::map<std::string, Shader:
 	mVariables = rft;
 }
 
-void Renderer::ConstantBuffer::setVariable(const std::string& name,const void* data)
+void Renderer::ConstantBuffer::setVariable(const std::string& name,const void* data, size_t size)
 {
 	auto ret = mVariables.find(name);
 	if (ret == mVariables.end())
 		return;
 
+
+	ASSERT(size == ret->second.size, "size is not matched");
 	blit(data, ret->second.offset, ret->second.size );
 }
 
