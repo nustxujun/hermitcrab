@@ -54,7 +54,6 @@ public:
 			IT_NONE,
 			IT_CLEAR,
 			IT_DISCARD,
-			IT_NOUSE,
 		};
 	
 		void read(const ResourceHandle::Ptr& res, D3D12_RESOURCE_STATES state);
