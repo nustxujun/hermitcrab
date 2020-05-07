@@ -39,12 +39,13 @@ class Renderer
 
 
 public:
-	static const auto FEATURE_LEVEL = D3D_FEATURE_LEVEL_12_0;
-	static auto const NUM_BACK_BUFFERS = 2;
-	static auto const NUM_MAX_RENDER_TARGET_VIEWS = 8 * 1024;
-	static auto const NUM_MAX_DEPTH_STENCIL_VIEWS = 4 * 1024;
-	static auto const NUM_MAX_CBV_SRV_UAVS = 32 * 1024;
+	static constexpr auto FEATURE_LEVEL = D3D_FEATURE_LEVEL_12_0;
+	static auto constexpr NUM_BACK_BUFFERS = 2;
+	static auto constexpr NUM_MAX_RENDER_TARGET_VIEWS = 8 * 1024;
+	static auto constexpr NUM_MAX_DEPTH_STENCIL_VIEWS = 4 * 1024;
+	static auto constexpr NUM_MAX_CBV_SRV_UAVS = 32 * 1024;
 	static DXGI_FORMAT const FRAME_BUFFER_FORMAT;
+	static DXGI_FORMAT const BACK_BUFFER_FORMAT;
 
 	enum DescriptorHeapType
 	{
@@ -497,6 +498,7 @@ public:
 		static const RenderState GeneralSolid;
 	public:
 		RenderState(std::function<void(RenderState& self)> initializer);
+		RenderState(DXGI_FORMAT targetfmt);
 
 		void setBlend(const D3D12_BLEND_DESC& bs){mBlend = bs;};
 		void setRasterizer(const D3D12_RASTERIZER_DESC& rs){mRasterizer = rs;}
@@ -553,7 +555,7 @@ public:
 		void setPSVariable( const std::string& name, const void* data);
 
 		ConstantBuffer::Ptr createConstantBuffer(Shader::ShaderType type, const std::string& name);
-
+		const D3D12_GRAPHICS_PIPELINE_STATE_DESC& getDesc()const;
 	private:
 		void setRootDescriptorTable(CommandList* cmdlist);
 	private:
@@ -565,6 +567,8 @@ public:
 		std::map<Shader::ShaderType, std::map<UINT, D3D12_GPU_DESCRIPTOR_HANDLE>> mTextures;
 		std::map<Shader::ShaderType, std::map<UINT, D3D12_GPU_DESCRIPTOR_HANDLE>> mCBuffers;
 		std::map<Shader::ShaderType, std::map<UINT, std::vector<char>>> mCBuffersBy32Bits;
+
+		D3D12_GRAPHICS_PIPELINE_STATE_DESC mDesc;
 	};
 
 
@@ -599,7 +603,7 @@ public:
 		void setScissorRectToScreen();
 		void setRenderTarget(const Resource::Ref& rt, const Resource::Ref& ds = {});
 		void setRenderTargets(const std::vector<Resource::Ref>& rts, const Resource::Ref& ds = {});
-		void setRenderTargets(const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& rts, D3D12_CPU_DESCRIPTOR_HANDLE ds = {0});
+		void setRenderTargets(const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& rts, const D3D12_CPU_DESCRIPTOR_HANDLE* ds = 0);
 		void setPipelineState(PipelineState::Ref ps);
 		void setVertexBuffer(const std::vector<Buffer::Ptr>& vertices);
 		void setVertexBuffer(const Buffer::Ptr& vertices);

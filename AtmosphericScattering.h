@@ -8,7 +8,7 @@ class AtmosphericScattering
 public:
 	AtmosphericScattering();
 
-	RenderGraph::RenderPass execute(ResourceHandle::Ptr input, ResourceHandle::Ptr output);
+	void execute(RenderGraph& graph);
 
 private:
 	Quad::Ptr mQuad;

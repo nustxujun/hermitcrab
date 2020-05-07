@@ -88,15 +88,6 @@ void RenderGraph::execute()
 	});
 }
 
-//RenderGraph::BeginPass::BeginPass()
-//{
-//	setName("begin pass");
-//	mRenderTarget = ResourceHandle::create(Renderer::VT_RENDERTARGET,0,0,DXGI_FORMAT_UNKNOWN);
-//	mRenderTarget->setClearValue({0,0,0,0});
-//	mDepthStencil = ResourceHandle::create(Renderer::VT_DEPTHSTENCIL, 0,0, DXGI_FORMAT_D24_UNORM_S8_UINT);
-//	mDepthStencil->setClearValue({1.0f, 0});
-//}
-
 
 void RenderGraph::Builder::read(const ResourceHandle::Ptr& res, D3D12_RESOURCE_STATES state)
 {

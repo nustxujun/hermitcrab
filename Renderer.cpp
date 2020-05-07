@@ -33,7 +33,8 @@ static Renderer::DebugInfo debugInfo;
 static Renderer::DebugInfo debugInfoCache;
 
 
-DXGI_FORMAT const Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
+DXGI_FORMAT constexpr Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
+DXGI_FORMAT constexpr Renderer::BACK_BUFFER_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
 
 static constexpr float weight = 0.999f;
 
@@ -101,7 +102,7 @@ void Renderer::resize(int width, int height)
 	swapChainDesc.BufferCount = NUM_BACK_BUFFERS;
 	swapChainDesc.Width = width;
 	swapChainDesc.Height = height;
-	swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	swapChainDesc.Format = BACK_BUFFER_FORMAT;
 	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 	swapChainDesc.SampleDesc.Count = 1;
@@ -1968,7 +1969,8 @@ void Renderer::CommandList::setRenderTarget(const Resource::Ref& rt, const Resou
 		dshandle = & (ds->getDepthStencil());
 
 	Common::Assert(rt->getState() == D3D12_RESOURCE_STATE_RENDER_TARGET, "need transition to rendertarget");
-	mCmdList->OMSetRenderTargets(1, &rt->getRenderTarget(),FALSE, dshandle);
+	setRenderTargets({rt->getRenderTarget()}, dshandle);
+
 }
 
 void Renderer::CommandList::setRenderTargets(const std::vector<Resource::Ref>& rts, const Resource::Ref & ds)
@@ -1990,17 +1992,12 @@ void Renderer::CommandList::setRenderTargets(const std::vector<Resource::Ref>& r
 			rtvs.push_back({});
 		}
 	}
-	mCmdList->OMSetRenderTargets((UINT)rtvs.size(), rtvs.data(), FALSE, dshandle);
-
+	setRenderTargets(rtvs, dshandle);
 }
 
-void Renderer::CommandList::setRenderTargets(const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& rts, D3D12_CPU_DESCRIPTOR_HANDLE ds)
+void Renderer::CommandList::setRenderTargets(const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& rts,const D3D12_CPU_DESCRIPTOR_HANDLE* ds)
 {
-	const D3D12_CPU_DESCRIPTOR_HANDLE* dshandle = 0;
-	if (ds.ptr != NULL)
-		dshandle = &ds;
-
-	mCmdList->OMSetRenderTargets((UINT)rts.size(), rts.data(), FALSE,dshandle);
+	mCmdList->OMSetRenderTargets((UINT)rts.size(), rts.data(), FALSE,ds);
 }
 		
 
@@ -2193,6 +2190,12 @@ const Renderer::RenderState Renderer::RenderState::GeneralSolid([](Renderer::Ren
 Renderer::RenderState::RenderState(std::function<void(RenderState&)> initializer)
 {
 	initializer(*this);
+}
+
+Renderer::RenderState::RenderState(DXGI_FORMAT targetfmt)
+{
+	*this = RenderState::Default;
+	mRTFormats = {targetfmt};
 }
 
 Renderer::Shader::Shader(const MemoryData& data, ShaderType type) :
@@ -2431,6 +2434,7 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	
 	CHECK(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&mPipelineState)));
 
+	mDesc = desc;
 }
 
 Renderer::PipelineState::PipelineState(const Shader::Ptr & shader)
@@ -2585,6 +2589,11 @@ Renderer::ConstantBuffer::Ptr Renderer::PipelineState::createConstantBuffer(Shad
 	auto cb = renderer->createConstantBuffer(cbuffer->second.size);
 	cb->setReflection(cbuffer->second.variables);
 	return cb;
+}
+
+const D3D12_GRAPHICS_PIPELINE_STATE_DESC& Renderer::PipelineState::getDesc() const
+{
+	return mDesc;
 }
 
 void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)

@@ -163,11 +163,10 @@ void DefaultPipeline::update()
 	};
 
 
-	if (mSettings.switchers["atmosphere"])
+	//if (mSettings.switchers["atmosphere"])
 	{
-		auto out = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UINT);
-		graph.addPass("atmosphere", mAtmosphere.execute(rt, out));
-		rt = out;
+		auto out = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UNORM);
+		mAtmosphere.execute(graph);
 	}
 
 	connectPostprocess("tone", { {"frame", hdr} }, {}, DXGI_FORMAT_R8G8B8A8_UNORM);

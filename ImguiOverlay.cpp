@@ -111,6 +111,8 @@ void ImGuiPass::initRendering()
 		rs.setDepthStencil(desc);
 	}
 
+	rs.setRenderTargetFormat({Renderer::BACK_BUFFER_FORMAT});
+
 	mPipelineState = renderer->createPipelineState(shaders, rs);
 
 }
