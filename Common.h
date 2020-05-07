@@ -113,6 +113,11 @@ using Vector3 = std::array<float, 3>;
 using Vector4 = std::array<float, 4>;
 using Color = std::array<float, 4>;
 using Matrix = std::array<Vector4, 4>;
+using float2 = Vector2;
+using float3 = Vector3;
+using float4 = Vector4;
+using matrix = Matrix;
+
 struct AABB
 {
 	Vector3 center;

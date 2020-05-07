@@ -36,8 +36,6 @@ static Renderer::DebugInfo debugInfoCache;
 DXGI_FORMAT constexpr Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
 DXGI_FORMAT constexpr Renderer::BACK_BUFFER_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-static constexpr float weight = 0.999f;
-
 Renderer::Ptr Renderer::create()
 {
 	instance = Renderer::Ptr(new Renderer());
@@ -178,8 +176,10 @@ void Renderer::beginFrame()
 
 void Renderer::endFrame()
 {
+{
+	PROFILE("waitting cmdlist", {});
 	mRenderTaskExecutor.wait();
-
+	}
 	ProfileMgr::Singleton.end(mRenderProfile, mCommandLists.back());
 
 	commitCommands();
@@ -1272,7 +1272,8 @@ void Renderer::updateTimeStamp()
 				continue;
 
 			auto dtime = float(tickdelta * (td.end - td.begin));
-			p->mGPUHistory = p->mGPUHistory * weight + dtime * (1.0f - weight);
+			float weight = std::min(1.0f, std::abs(dtime - p->mGPUHistory) * 0.1f);
+			p->mGPUHistory = p->mGPUHistory * (1.0f - weight) + dtime *  weight;
 		}
 		mProfileReadBack->unmap(0);
 	}
@@ -2681,7 +2682,8 @@ void Renderer::Profile::begin(Renderer::CommandList::Ref cl)
 void Renderer::Profile::end(Renderer::CommandList::Ref cl)
 {
 	float dtime = float((double)(std::chrono::high_resolution_clock::now() - mCPUTime).count() / 1000000.0);
-	mCPUHistory = mCPUHistory * weight + dtime * (1.0f - weight);
+	float weight = std::min(1.0f, std::abs(dtime - mCPUHistory) * 0.1f);
+	mCPUHistory = mCPUHistory * (1 - weight) + dtime * ( weight);
 
 	auto renderer = Renderer::getSingleton();
 	if (cl)
