@@ -2,6 +2,7 @@
 
 #include "Common.h"
 #include "Renderer.h"
+#include "Fence.h"
 
 class ResourceHandle
 {
@@ -45,6 +46,7 @@ private:
 class RenderGraph
 {
 public:
+	using RenderTask = std::function<void(Renderer::CommandList::Ref)>;
 
 	class Builder
 	{
@@ -71,14 +73,33 @@ public:
 
 	};
 
-public:
-	using RenderTask = std::function<void(Renderer::CommandList::Ref)>;
 	using RenderPass = std::function<RenderTask(Builder&)>;
 
+
+	class Barrier
+	{
+	public:
+		using Ptr = std::shared_ptr<Barrier>;
+		using BarrierTask = std::function<void(Barrier*)>;
+
+		void addTask(BarrierTask&& task);
+		void addRenderPass(const std::string& name, RenderPass&& callback);
+
+		void execute(Renderer::CommandList::Ref cmdlist);
+	private:
+		std::list<RenderTask> mTasks;
+		FenceObject mFence;
+		size_t mTaskCount = 0;
+	};
+
+public:
+
+
 	void addPass(const std::string& name, RenderPass&& callback );
+	Barrier::Ptr addBarrier(const std::string& name);
 	void execute();
 private:
 
-	std::list<std::pair<std::string ,RenderTask>> mTasks;
+	std::list<RenderTask> mTasks;
 };
 

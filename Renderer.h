@@ -640,8 +640,8 @@ public:
 			D3D12_RESOURCE_STATES state;
 			UINT subresource;
 		};
-		std::map<ID3D12Resource*,Transition> mTransitionBarrier;
-		std::map<ID3D12Resource*, Resource::Ref> mUAVBarrier;
+		std::unordered_map<ID3D12Resource*,Transition> mTransitionBarrier;
+		std::unordered_map<ID3D12Resource*, Resource::Ref> mUAVBarrier;
 	};
 
 	class Profile :public Interface<Profile>
@@ -663,14 +663,15 @@ public:
 	};
 
 	using RenderTask = std::function<void(CommandList::Ref)>;
-	class RenderTaskExecutor  
+	using ObjectTask = std::function<void()>;
+	class TaskExecutor  
 	{
 	public:
-		using Ptr = std::shared_ptr<RenderTaskExecutor>;
+		using Ptr = std::shared_ptr<TaskExecutor>;
+		
+		template<class Task, class ... Args>
+		void addTask(Task&& task, Args&& ...args);
 
-		RenderTaskExecutor();
-		~RenderTaskExecutor();
-		void addTask(RenderTask&& task, CommandList::Ref&& cl);
 		void stop();
 		void wait();
 		void exec_one();
@@ -730,7 +731,7 @@ public:
 
 
 	void addRenderTask(RenderTask&& task);
-
+	void addObjectTask(ObjectTask&& task);
 private:
 	MemoryData createMemoryData(size_t size = 0)
 	{
@@ -798,6 +799,7 @@ private:
 	bool mVSync = false;
 
 
-	RenderTaskExecutor mRenderTaskExecutor;
+	TaskExecutor mRenderTaskExecutor;
+	TaskExecutor mObjectTaskExecutor;
 
 };

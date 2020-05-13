@@ -3,14 +3,17 @@
 #include "Common.h"
 #include <mutex>
 #include <atomic>
+
 class FenceObject
 {
 public:
-	void prepare();
-	void signal(bool all = true);
+	using Ptr = std::shared_ptr<FenceObject>;
+
+	void prepare(size_t count = 1);
+	void signal();
 	void wait(std::function<bool()>&& cond = {});
 private:
 	std::mutex mMutex;
 	std::condition_variable mCondVar;
-	std::atomic_bool mSignal;
+	size_t mSignalCount = 0;
 };

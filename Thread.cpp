@@ -11,6 +11,14 @@ std::string Thread::getCurrentName()
 		return "main thread";
 }
 
+size_t Thread::getId()
+{
+	if (CurrentThread)
+		return (size_t)CurrentThread;
+	else
+		return 0;
+}
+
 Thread::Thread(const std::string& name, std::function<void()>&& f):
 	mName(name)
 {
