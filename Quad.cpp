@@ -53,6 +53,11 @@ void Quad::setResource(const std::string& name, D3D12_GPU_DESCRIPTOR_HANDLE hand
 	mPipelineState->setResource(Renderer::Shader::ST_PIXEL, name, handle);
 }	
 
+void Quad::setConstants(const std::string& name, Renderer::ConstantBuffer::Ptr c)
+{
+	mPipelineState->setPSConstant(name, c);
+}
+
 void Quad::fitToScreen()
 {
 	auto renderer = Renderer::getSingleton();

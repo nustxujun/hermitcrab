@@ -65,7 +65,7 @@ void RenderGraph::addPass(const std::string& name, std::function<RenderTask(Buil
 	Builder b;
 	auto task = callback(b);
 	if (task)
-		mTasks.emplace_back(name,[task = std::move(task), b = std::move(b), name](auto cmdlist) mutable
+		mTasks.emplace_back([task = std::move(task), b = std::move(b), name](auto cmdlist) mutable
 		{
 			PROFILE(name, cmdlist);
 				
@@ -75,6 +75,15 @@ void RenderGraph::addPass(const std::string& name, std::function<RenderTask(Buil
 }
 
 
+RenderGraph::Barrier::Ptr RenderGraph::addBarrier(const std::string& name)
+{
+	auto b = Barrier::Ptr(new Barrier);
+	mTasks.emplace_back( [b](auto cmdlist){
+		b->execute(cmdlist);
+	});
+	return b;
+}
+
 void RenderGraph::execute()
 {
 	Renderer::getSingleton()->addRenderTask([tasks = std::move(mTasks)](auto cmdlist) mutable
@@ -82,7 +91,7 @@ void RenderGraph::execute()
 		PROFILE("cmdlist", cmdlist);
 		while(!tasks.empty())
 		{
-			tasks.begin()->second(cmdlist);
+			(*tasks.begin())(cmdlist);
 			tasks.pop_front();
 		}
 	});
@@ -130,3 +139,37 @@ void RenderGraph::Builder::prepare(Renderer::CommandList::Ref cmdlist)
 }
 
 
+void RenderGraph::Barrier::addTask(BarrierTask&& task)
+{
+	mFence.prepare(++mTaskCount);
+	task(this);
+}
+
+void RenderGraph::Barrier::addRenderPass(const std::string& name, RenderPass&& callback)
+{
+	Builder b;
+	auto task = callback(b);
+	if (task)
+		mTasks.emplace_back([task = std::move(task), b = std::move(b), name](auto cmdlist) mutable
+	{
+		PROFILE(name, cmdlist);
+
+		b.prepare(cmdlist);
+		task(cmdlist);
+	});
+
+	mFence.signal();
+}
+
+void RenderGraph::Barrier::execute(Renderer::CommandList::Ref cmdlist)
+{
+	{
+	PROFILE("barrier", cmdlist);
+	mFence.wait();
+	}
+	while (!mTasks.empty())
+	{
+		(*mTasks.begin())(cmdlist);
+		mTasks.pop_front();
+	}
+}

@@ -144,7 +144,7 @@ void DefaultPipeline::update()
 		return [=](auto cmdlist) {
 			auto context = RenderContext::getSingleton();
 			auto cam = context->getMainCamera();
-			cmdlist->setRenderTarget(rt->getView(), d->getView());
+			//cmdlist->setRenderTarget(rt->getView(), d->getView());
 			context->renderScene(cmdlist,cam);
 		};
 	});
@@ -171,15 +171,31 @@ void DefaultPipeline::update()
 
 	connectPostprocess("tone", { {"frame", hdr} }, {}, DXGI_FORMAT_R8G8B8A8_UNORM);
 
-	graph.addPass("gui",[this, dst = rt](auto& builder) {
-		builder.write(dst, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-		auto task = mGui.execute();
-		return [this, dst, task = std::move(task)](auto cmdlist){
-			cmdlist->setRenderTarget(dst->getView());
-			task(cmdlist);
-		};
+	auto guib = graph.addBarrier("gui barrier");
+	guib->addTask([this, r, dst = rt](auto barrier) {
+		r->addObjectTask([this, barrier, dst]()mutable {
+			barrier->addRenderPass("gui", [dst, this](auto& builder){
+				builder.write(dst, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+				PROFILE("gui logic", {});
+				auto task = mGui.execute();
+				return[this, dst, task = std::move(task)](auto cmdlist){
+					cmdlist->setRenderTarget(dst->getView());
+					task(cmdlist);
+				};
+			});
+		});
 	});
+
+	//graph.addPass("gui",[this, dst = rt,b](auto& builder) {
+	//	builder.write(dst, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+	//	auto task = mGui.execute();
+	//	return [this, dst, task = std::move(task)](auto cmdlist){
+	//		cmdlist->setRenderTarget(dst->getView());
+	//		task(cmdlist);
+	//	};
+	//});
 
 	graph.addPass("present", [this, src = rt](auto& builder) {
 		builder.read(src, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);

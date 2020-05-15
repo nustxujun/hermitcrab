@@ -19,6 +19,7 @@ public:
 	{
 		mPipelineState->setPSVariable(name, &val);
 	}
+	void setConstants(const std::string& name, Renderer::ConstantBuffer::Ptr c);
 
 	const D3D12_RECT& getRect()const {return mRect;}
 	void setRect(const D3D12_RECT& r){mRect = r;}
