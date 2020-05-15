@@ -14,7 +14,6 @@ AtmosphericScattering::AtmosphericScattering()
 
 	mSettings = ImGuiOverlay::ImGuiObject::root()->createChild<ImGuiOverlay::ImGuiWindow>("atmosphere settings");
 	mSettings->drawCallback = [&](auto) {
-		
 		return true;
 	};
 }

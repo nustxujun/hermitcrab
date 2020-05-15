@@ -17,20 +17,22 @@ private:
 	Renderer::Resource::Ref mTransmittanceToAtmosphereTop;
 	bool mRecompute = true;
 
+	struct DensityProfileLayer
+	{
+		float width;
+		float exp_term;
+		float exp_scale;
+		float linear_term;
+		float constant_term;
+	};
+
+	struct DensityProfile
+	{
+		DensityProfileLayer layers[2];
+	};
+
 	struct
 	{
-        struct DensityProfile
-        {
-            struct 
-            {
-                float width;
-                float exp_term;
-                float exp_scale;
-                float linear_term;
-                float constant_term;
-            }layers[2];
-        };
-
         float3 solar_irradiance;
         float sun_angular_radius;
         float bottom_radius;
@@ -48,5 +50,14 @@ private:
 	}mAtmosphereParams;
 
     ImGuiOverlay::ImGuiObject* mSettings;
+	struct
+	{
+		std::vector<double> wavelengths;
+		std::vector<double> solar_irradiance;
+		
+		std::vector<DensityProfileLayer> rayleigh_density;
+
+	}
+	mSettingParams;
 
 };
