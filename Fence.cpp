@@ -1,15 +1,12 @@
 #include "Fence.h"
 
-void FenceObject::prepare(size_t count )
-{
-	std::unique_lock<std::mutex> lock(mMutex);
-	mSignalCount = count;
-}
 
-void FenceObject::signal()
+
+void FenceObject::signal(std::function<void()>&& dosomething)
 {
 	std::unique_lock<std::mutex> lock(mMutex);
-	mSignalCount = std::min( (size_t)0, mSignalCount - 1);
+	if (dosomething)
+		dosomething();
 	mCondVar.notify_one();
 }
 
@@ -19,7 +16,7 @@ void FenceObject::wait(std::function<bool()>&& cond)
 
 	mCondVar.wait(lock,[this, cond = std::move(cond)]() {
 		if (cond)
-			return cond() && mSignalCount == 0;
-		return mSignalCount == 0;
+			return cond() ;
+		return true;
 	});
 }

@@ -1,41 +1,13 @@
 #include "TaskExecutor.h"
 
-TaskExecutor::TaskExecutor(int workerCount)
+TaskExecutor::TaskExecutor(asio::io_context& context):
+	mContext(context), mDispatcher(context)
 {
-	for (int i = 0; i < workerCount; ++i)
-		mWorkers.emplace_back([&dispatcher = mDispatcher]() {
-			dispatcher.run();
-		});
 }
 
-TaskExecutor::~TaskExecutor()
+void TaskExecutor::wait()
 {
-	mDispatcher.stop();
-	for (auto& t: mWorkers)
-		t.join();
-}
-
-void TaskExecutor::addTask(Dispatcher::Handler&& task)
-{
-	mDispatcher.invoke(std::move(task));
-}
-
-void TaskExecutor::addQueuingTask(Dispatcher::Handler&& task)
-{
-	mDispatcher.invoke_strand(std::move(task));
-}
-
-void TaskExecutor::complete()
-{
-	std::mutex m;
-	std::unique_lock<std::mutex> lock;
-	std::condition_variable cv;
-
-	mDispatcher.invoke_strand([&](){
-		cv.notify_one();
+	mComplete.wait([this](){
+		return mTaskCount.load(std::memory_order_relaxed) == 0;
 	});
-
-	cv.wait(lock);
 }
-
-

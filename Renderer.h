@@ -664,22 +664,7 @@ public:
 
 	using RenderTask = std::function<void(CommandList::Ref)>;
 	using ObjectTask = std::function<void()>;
-	class TaskExecutor  
-	{
-	public:
-		using Ptr = std::shared_ptr<TaskExecutor>;
-		
-		template<class Task, class ... Args>
-		void addTask(Task&& task, Args&& ...args);
 
-		void stop();
-		void wait();
-		void exec_one();
-	private:
-		Dispatcher mDispatcher;
-		std::list<std::function<void()>> mTasks;
-		FenceObject mFence;
-	};
 
 	static Renderer::Ptr create();
 	static void destory();
@@ -799,7 +784,7 @@ private:
 	bool mVSync = false;
 
 
-	TaskExecutor mRenderTaskExecutor;
-	TaskExecutor mObjectTaskExecutor;
+	TaskExecutor mRenderTaskExecutor{Dispatcher::getSharedContext()};
+	TaskExecutor mObjectTaskExecutor{Dispatcher::getSharedContext()};
 
 };

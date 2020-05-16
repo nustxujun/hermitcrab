@@ -61,6 +61,7 @@ Renderer::Renderer()
 {
 	mFileSearchPaths = {
 		"",
+		"../",
 		"../Engine/",
 		"../Engine/Shaders/",
 		"Engine/",
@@ -881,12 +882,12 @@ void Renderer::generateMips(Resource::Ref texture)
 
 void Renderer::addRenderTask(RenderTask&& task)
 {
-	mRenderTaskExecutor.addTask(std::move(task), mCommandLists[0]);
+	mRenderTaskExecutor.addTask(std::move(task),true, mCommandLists[0]);
 }
 
 void Renderer::addObjectTask(ObjectTask&& task)
 {
-	mObjectTaskExecutor.addTask(task);
+	mObjectTaskExecutor.addTask(task, true);
 }
 
 
@@ -895,8 +896,9 @@ void Renderer::uninitialize()
 {
 	flushCommandQueue();
 
-	mObjectTaskExecutor.stop();
-	mRenderTaskExecutor.stop();
+	Dispatcher::stop(Dispatcher::getSharedContext());
+	//mObjectTaskExecutor.stop();
+	//mRenderTaskExecutor.stop();
 
 	// clear all commands
 	mCommandAllocators.clear();
@@ -2822,51 +2824,5 @@ void Renderer::ConstantBuffer::blit(const void * buffer, UINT64 offset , UINT64 
 D3D12_GPU_DESCRIPTOR_HANDLE Renderer::ConstantBuffer::getHandle() const
 {
 	return mView.gpu;
-}
-
-
-template<class Task, class ... Args>
-void Renderer::TaskExecutor::addTask(Task&& task, Args&& ...args)
-{
-	mDispatcher.invoke_strand([this, task = std::move(task), args ...]() {
-		mTasks.emplace_back([task = std::move(task), args ...]() {
-			task(args...);
-		});
-	});
-
-	exec_one();
-}
-
-void Renderer::TaskExecutor::stop()
-{
-	FenceObject f;
-	f.prepare();
-	mDispatcher.execute_strand([this, &f]() {
-		mTasks.clear();
-		f.signal();
-	});
-
-	f.wait();
-}
-
-void Renderer::TaskExecutor::wait()
-{
-	mFence.prepare();
-	mDispatcher.invoke_strand([this]() {
-		mFence.signal();
-	});
-
-	mFence.wait();
-}
-
-void Renderer::TaskExecutor::exec_one()
-{
-	mDispatcher.invoke_strand([this]() {
-		if (mTasks.empty())
-			return;
-		(*mTasks.begin())();
-		mTasks.pop_front();
-		mDispatcher.invoke_strand(std::bind(&TaskExecutor::exec_one, this));
-	});
 }
 

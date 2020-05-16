@@ -10,7 +10,7 @@ public:
 	static std::string getCurrentName();
 	static size_t getId();
 	
-	Thread(const std::string& name, std::function<void()>&& f);
+	Thread(const std::string& name, size_t id, std::function<void()>&& f);
 	~Thread();
 	void join();
 
@@ -20,4 +20,5 @@ private:
 	
 	std::shared_ptr<std::thread> mThread;
 	std::string mName;
+	size_t mID;
 };

@@ -10,16 +10,15 @@ Renderer::Profile::Ref ProfileMgr::begin(const std::string& name, Renderer::Comm
 	std::string thdname = Thread::getCurrentName();
 	mMutex.lock();
 	auto& allocs = mAllocatteds[thdname];
-	mMutex.unlock();
-
 	while (allocs.first.size() < allocs.second + 1)
 	{
 		allocs.first.emplace_back("",r->createProfile());
 	}
-
 	auto& p = allocs.first[allocs.second++];
+
 	p.first = table + name + " on " + thdname;
 	p.second->begin(cl);
+	mMutex.unlock();
 
 	table.push_back('\t');
 

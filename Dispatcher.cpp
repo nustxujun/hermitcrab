@@ -2,6 +2,11 @@
 
 asio::io_context Dispatcher::sharedContext;
 
+Dispatcher::Dispatcher(asio::io_context& context):
+	mContext(context), mStrand(context), mWork(context)
+{
+}
+
 Dispatcher::~Dispatcher()
 {
 	mContext.stop();
@@ -35,13 +40,13 @@ void Dispatcher::poll_one(bool block)
 		sharedContext.poll_one();
 }
 
-void Dispatcher::run()
+void Dispatcher::run(asio::io_context& c)
 {
-	asio::io_context::work work(sharedContext);
-	sharedContext.run();
+	asio::io_context::work work(c);
+	c.run();
 }
 
-void Dispatcher::stop()
+void Dispatcher::stop(asio::io_context& c )
 {
-	sharedContext.stop();
+	c.stop();
 }

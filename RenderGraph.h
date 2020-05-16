@@ -82,14 +82,14 @@ public:
 		using Ptr = std::shared_ptr<Barrier>;
 		using BarrierTask = std::function<void(Barrier*)>;
 
-		void addTask(BarrierTask&& task);
-		void addRenderPass(const std::string& name, RenderPass&& callback);
-
 		void execute(Renderer::CommandList::Ref cmdlist);
+		void signal();
+
+		void addRenderPass(const std::string& name, RenderPass&& callback);
 	private:
-		std::list<RenderTask> mTasks;
 		FenceObject mFence;
-		size_t mTaskCount = 0;
+		std::list<RenderTask> mTasks;
+		std::mutex mMutex;
 	};
 
 public:

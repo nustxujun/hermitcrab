@@ -1,19 +1,42 @@
 #pragma once
 #include "Common.h"
 #include "Dispatcher.h"
+#include "Fence.h"
+#include "Thread.h"
+#include <atomic>
 
 class TaskExecutor
 {
 public:
-	TaskExecutor(int workerCount = std::thread::hardware_concurrency());
-	~TaskExecutor();
+	using Ptr = std::shared_ptr<TaskExecutor>;
 
-	void addTask(Dispatcher::Handler&& task);
-	void addQueuingTask(Dispatcher::Handler&& task);
+	TaskExecutor(asio::io_context& context);
 
-	void complete();
-protected:
-	std::vector<std::thread> mWorkers;
+	template<class Task, class ... Args>
+	void addTask(Task&& task,bool strand, Args&& ...args)
+	{
+		mTaskCount.fetch_add(1, std::memory_order_relaxed);
+		auto lambda = [this, task = std::move(task), args ...](){
+			task(args...);
+			mComplete.signal([this](){
+				mTaskCount.fetch_sub(1, std::memory_order_relaxed);
+			});
+		};
+		if (strand)
+		{
+			mDispatcher.invoke_strand(std::move(lambda));
+		}
+		else
+		{
+			mDispatcher.invoke(std::move(lambda));
+		}
+	}
+
+	void wait();
+private:
+	asio::io_context& mContext;
 	Dispatcher mDispatcher;
+	FenceObject mComplete;
+	std::atomic_int mTaskCount = 0;
 
 };

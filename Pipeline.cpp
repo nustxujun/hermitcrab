@@ -144,7 +144,7 @@ void DefaultPipeline::update()
 		return [=](auto cmdlist) {
 			auto context = RenderContext::getSingleton();
 			auto cam = context->getMainCamera();
-			//cmdlist->setRenderTarget(rt->getView(), d->getView());
+			cmdlist->setRenderTarget(rt->getView(), d->getView());
 			context->renderScene(cmdlist,cam);
 		};
 	});
@@ -164,27 +164,26 @@ void DefaultPipeline::update()
 
 
 	//if (mSettings.switchers["atmosphere"])
-	{
-		auto out = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UNORM);
-		mAtmosphere.execute(graph);
-	}
+	//{
+	//	auto out = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UNORM);
+	//	mAtmosphere.execute(graph);
+	//}
 
 	connectPostprocess("tone", { {"frame", hdr} }, {}, DXGI_FORMAT_R8G8B8A8_UNORM);
 
 
 	auto guib = graph.addBarrier("gui barrier");
-	guib->addTask([this, r, dst = rt](auto barrier) {
-		r->addObjectTask([this, barrier, dst]()mutable {
-			barrier->addRenderPass("gui", [dst, this](auto& builder){
-				builder.write(dst, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
-				PROFILE("gui logic", {});
-				auto task = mGui.execute();
-				return[this, dst, task = std::move(task)](auto cmdlist){
-					cmdlist->setRenderTarget(dst->getView());
-					task(cmdlist);
-				};
-			});
+	r->addObjectTask([this, barrier = guib , dst = rt]()mutable {
+		barrier->addRenderPass("gui", [dst, this](auto& builder){
+			builder.write(dst, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+			PROFILE("gui logic", {});
+			auto task = mGui.execute();
+			return[this, dst, task = std::move(task)](auto cmdlist){
+				cmdlist->setRenderTarget(dst->getView());
+				task(cmdlist);
+			};
 		});
+		barrier->signal();
 	});
 
 	//graph.addPass("gui",[this, dst = rt,b](auto& builder) {

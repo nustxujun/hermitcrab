@@ -19,8 +19,8 @@ Framework::Framework()
 	mThread.reserve(maxworkers);
 	for (auto i = 0; i < maxworkers; ++i)
 	{
-		mThread.emplace_back("worker", [](){
-			Dispatcher::run();
+		mThread.emplace_back("worker", i + 1,[](){
+			Dispatcher::run(Dispatcher::getSharedContext());
 		});
 	}
 }
@@ -29,7 +29,7 @@ Framework::~Framework()
 {
 	Renderer::destory();
 
-	Dispatcher::stop();
+	Dispatcher::stop(Dispatcher::getSharedContext());
 }
 
 void Framework::resize(int width, int height)

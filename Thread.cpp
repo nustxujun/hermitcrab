@@ -14,14 +14,16 @@ std::string Thread::getCurrentName()
 size_t Thread::getId()
 {
 	if (CurrentThread)
-		return (size_t)CurrentThread;
+		return (size_t)CurrentThread->mID;
 	else
 		return 0;
 }
 
-Thread::Thread(const std::string& name, std::function<void()>&& f):
+Thread::Thread(const std::string& name, size_t id, std::function<void()>&& f):
 	mName(name)
 {
+	mID = id;
+
 	mThread = std::make_shared<std::thread>([curthread = this, func = std::move(f)](){
 		Thread::CurrentThread = curthread;
 		func();
