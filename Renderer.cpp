@@ -181,10 +181,13 @@ void Renderer::beginFrame()
 
 void Renderer::endFrame()
 {
-{
-	PROFILE("waitting cmdlist", {});
-	mObjectTaskExecutor.wait();
-	mRenderTaskExecutor.wait();
+	{
+		PROFILE("tasks", {});
+
+		auto& cnt = Dispatcher::getSharedContext();
+	
+		while(mRenderThread.poll_one() + cnt.poll_one() != 0);
+
 	}
 	ProfileMgr::Singleton.end(mRenderProfile, mCommandLists.back());
 
@@ -882,14 +885,11 @@ void Renderer::generateMips(Resource::Ref texture)
 
 void Renderer::addRenderTask(RenderTask&& task)
 {
-	mRenderTaskExecutor.addTask(std::move(task),true, mCommandLists[0]);
+	//mRenderTaskExecutor.addTask(std::move(task),true, mCommandLists[0]);
+	mRenderTasks.invoke_strand([t = std::move(task), this](){
+		t(mCommandLists[0]);
+	});
 }
-
-void Renderer::addObjectTask(ObjectTask&& task)
-{
-	mObjectTaskExecutor.addTask(task, true);
-}
-
 
 
 void Renderer::uninitialize()
@@ -1154,6 +1154,7 @@ void Renderer::recycleCommandAllocator(CommandAllocator::Ptr ca)
 
 void Renderer::commitCommands()
 {
+	PROFILE("commit commands", {});
 	mCommandLists.back()->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_PRESENT, 0, true);
 
 #ifndef D3D12ON7
@@ -1170,6 +1171,8 @@ void Renderer::commitCommands()
 
 void Renderer::resetCommands()
 {
+	PROFILE("reset commands", {});
+
 	//mCommandList->reset();
 	for (auto& c: mCommandLists)
 		c->reset();
@@ -1242,6 +1245,8 @@ void Renderer::addResource(Resource::Ptr res)
 }
 void Renderer::present()
 {
+	PROFILE("swapchain preset", {});
+
 #if defined(D3D12ON7)
 	ComPtr<ID3D12CommandQueueDownlevel> commandQueueDownlevel;
 
@@ -1260,6 +1265,8 @@ void Renderer::present()
 
 void Renderer::updateTimeStamp()
 {
+	PROFILE("udpate timestamp", {});
+
 	if (mProfileCmdAlloc)
 	{
 		mProfileCmdAlloc->wait();

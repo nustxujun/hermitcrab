@@ -14,4 +14,5 @@ public:
 private:
 	std::mutex mMutex;
 	std::condition_variable mCondVar;
+	std::atomic_bool mCond = false;
 };

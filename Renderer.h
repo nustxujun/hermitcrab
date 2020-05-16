@@ -716,7 +716,6 @@ public:
 
 
 	void addRenderTask(RenderTask&& task);
-	void addObjectTask(ObjectTask&& task);
 private:
 	MemoryData createMemoryData(size_t size = 0)
 	{
@@ -783,8 +782,7 @@ private:
 	PipelineState::Ref mSRGBConv;
 	bool mVSync = false;
 
-
-	TaskExecutor mRenderTaskExecutor{Dispatcher::getSharedContext()};
-	TaskExecutor mObjectTaskExecutor{Dispatcher::getSharedContext()};
+	asio::io_context mRenderThread;
+	Dispatcher mRenderTasks{ mRenderThread };
 
 };

@@ -19,6 +19,11 @@ size_t Thread::getId()
 		return 0;
 }
 
+bool Thread::isMainThread()
+{
+	return getId() == 0;
+}
+
 Thread::Thread(const std::string& name, size_t id, std::function<void()>&& f):
 	mName(name)
 {

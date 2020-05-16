@@ -9,7 +9,7 @@ public:
 	using Ptr = std::shared_ptr<Thread>;
 	static std::string getCurrentName();
 	static size_t getId();
-	
+	static bool isMainThread();
 	Thread(const std::string& name, size_t id, std::function<void()>&& f);
 	~Thread();
 	void join();

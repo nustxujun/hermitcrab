@@ -15,7 +15,7 @@ public:
 	~ImGuiPass();
 
 	Renderer::RenderTask execute() ;
-
+	void update();
 	void resize(HWND win, int width, int height);
 
 private:

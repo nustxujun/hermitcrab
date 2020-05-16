@@ -61,7 +61,7 @@ public:
 		void read(const ResourceHandle::Ptr& res, D3D12_RESOURCE_STATES state);
 		void write(const ResourceHandle::Ptr& res, InitialType type, D3D12_RESOURCE_STATES state);
 
-		void prepare(Renderer::CommandList::Ref cmdlist);
+		void prepare(Renderer::CommandList::Ref cmdlist)const;
 	private:
 		struct Transition
 		{
@@ -81,14 +81,16 @@ public:
 	public:
 		using Ptr = std::shared_ptr<Barrier>;
 		using BarrierTask = std::function<void(Barrier*)>;
+		Barrier();
 
-		void execute(Renderer::CommandList::Ref cmdlist);
+		void execute();
 		void signal();
 
-		void addRenderPass(const std::string& name, RenderPass&& callback);
+		void addRenderTask(const std::string& name, RenderTask&& callback);
 	private:
-		FenceObject mFence;
-		std::list<RenderTask> mTasks;
+		FenceObject::Ptr mFence ;
+		using Tasks = std::list<std::pair<std::string, RenderTask>>;
+		std::shared_ptr<Tasks> mTasks;
 		std::mutex mMutex;
 	};
 
@@ -100,6 +102,6 @@ public:
 	void execute();
 private:
 
-	std::list<RenderTask> mTasks;
+	std::vector<std::pair<std::string,RenderPass>> mPasses;
 };
 

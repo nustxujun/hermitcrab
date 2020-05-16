@@ -120,6 +120,8 @@ void ImGuiPass::initRendering()
 
 Renderer::RenderTask ImGuiPass::draw(ImDrawData* data)
 {
+	CHECK_RENDER_THREAD
+	
 	if (data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f || data->TotalIdxCount <= 0 )
 		return {};
 
@@ -248,19 +250,22 @@ LRESULT ImGuiPass::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 
 Renderer::RenderTask ImGuiPass::execute()
 {
+	auto data = ImGui::GetDrawData();
+	return draw(data);
+}
+
+void ImGuiPass::update()
+{
 	HWND win = Renderer::getSingleton()->getWindow();
 	RECT rect;
 	::GetClientRect(win, &rect);
 	resize(win, std::max(1L, rect.right), std::max(1L, rect.bottom));
-	
+
 	ImGui::NewFrame();
 	//ImGui::ShowDemoWindow();
 	ImGuiOverlay::ImGuiObject::root()->framemove();
 
 	ImGui::Render();
-
-	auto data = ImGui::GetDrawData();
-	return draw(data);
 }
 
 void ImGuiPass::resize(HWND win, int width, int height)

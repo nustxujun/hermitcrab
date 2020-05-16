@@ -60,41 +60,49 @@ const Renderer::Resource::Ref& ResourceHandle::getView()
 }
 
 
-void RenderGraph::addPass(const std::string& name, std::function<RenderTask(Builder&)>&& callback)
+void RenderGraph::addPass(const std::string& name, RenderPass&& callback)
 {
-	Builder b;
-	auto task = callback(b);
-	if (task)
-		mTasks.emplace_back([task = std::move(task), b = std::move(b), name](auto cmdlist) mutable
-		{
-			PROFILE(name, cmdlist);
-				
-			b.prepare(cmdlist);
-			task(cmdlist);
-		});
+	mPasses.push_back({name, std::move(callback)});
+	//Builder b;
+	//auto task = callback(b);
+	//if (task)
+	//	mTasks.emplace_back([task = std::move(task), b = std::move(b), name](auto cmdlist) mutable
+	//	{
+	//		PROFILE(name, cmdlist);
+	//			
+	//		b.prepare(cmdlist);
+	//		task(cmdlist);
+	//	});
 }
 
 
 RenderGraph::Barrier::Ptr RenderGraph::addBarrier(const std::string& name)
 {
-	auto b = Barrier::Ptr(new Barrier);
-	mTasks.emplace_back( [b](auto cmdlist){
-		b->execute(cmdlist);
-	});
-	return b;
+	auto barrier = Barrier::Ptr(new Barrier);
+	mPasses.push_back({name, [barrier](auto&b )->RenderTask{
+		barrier->execute();
+		return {};
+	}});
+	return barrier;
 }
 
 void RenderGraph::execute()
 {
-	Renderer::getSingleton()->addRenderTask([tasks = std::move(mTasks)](auto cmdlist) mutable
+	auto r = Renderer::getSingleton();
+	for (auto& pass : mPasses)
 	{
-		PROFILE("cmdlist", cmdlist);
-		while(!tasks.empty())
+		Builder b;
+		auto task = pass.second(b);
+		if (task)
 		{
-			(*tasks.begin())(cmdlist);
-			tasks.pop_front();
+			r->addRenderTask([n = std::move(pass.first), t = std::move(task), b = std::move(b)](auto cmdlist) {
+				PROFILE(n, cmdlist);
+				b.prepare(cmdlist);
+				t(cmdlist);
+			});
 		}
-	});
+	}
+
 }
 
 
@@ -108,9 +116,9 @@ void RenderGraph::Builder::write(const ResourceHandle::Ptr& res, InitialType typ
 	mTransitions.push_back({res, state, type});
 }
 
-void RenderGraph::Builder::prepare(Renderer::CommandList::Ref cmdlist)
+void RenderGraph::Builder::prepare(Renderer::CommandList::Ref cmdlist)const
 {
-
+	Common::Assert(Thread::isMainThread(), "builder must be in main thread");
 	for (auto& t : mTransitions)
 	{
 		cmdlist->transitionBarrier(t.res->getView(), t.state);
@@ -141,38 +149,51 @@ void RenderGraph::Builder::prepare(Renderer::CommandList::Ref cmdlist)
 
 void RenderGraph::Barrier::signal()
 {
-	mFence.signal();
+	mFence->signal();
 }
 
-void RenderGraph::Barrier::addRenderPass(const std::string& name, RenderPass&& callback)
+void RenderGraph::Barrier::addRenderTask(const std::string& name, RenderTask&& callback)
 {
-	Builder b;
-	auto task = callback(b);
-	if (task)
-	{
-		std::unique_lock<std::mutex> lock(mMutex);
-		mTasks.emplace_back([task = std::move(task), b = std::move(b), name](auto cmdlist) mutable
+	std::lock_guard<std::mutex> lock(mMutex);
+	mTasks->push_back({ name, std::move(callback) });
+	//Builder b;
+	//auto task = callback(b);
+	//if (task)
+	//{
+	//	std::unique_lock<std::mutex> lock(mMutex);
+	//	mTasks.emplace_back([task = std::move(task), b = std::move(b), name](auto cmdlist) mutable
+	//	{
+	//		PROFILE(name, cmdlist);
+
+	//		b.prepare(cmdlist);
+	//		task(cmdlist);
+	//	});
+	//}
+}
+
+
+RenderGraph::Barrier::Barrier()
+{
+	mFence = FenceObject::Ptr(new FenceObject());
+	mTasks = decltype(mTasks)(new Tasks());
+}
+
+void RenderGraph::Barrier::execute()
+{
+	auto r = Renderer::getSingleton();
+	std::lock_guard<std::mutex> lock(mMutex);
+	r->addRenderTask([fence = mFence, tasks = mTasks](auto cmdlist)mutable {
+		PROFILE("barrier", {});
 		{
-			PROFILE(name, cmdlist);
-
-			b.prepare(cmdlist);
-			task(cmdlist);
-		});
-	}
-}
-
-
-void RenderGraph::Barrier::execute(Renderer::CommandList::Ref cmdlist)
-{
-	{
-	PROFILE("barrier", cmdlist);
-	mFence.wait();
-	}
-
-	std::unique_lock<std::mutex> lock(mMutex);
-	while (!mTasks.empty())
-	{
-		mTasks.front()(cmdlist);
-		mTasks.pop_front();
-	}
+			PROFILE("barrier waitting", {});
+			fence->wait();
+		}
+		while(!tasks->empty())
+		{
+			auto& t = tasks->front();
+			PROFILE(t.first, cmdlist);
+			t.second(cmdlist);
+			tasks->pop_front();
+		}
+	});
 }

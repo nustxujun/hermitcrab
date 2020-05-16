@@ -40,4 +40,6 @@ protected:
 	std::map<std::string, RenderPass> mPasses;
 
 	AtmosphericScattering mAtmosphere;
+	Dispatcher mDispatcher;
+
 };

@@ -129,3 +129,9 @@ struct AABB
 
 #undef min
 #undef max
+
+#ifdef _DEBUG
+#define CHECK_RENDER_THREAD {Common::Assert(Thread::getId() == 0, "need running on main thread.");}
+#else
+#define CHECK_RENDER_THREAD 
+#endif
