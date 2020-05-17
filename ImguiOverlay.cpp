@@ -1,6 +1,6 @@
 #include "ImGuiOverlay.h"
 #include "Framework.h"
-
+#include "Profile.h"
 ImGuiPass::ImGuiPass()
 {
 	initImGui();
@@ -118,66 +118,64 @@ void ImGuiPass::initRendering()
 }
 
 
-Renderer::RenderTask ImGuiPass::draw(ImDrawData* data)
+Renderer::RenderTask ImGuiPass::draw()
 {
-	CHECK_RENDER_THREAD
-	
-	if (data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f || data->TotalIdxCount <= 0 )
-		return {};
+	return [this](auto cmdlist) {
+		{
+			PROFILE("waitting gui update",{});
+		mFence.wait();
+		}
+		auto data = ImGui::GetDrawData();
 
-	auto renderer = Renderer::getSingleton();
-	auto& VertexBuffer = mVertexBuffer[renderer->getCurrentFrameIndex()];
-	auto& IndexBuffer = mIndexBuffer[renderer->getCurrentFrameIndex()];
-	if (!VertexBuffer || VertexBuffer->getSize() < data->TotalVtxCount * sizeof(ImDrawVert))
-	{
-		auto size = data->TotalIdxCount;
-		VertexBuffer = renderer->createBuffer(size * sizeof(ImDrawVert), sizeof(ImDrawVert), false, D3D12_HEAP_TYPE_UPLOAD);
-	}
+		if (data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f || data->TotalIdxCount <= 0)
+			return;
 
-	if (!IndexBuffer || IndexBuffer->getSize() < data->TotalIdxCount * sizeof(ImDrawIdx))
-	{
-		auto size = data->TotalIdxCount ;
-		IndexBuffer = renderer->createBuffer(size * sizeof(ImDrawIdx), sizeof(ImDrawIdx), false, D3D12_HEAP_TYPE_UPLOAD);
-	}
+		auto renderer = Renderer::getSingleton();
+		auto& VertexBuffer = mVertexBuffer[renderer->getCurrentFrameIndex()];
+		auto& IndexBuffer = mIndexBuffer[renderer->getCurrentFrameIndex()];
+		if (!VertexBuffer || VertexBuffer->getSize() < data->TotalVtxCount * sizeof(ImDrawVert))
+		{
+			auto size = data->TotalIdxCount;
+			VertexBuffer = renderer->createBuffer(size * sizeof(ImDrawVert), sizeof(ImDrawVert), false, D3D12_HEAP_TYPE_UPLOAD);
+		}
 
-	auto vertices = VertexBuffer->getResource()->map(0);
-	auto indices = IndexBuffer->getResource()->map(0);
+		if (!IndexBuffer || IndexBuffer->getSize() < data->TotalIdxCount * sizeof(ImDrawIdx))
+		{
+			auto size = data->TotalIdxCount;
+			IndexBuffer = renderer->createBuffer(size * sizeof(ImDrawIdx), sizeof(ImDrawIdx), false, D3D12_HEAP_TYPE_UPLOAD);
+		}
 
-	for (int n = 0; n < data->CmdListsCount; n++)
-	{
-		const ImDrawList* cmd_list = data->CmdLists[n];
-		auto numVertices = cmd_list->VtxBuffer.Size * sizeof(ImDrawVert);
-		auto numIndices = cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx);
-		memcpy(vertices, cmd_list->VtxBuffer.Data, numVertices);
-		vertices += numVertices;
-		memcpy(indices, cmd_list->IdxBuffer.Data,numIndices);
-		indices += numIndices;
-	}
+		auto vertices = VertexBuffer->getResource()->map(0);
+		auto indices = IndexBuffer->getResource()->map(0);
 
-	VertexBuffer->getResource()->unmap(0);
-	IndexBuffer->getResource()->unmap(0);
+		for (int n = 0; n < data->CmdListsCount; n++)
+		{
+			const ImDrawList* cmd_list = data->CmdLists[n];
+			auto numVertices = cmd_list->VtxBuffer.Size * sizeof(ImDrawVert);
+			auto numIndices = cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx);
+			memcpy(vertices, cmd_list->VtxBuffer.Data, numVertices);
+			vertices += numVertices;
+			memcpy(indices, cmd_list->IdxBuffer.Data, numIndices);
+			indices += numIndices;
+		}
 
-	float L = data->DisplayPos.x;
-	float R = data->DisplayPos.x + data->DisplaySize.x;
-	float T = data->DisplayPos.y;
-	float B = data->DisplayPos.y + data->DisplaySize.y;
+		VertexBuffer->getResource()->unmap(0);
+		IndexBuffer->getResource()->unmap(0);
 
-	float mvp[4][4] =
-	{
-		{ 2.0f / (R - L),   0.0f,           0.0f,      (R + L) / (L - R) },
-		{ 0.0f,         2.0f / (T - B),     0.0f,      (T + B) / (B - T) },
-		{ 0.0f,         0.0f,           0.5f,       0.5f },
-		{ 0.0f,  0.0f,   0.0f,       1.0f },
-	};
+		float L = data->DisplayPos.x;
+		float R = data->DisplayPos.x + data->DisplaySize.x;
+		float T = data->DisplayPos.y;
+		float B = data->DisplayPos.y + data->DisplaySize.y;
 
-	//auto cmdlist = renderer->getCommandList();
-
-	std::shared_ptr<ImDrawData> d(new ImDrawData());
-	memcpy(&*d, data, sizeof(ImDrawData));
+		float mvp[4][4] =
+		{
+			{ 2.0f / (R - L),   0.0f,           0.0f,      (R + L) / (L - R) },
+			{ 0.0f,         2.0f / (T - B),     0.0f,      (T + B) / (B - T) },
+			{ 0.0f,         0.0f,           0.5f,       0.5f },
+			{ 0.0f,  0.0f,   0.0f,       1.0f },
+		};
 
 
-
-	return [=, data = std::move(d)](auto cmdlist) {
 		cmdlist->setPipelineState(mPipelineState);
 
 		mPipelineState->setVSVariable("ProjectionMatrix", mvp);
@@ -214,8 +212,6 @@ Renderer::RenderTask ImGuiPass::draw(ImDrawData* data)
 					cmdlist->setScissorRect(r);
 					auto handle = (D3D12_GPU_DESCRIPTOR_HANDLE*)&pcmd->TextureId;
 					mPipelineState->setPSResource("texture0", *handle);
-					//cmdlist->get()->SetGraphicsRootDescriptorTable(0, *handle);
-					//cmdlist->setTexture(0, mFonts);
 					cmdlist->drawIndexedInstanced(pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
 				}
 			}
@@ -250,12 +246,13 @@ LRESULT ImGuiPass::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 
 Renderer::RenderTask ImGuiPass::execute()
 {
-	auto data = ImGui::GetDrawData();
-	return draw(data);
+	//update();
+	return draw();
 }
 
 void ImGuiPass::update()
 {
+	PROFILE("gui update", {});
 	HWND win = Renderer::getSingleton()->getWindow();
 	RECT rect;
 	::GetClientRect(win, &rect);
@@ -266,6 +263,7 @@ void ImGuiPass::update()
 	ImGuiOverlay::ImGuiObject::root()->framemove();
 
 	ImGui::Render();
+	mFence.signal();
 }
 
 void ImGuiPass::resize(HWND win, int width, int height)

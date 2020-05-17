@@ -46,7 +46,7 @@ public:
 	static auto constexpr NUM_MAX_CBV_SRV_UAVS = 32 * 1024;
 	static DXGI_FORMAT const FRAME_BUFFER_FORMAT;
 	static DXGI_FORMAT const BACK_BUFFER_FORMAT;
-
+	static size_t const NUM_COMMANDLIST;
 	enum DescriptorHeapType
 	{
 		DHT_BACKBUFFER,
@@ -625,11 +625,12 @@ public:
 		void dispatch(UINT x, UINT y , UINT z);
 		void endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx);
 
-		Fence::Ptr getFence(){return mAllocator->mFence;}
-		CommandAllocator::Ref getAllocator(){return mAllocator;}
+		//Fence::Ptr getFence(){return mAllocator->mFence;}
+		CommandAllocator::Ref getAllocator(){return mAllocators[mCurrentAllocator];}
 	private:
-		
-		CommandAllocator::Ptr mAllocator;
+		static const auto NUM_ALLOCATORS = 4;
+		std::array<CommandAllocator::Ptr, NUM_ALLOCATORS> mAllocators;
+		size_t mCurrentAllocator = 0;
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
 		PipelineState::Ref mCurrentPipelineState;
 
@@ -715,7 +716,8 @@ public:
 	void generateMips(Resource::Ref texture);
 
 
-	void addRenderTask(RenderTask&& task);
+	void addRenderTask(RenderTask&& task, bool strand = false, bool impl = false);
+
 private:
 	MemoryData createMemoryData(size_t size = 0)
 	{
@@ -731,22 +733,17 @@ private:
 	Shader::ShaderType mapShaderType(const std::string& target);
 	void collectDebugInfo();
 
-	CommandAllocator::Ptr allocCommandAllocator();
-	void recycleCommandAllocator(CommandAllocator::Ptr ca);
 	void commitCommands();
-	void resetCommands();
-	void executeCommands();
-	void syncFrame();
+	void fetchNextFrame();
+	void processTasks();
 
 	ComPtr<IDXGIFACTORY> getDXGIFactory();
 	std::vector<ComPtr<IDXGIAdapter>> getAdapter();
 	DescriptorHeap::Ref getDescriptorHeap(DescriptorHeapType);
-	Resource::Ref findTransient(const D3D12_RESOURCE_DESC& desc);
 	void addResource(Resource::Ptr res);
 
 	void present();
 	void updateTimeStamp();
-
 private:
 	static Renderer::Ptr instance;
 
@@ -759,9 +756,10 @@ private:
 	Fence::Ptr mQueueFence;
 	//CommandList::Ptr mCommandList;
 	std::vector<CommandList::Ptr> mCommandLists;
+	std::vector<ID3D12CommandList*> mOriginCommandLists;
+	std::atomic_uint64_t mNumCommandLists = 0;
 	CommandList::Ptr mResourceCommandList;
 
-	std::list<CommandAllocator::Ptr> mCommandAllocators;
 	UINT mCurrentFrame;
 
 
@@ -783,6 +781,8 @@ private:
 	bool mVSync = false;
 
 	asio::io_context mRenderThread;
-	Dispatcher mRenderTasks{ mRenderThread };
+	TaskExecutor mRenderTasks{ Dispatcher::getSharedContext() };
+
+	std::mutex mResourceMutex;
 
 };

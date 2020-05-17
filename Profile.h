@@ -32,10 +32,11 @@ public:
 	
 private:
 	static thread_local std::string table;
-	std::map<std::string, std::pair<std::vector<std::pair<std::string, Renderer::Profile::Ref>>, size_t>> mAllocatteds;
+	std::map<size_t, std::pair<std::vector<std::pair<std::string, Renderer::Profile::Ref>>, size_t>> mAllocatteds;
 	std::vector<Output> mLastOutputs;
 	size_t mCount = 0;
 	std::mutex mMutex;
 };
 
 #define PROFILE(name, cl) ProfileMgr::Auto __autoProfile(name, cl)
+//#define PROFILE(name, cl)

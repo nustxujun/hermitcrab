@@ -40,6 +40,7 @@ private:
 	Renderer::Resource::Ref mView;
 	ClearValue mClearValue = {};
 	size_t mHashValue = 0;
+	std::mutex mViewMutex;
 };
 
 
@@ -62,6 +63,7 @@ public:
 		void write(const ResourceHandle::Ptr& res, InitialType type, D3D12_RESOURCE_STATES state);
 
 		void prepare(Renderer::CommandList::Ref cmdlist)const;
+		bool empty(){return mTransitions.empty();}
 	private:
 		struct Transition
 		{
@@ -86,11 +88,11 @@ public:
 		void execute();
 		void signal();
 
-		void addRenderTask(const std::string& name, RenderTask&& callback);
+		void addRenderTask(const std::string& name, RenderPass&& callback);
 	private:
 		FenceObject::Ptr mFence ;
-		using Tasks = std::list<std::pair<std::string, RenderTask>>;
-		std::shared_ptr<Tasks> mTasks;
+		using Passes = std::vector<std::pair<std::string, RenderPass>>;
+		std::shared_ptr<Passes> mPasses;
 		std::mutex mMutex;
 	};
 

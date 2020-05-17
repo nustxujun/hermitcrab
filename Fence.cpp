@@ -7,8 +7,8 @@ void FenceObject::signal(std::function<void()>&& dosomething)
 	std::lock_guard<std::mutex> lock(mMutex);
 	if (dosomething)
 		dosomething();
-	mCondVar.notify_one();
 	mCond.store(true, std::memory_order_relaxed);
+	mCondVar.notify_one();
 }
 
 void FenceObject::wait(std::function<bool()>&& cond)

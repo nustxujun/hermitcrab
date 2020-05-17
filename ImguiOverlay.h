@@ -22,7 +22,7 @@ private:
 	void initImGui();
 	void initRendering();
 	void initFonts();
-	Renderer::RenderTask draw(ImDrawData* data);
+	Renderer::RenderTask draw();
 
 	LRESULT process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 private:
@@ -33,6 +33,8 @@ private:
 	Renderer::Resource::Ref mFonts;
 	int mWidth = 0;
 	int mHeight = 0;
+
+	FenceObject mFence;
 };
 
 namespace ImGuiOverlay

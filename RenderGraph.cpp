@@ -20,6 +20,7 @@ ResourceHandle::ResourceHandle(Renderer::ViewType t, int w, int h, DXGI_FORMAT f
 
 ResourceHandle::~ResourceHandle()
 {
+	std::lock_guard<std::mutex> lock(mViewMutex);
 	if (mView)
 		ResourceViewAllocator::Singleton.recycle(mView, mHashValue);
 	mView = {};
@@ -50,6 +51,7 @@ void ResourceHandle::prepare()
 
 const Renderer::Resource::Ref& ResourceHandle::getView()
 {
+	std::lock_guard<std::mutex> lock(mViewMutex);
 	if (!mView)
 	{
 		auto ret = ResourceViewAllocator::Singleton.alloc(mWidth, mHeight, 1, mFormat,mType);
@@ -63,16 +65,6 @@ const Renderer::Resource::Ref& ResourceHandle::getView()
 void RenderGraph::addPass(const std::string& name, RenderPass&& callback)
 {
 	mPasses.push_back({name, std::move(callback)});
-	//Builder b;
-	//auto task = callback(b);
-	//if (task)
-	//	mTasks.emplace_back([task = std::move(task), b = std::move(b), name](auto cmdlist) mutable
-	//	{
-	//		PROFILE(name, cmdlist);
-	//			
-	//		b.prepare(cmdlist);
-	//		task(cmdlist);
-	//	});
 }
 
 
@@ -88,20 +80,31 @@ RenderGraph::Barrier::Ptr RenderGraph::addBarrier(const std::string& name)
 
 void RenderGraph::execute()
 {
+	CHECK_RENDER_THREAD;
 	auto r = Renderer::getSingleton();
+
 	for (auto& pass : mPasses)
 	{
+		PROFILE("pass " + pass.first, {});
 		Builder b;
 		auto task = pass.second(b);
+
+		if (!b.empty())
+		{
+			r->addRenderTask([b = std::move(b)](auto cmdlist){
+				b.prepare(cmdlist);
+			},  true);
+		}
 		if (task)
 		{
-			r->addRenderTask([n = std::move(pass.first), t = std::move(task), b = std::move(b)](auto cmdlist) {
+			
+			r->addRenderTask([n = std::move(pass.first), t = std::move(task)](auto cmdlist) {
 				PROFILE(n, cmdlist);
-				b.prepare(cmdlist);
 				t(cmdlist);
-			});
+			},  false);
 		}
 	}
+
 
 }
 
@@ -118,10 +121,10 @@ void RenderGraph::Builder::write(const ResourceHandle::Ptr& res, InitialType typ
 
 void RenderGraph::Builder::prepare(Renderer::CommandList::Ref cmdlist)const
 {
-	Common::Assert(Thread::isMainThread(), "builder must be in main thread");
+	//Common::Assert(Thread::isMainThread(), "builder must be in main thread");
 	for (auto& t : mTransitions)
 	{
-		cmdlist->transitionBarrier(t.res->getView(), t.state);
+		cmdlist->transitionBarrier(t.res->getView(), t.state,0);
 	}
 
 	cmdlist->flushResourceBarrier();
@@ -152,48 +155,38 @@ void RenderGraph::Barrier::signal()
 	mFence->signal();
 }
 
-void RenderGraph::Barrier::addRenderTask(const std::string& name, RenderTask&& callback)
+void RenderGraph::Barrier::addRenderTask(const std::string& name, RenderPass&& callback)
 {
 	std::lock_guard<std::mutex> lock(mMutex);
-	mTasks->push_back({ name, std::move(callback) });
-	//Builder b;
-	//auto task = callback(b);
-	//if (task)
-	//{
-	//	std::unique_lock<std::mutex> lock(mMutex);
-	//	mTasks.emplace_back([task = std::move(task), b = std::move(b), name](auto cmdlist) mutable
-	//	{
-	//		PROFILE(name, cmdlist);
+	mPasses->push_back({ name, std::move(callback) });
 
-	//		b.prepare(cmdlist);
-	//		task(cmdlist);
-	//	});
-	//}
 }
 
 
 RenderGraph::Barrier::Barrier()
 {
 	mFence = FenceObject::Ptr(new FenceObject());
-	mTasks = decltype(mTasks)(new Tasks());
+	mPasses = decltype(mPasses)(new Passes());
 }
 
 void RenderGraph::Barrier::execute()
 {
-	auto r = Renderer::getSingleton();
-	std::lock_guard<std::mutex> lock(mMutex);
-	r->addRenderTask([fence = mFence, tasks = mTasks](auto cmdlist)mutable {
-		PROFILE("barrier", {});
-		{
-			PROFILE("barrier waitting", {});
-			fence->wait();
-		}
-		while(!tasks->empty())
-		{
-			auto& t = tasks->front();
-			PROFILE(t.first, cmdlist);
-			t.second(cmdlist);
-			tasks->pop_front();
-		}
-	});
+	//mFence->wait();
+
+	//auto r = Renderer::getSingleton();
+	//std::lock_guard<std::mutex> lock(mMutex);
+	//r->addRenderTask([fence = mFence, passes = mPasses](auto cmdlist)mutable {
+	//	PROFILE("barrier", {});
+	//	{
+	//		PROFILE("barrier waitting", {});
+	//		fence->wait();
+	//	}
+	//	while(!tasks->empty())
+	//	{
+	//		auto& t = tasks->front();
+	//		PROFILE(t.first, cmdlist);
+	//		t.second(cmdlist);
+	//		tasks->pop_front();
+	//	}
+	//});
 }

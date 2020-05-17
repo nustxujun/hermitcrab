@@ -29,7 +29,7 @@ void AtmosphericScattering::execute(RenderGraph& graph)
 {
 	if (mRecompute)
 	{	
-		mRecompute  = false;
+		//mRecompute  = false;
 		graph.addPass("prec", [this](RenderGraph::Builder& b)mutable
 		{
 			return [this](Renderer::CommandList::Ref cmdlist) {

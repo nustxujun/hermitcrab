@@ -163,41 +163,45 @@ void DefaultPipeline::update()
 	};
 
 
-	//if (mSettings.switchers["atmosphere"])
-	{
-		auto out = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UNORM);
-		mAtmosphere.execute(graph);
-	}
+	////if (mSettings.switchers["atmosphere"])
+	//{
+	//	auto out = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UNORM);
+	//	mAtmosphere.execute(graph);
+	//}
 
 	connectPostprocess("tone", { {"frame", hdr} }, {}, DXGI_FORMAT_R8G8B8A8_UNORM);
 
 
-	auto barrier = graph.addBarrier("gui barrier");
-	mDispatcher.invoke([barrier, this, rt](){
-		PROFILE("gui logic", {});
-		mGui.update();
-		barrier->addRenderTask("gui", [rt, this](auto cmdlist) {
-			RenderGraph::Builder builder;
-			builder.write(rt, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			auto task = mGui.execute();
-			builder.prepare(cmdlist);
-			cmdlist->setRenderTarget(rt->getView());
-			task(cmdlist);
-		});
-		barrier->signal();
+	//auto barrier = graph.addBarrier("gui barrier");
+	//mDispatcher.invoke([barrier, this, rt](){
+	//	PROFILE("gui logic", {});
+	//	mGui.update();
+	//	barrier->addRenderTask("gui", [rt, this](auto cmdlist) {
+	//		RenderGraph::Builder builder;
+	//		builder.write(rt, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	//		auto task = mGui.execute();
+	//		builder.prepare(cmdlist);
+	//		cmdlist->setRenderTarget(rt->getView());
+	//		task(cmdlist);
+	//	});
+	//	barrier->signal();
 
+	//});
+
+
+	mDispatcher.invoke([this](){
+		mGui.update();
 	});
 
+	graph.addPass("gui",[this, dst = rt](auto& builder) {
+		builder.write(dst, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-	//graph.addPass("gui",[this, dst = rt,b](auto& builder) {
-	//	builder.write(dst, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
-
-	//	auto task = mGui.execute();
-	//	return [this, dst, task = std::move(task)](auto cmdlist){
-	//		cmdlist->setRenderTarget(dst->getView());
-	//		task(cmdlist);
-	//	};
-	//});
+		auto task = mGui.execute();
+		return [this, dst, task = std::move(task)](auto cmdlist){
+			cmdlist->setRenderTarget(dst->getView());
+			task(cmdlist);
+		};
+	});
 
 	graph.addPass("present", [this, src = rt](auto& builder) {
 		builder.read(src, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);

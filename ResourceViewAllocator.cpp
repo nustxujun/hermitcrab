@@ -4,7 +4,6 @@ ResourceViewAllocator ResourceViewAllocator::Singleton;
 
 std::pair<Renderer::Resource::Ref, size_t> ResourceViewAllocator::alloc(UINT width, UINT height, UINT depth, DXGI_FORMAT format, Renderer::ViewType type)
 {
-	
 	auto hv = hash(width, height, depth, format, type);
 	auto& stack = mResources[hv];
 	if (stack.empty())

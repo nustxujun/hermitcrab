@@ -7,16 +7,16 @@ thread_local std::string ProfileMgr::table;
 Renderer::Profile::Ref ProfileMgr::begin(const std::string& name, Renderer::CommandList::Ref cl)
 {
 	auto r = Renderer::getSingleton();
-	std::string thdname = Thread::getCurrentName();
+	auto tid = Thread::getId();
 	mMutex.lock();
-	auto& allocs = mAllocatteds[thdname];
+	auto& allocs = mAllocatteds[tid];
 	while (allocs.first.size() < allocs.second + 1)
 	{
 		allocs.first.emplace_back("",r->createProfile());
 	}
 	auto& p = allocs.first[allocs.second++];
 
-	p.first = table + name + " on " + thdname;
+	p.first = Common::format(table , name , " on " , tid);
 	p.second->begin(cl);
 	mMutex.unlock();
 
@@ -34,19 +34,32 @@ void ProfileMgr::end(Renderer::Profile::Ref p, Renderer::CommandList::Ref cl)
 
 void ProfileMgr::reset()
 {
+	PROFILE("export profile", {});
 	mLastOutputs.clear();
+	std::map<std::string, std::vector<Output>> temp;
 	mMutex.lock();
 	for (auto& t : mAllocatteds)
 	{
+		if (t.second.second == 0)
+			continue;
+		auto& vec = temp[t.second.first[0].first];
+		
 		for (auto i = 0; i < t.second.second; ++i)
 		{
 			auto& p = t.second.first[i];
-			mLastOutputs.push_back({ p.first, p.second->getCPUTime(), p.second->getGPUTime() });
+			vec.push_back({ p.first, p.second->getCPUTime(), p.second->getGPUTime() });
 		}
 		t.second.second = 0;
 	}
 	mMutex.unlock();
 
+	for (auto& t : temp)
+	{
+		for (auto& v : t.second)
+		{
+			mLastOutputs.push_back(v);
+		}
+	}
 
 }
 

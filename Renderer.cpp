@@ -39,7 +39,7 @@ static Renderer::DebugInfo debugInfoCache;
 
 DXGI_FORMAT constexpr Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
 DXGI_FORMAT constexpr Renderer::BACK_BUFFER_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
-
+size_t const Renderer::NUM_COMMANDLIST = 256;
 Renderer::Ptr Renderer::create()
 {
 	instance = Renderer::Ptr(new Renderer());
@@ -93,7 +93,7 @@ void Renderer::initialize(HWND window)
 	initProfile();
 	initResources();
 	resize(1,1);
-	resetCommands();
+	fetchNextFrame();
 	
 }
 
@@ -164,38 +164,31 @@ void Renderer::resize(int width, int height)
 void Renderer::beginFrame()
 {
 	debugInfo.reset();
-	//resetCommands();
 
 
-	mCommandLists[0]->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_RENDER_TARGET, 0, true);
+	addRenderTask([this](auto cmdlist){
+		cmdlist->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_RENDER_TARGET, 0, true);
+		mRenderProfile = ProfileMgr::Singleton.begin("render", cmdlist);
+	},false, true);
 
-
-	auto heap = mDescriptorHeaps[DHT_CBV_SRV_UAV]->get();
-	//mCommandList->get()->SetDescriptorHeaps(1, &heap);
-
-	for (auto& cl: mCommandLists)
-		cl->get()->SetDescriptorHeaps(1, &heap);
-
-	mRenderProfile = ProfileMgr::Singleton.begin("render", *mCommandLists.begin());
+	
 }
 
 void Renderer::endFrame()
 {
-	{
-		PROFILE("tasks", {});
 
-		auto& cnt = Dispatcher::getSharedContext();
-	
-		while(mRenderThread.poll_one() + cnt.poll_one() != 0);
+	addRenderTask([this](auto cmdlist){
+		cmdlist->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_PRESENT, 0, true);
+		ProfileMgr::Singleton.end(mRenderProfile, cmdlist);
+	}, false, true);
 
-	}
-	ProfileMgr::Singleton.end(mRenderProfile, mCommandLists.back());
+	processTasks();
 
 	commitCommands();
 
 	present();
 
-	resetCommands();
+	fetchNextFrame();
 
 	updateTimeStamp();
 
@@ -753,6 +746,7 @@ Renderer::ConstantBuffer::Ptr Renderer::createConstantBuffer(UINT size)
 
 void Renderer::destroyResource(Resource::Ref res)
 {
+	std::lock_guard<std::mutex> lock(mResourceMutex);
 	auto endi = mResources.end();
 	for (auto i = mResources.begin(); i != endi; ++i)
 	{
@@ -883,12 +877,22 @@ void Renderer::generateMips(Resource::Ref texture)
 }
 
 
-void Renderer::addRenderTask(RenderTask&& task)
+void Renderer::addRenderTask(RenderTask&& task, bool strand, bool impl )
 {
-	//mRenderTaskExecutor.addTask(std::move(task),true, mCommandLists[0]);
-	mRenderTasks.invoke_strand([t = std::move(task), this](){
-		t(mCommandLists[0]);
-	});
+	CHECK_RENDER_THREAD;
+	auto index = mNumCommandLists.fetch_add(1, std::memory_order_relaxed);
+	auto make_task = [t = std::move(task), index, this](){
+		mCommandLists[index]->reset();
+		auto heap = mDescriptorHeaps[DHT_CBV_SRV_UAV]->get();
+		auto cmdlist = mCommandLists[index]->get();
+		cmdlist->SetDescriptorHeaps(1, &heap);
+		t(mCommandLists[index]);
+		cmdlist->Close();
+	};
+	if (impl)
+		make_task();
+	else
+		mRenderTasks.addTask(make_task, strand);
 }
 
 
@@ -901,7 +905,6 @@ void Renderer::uninitialize()
 	//mRenderTaskExecutor.stop();
 
 	// clear all commands
-	mCommandAllocators.clear();
 	mProfileCmdAlloc.reset();
 	mCommandLists.clear();
 	mResourceCommandList.reset();
@@ -992,18 +995,15 @@ void Renderer::initCommands()
 	mCurrentFrame = 0;
 	mQueueFence = createFence();
 
-	size_t count = 1;
-
-	for (auto i = 0; i < count; ++i)
+	for (auto i = 0; i < NUM_COMMANDLIST; ++i)
 	{
-		mCommandLists.emplace_back(CommandList::create());
-		mCommandLists.back()->close();
+		auto cmdlist = CommandList::create();
+		mCommandLists.emplace_back(cmdlist);
+		cmdlist->close();
+		mOriginCommandLists.emplace_back(cmdlist->get());
+		cmdlist->get()->SetName(M2U(Common::format("CommandList", i)).c_str());
 	}
 
-
-	std::vector<CommandList::Ref> cmdlist;
-	for (auto& c: mCommandLists)
-		cmdlist.emplace_back(c);
 }
 
 void Renderer::initDescriptorHeap()
@@ -1125,58 +1125,22 @@ std::string Renderer::findFile(const std::string & filename)
 	return {};
 }
 
-Renderer::CommandAllocator::Ptr Renderer::allocCommandAllocator()
-{
-	if (!mCommandAllocators.empty())
-	{
-		auto& i = mCommandAllocators.begin();
-		if ((*i)->completed() || mCommandAllocators.size() >= 16)
-		{
-			auto ca = *i;
-			mCommandAllocators.pop_front();
-			return ca;
-		}
-	}
-
-	auto a = CommandAllocator::Ptr(new CommandAllocator());
-	return a;
-}
-
-void Renderer::recycleCommandAllocator(CommandAllocator::Ptr ca)
-{
-#ifdef _DEBUG
-	for (auto& c: mCommandAllocators)
-		if (c->get() == ca->get())
-			ASSERT(0, "faild");
-#endif
-	mCommandAllocators.push_back(ca);
-}
-
 void Renderer::commitCommands()
 {
-	PROFILE("commit commands", {});
-	mCommandLists.back()->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_PRESENT, 0, true);
+
 
 #ifndef D3D12ON7
-	std::vector<ID3D12CommandList*> ppCommandLists;
+	PROFILE("commit commands", {});
 
-	for (auto& cl : mCommandLists)
-	{
-		cl->close();
-		ppCommandLists.push_back(cl->get());
-	}
-	mCommandQueue->ExecuteCommandLists(UINT(ppCommandLists.size()), ppCommandLists.data());
+
+	auto count = mNumCommandLists.load(std::memory_order_relaxed);
+	mCommandQueue->ExecuteCommandLists(UINT(count), mOriginCommandLists.data());
+	mNumCommandLists.store(0, std::memory_order_relaxed);
 #endif
 }
 
-void Renderer::resetCommands()
+void Renderer::fetchNextFrame()
 {
-	PROFILE("reset commands", {});
-
-	//mCommandList->reset();
-	for (auto& c: mCommandLists)
-		c->reset();
-
 #ifndef D3D12ON7
 	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
 #else
@@ -1186,15 +1150,23 @@ void Renderer::resetCommands()
 
 }
 
-void Renderer::executeCommands()
+void Renderer::processTasks()
 {
+	{
+		PROFILE("poll tasks", {});
 
+		auto& cnt = Dispatcher::getSharedContext();
 
+		while (mRenderThread.poll_one() + cnt.poll_one() != 0);
+
+	}
+
+	{
+		PROFILE("waitting tasks", {});
+		mRenderTasks.wait();
+	}
 }
 
-void Renderer::syncFrame()
-{
-}
 
 ComPtr<Renderer::IDXGIFACTORY> Renderer::getDXGIFactory()
 {
@@ -1241,6 +1213,7 @@ Renderer::DescriptorHeap::Ref Renderer::getDescriptorHeap(DescriptorHeapType typ
 
 void Renderer::addResource(Resource::Ptr res)
 {
+	std::lock_guard<std::mutex> lock(mResourceMutex);
 	mResources.push_back(res);
 }
 void Renderer::present()
@@ -1298,7 +1271,7 @@ void Renderer::updateTimeStamp()
 		mProfileReadBack->unmap(0);
 	}
 	else
-		mProfileCmdAlloc = allocCommandAllocator();
+		mProfileCmdAlloc = CommandAllocator::Ptr(new CommandAllocator);
 
 	mProfileCmdAlloc->reset();
 	mResourceCommandList->reset();
@@ -1468,12 +1441,6 @@ Renderer::CommandAllocator::CommandAllocator()
 	mFence = Renderer::getSingleton()->createFence();
 	auto device = Renderer::getSingleton()->getDevice();
 	CHECK(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mAllocator)));
-	
-	static int i = 0;
-	std::wstringstream ss;
-	ss << L"Command Allocator"<<i++;
-	auto str = ss.str();
-	mAllocator->SetName(str.c_str());
 }
 
 Renderer::CommandAllocator::~CommandAllocator()
@@ -1790,8 +1757,10 @@ Renderer::CommandList::CommandList()
 {
 	auto renderer = Renderer::getSingleton();
 	auto device = renderer->getDevice();
-	mAllocator = renderer->allocCommandAllocator();
-	CHECK(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, mAllocator->get(), nullptr, IID_PPV_ARGS(&mCmdList)));
+	mCurrentAllocator = 0;
+	for (auto& a : mAllocators)
+		a = CommandAllocator::Ptr(new CommandAllocator);
+	CHECK(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, mAllocators[0]->get(), nullptr, IID_PPV_ARGS(&mCmdList)));
 }
 
 Renderer::CommandList::~CommandList()
@@ -1881,6 +1850,7 @@ void Renderer::CommandList::flushResourceBarrier()
 			b.Transition.StateBefore = res->getState(t.second.subresource);
 			barriers.emplace_back(b);
 			res->mState[t.second.subresource] = t.second.state;
+			ASSERT(b.Transition.StateAfter != b.Transition.StateBefore, "cannot be");
 		}	
 	}
 
@@ -1983,7 +1953,7 @@ void Renderer::CommandList::setRenderTarget(const Resource::Ref& rt, const Resou
 	if (ds)
 		dshandle = & (ds->getDepthStencil());
 
-	Common::Assert(rt->getState() == D3D12_RESOURCE_STATE_RENDER_TARGET, "need transition to rendertarget");
+	//Common::Assert(rt->getState() == D3D12_RESOURCE_STATE_RENDER_TARGET, "need transition to rendertarget");
 	setRenderTargets({rt->getRenderTarget()}, dshandle);
 
 }
@@ -1999,7 +1969,7 @@ void Renderer::CommandList::setRenderTargets(const std::vector<Resource::Ref>& r
 	{
 		if (rt)
 		{
-			Common::Assert(rt->getState() == D3D12_RESOURCE_STATE_RENDER_TARGET, "need rt");
+			//Common::Assert(rt->getState() == D3D12_RESOURCE_STATE_RENDER_TARGET, "need rt");
 			rtvs.push_back(rt->getRenderTarget());
 		}
 		else
@@ -2111,13 +2081,12 @@ void Renderer::CommandList::close()
 
 void Renderer::CommandList::reset()
 {
-	auto r = Renderer::getSingleton();
-	mAllocator->signal();
-	r->recycleCommandAllocator(mAllocator);
-	mAllocator = r->allocCommandAllocator();
-
-	mAllocator->reset();
-	CHECK(mCmdList->Reset(mAllocator->get(), nullptr));
+	mAllocators[mCurrentAllocator]->signal();
+	//r->recycleCommandAllocator(mAllocator);
+	mCurrentAllocator = (mCurrentAllocator + 1) % NUM_ALLOCATORS;
+	auto& a = mAllocators[mCurrentAllocator];
+	a->reset();
+	CHECK(mCmdList->Reset(a->get(), nullptr));
 }
 
 ID3D12GraphicsCommandList * Renderer::CommandList::get()
