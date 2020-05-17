@@ -1,4 +1,5 @@
 # hermitcrab
 
 ## Todo
-- coroutine in multithreading
+- fill compute commandlist in mutithreading
+- output 3d rendertarget
