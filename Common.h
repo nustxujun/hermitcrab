@@ -51,6 +51,7 @@ public :
 	{
 		auto context = format(args ...) + "\n";
 		OutputDebugStringA(context.c_str());
+		::MessageBoxA(NULL, context.c_str(), NULL, NULL);
 	}
 
 	static void checkResult(HRESULT hr, std::string_view info = {})
@@ -131,7 +132,21 @@ struct AABB
 #undef max
 
 #ifdef _DEBUG
+#else
+#endif
+
+#undef CHECK
+#undef ASSERT
+#undef LOG
+
+#if _DEBUG
+#define CHECK(x) Common::checkResult(x, Common::format(" file: ",__FILE__, " line: ", __LINE__ ))
+#define ASSERT(x,y) Common::Assert(x, Common::format(y, " file: ", __FILE__, " line: ", __LINE__ ))
 #define CHECK_RENDER_THREAD {Common::Assert(Thread::getId() == 0, "need running on main thread.");}
 #else
+#define CHECK(x) x;
+#define ASSERT(x,y) 
 #define CHECK_RENDER_THREAD 
 #endif
+
+#define LOG Common::log

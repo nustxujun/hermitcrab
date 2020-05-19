@@ -225,8 +225,8 @@ void ReflectionProbe::initTextureCubeArray(const std::vector<Ptr>& probes)
 
 void ReflectionProbe::init(UINT cubesize, const void* data, UINT size)
 {
-	Common::Assert(cubesize == cubeSize, "all reflection cubemap must be the same size");
-	Common::Assert(dataSize == size, "reflection probe data is invalid.");
+	ASSERT(cubesize == cubeSize, "all reflection cubemap must be the same size");
+	ASSERT(dataSize == size, "reflection probe data is invalid.");
 	textureData.reserve(size);
 	memcpy(textureData.data(), data, size);
 }

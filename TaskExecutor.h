@@ -12,25 +12,7 @@ public:
 
 	TaskExecutor(asio::io_context& context);
 
-	template<class Task, class ... Args>
-	void addTask(Task&& task,bool strand, Args&& ...args)
-	{
-		mTaskCount.fetch_add(1, std::memory_order_relaxed);
-		auto lambda = [this, task = std::move(task), args ...](){
-			task(args...);
-			mComplete.signal([this](){
-				mTaskCount.fetch_sub(1, std::memory_order_relaxed);
-			});
-		};
-		if (strand)
-		{
-			mDispatcher.invoke_strand(std::move(lambda));
-		}
-		else
-		{
-			mDispatcher.invoke(std::move(lambda));
-		}
-	}
+	void addTask(std::function<void()>&& task,bool strand);
 
 	void wait();
 private:
