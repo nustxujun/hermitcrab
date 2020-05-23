@@ -19,19 +19,7 @@ Renderer::Ptr Renderer::instance;
 
 
 
-#if _DEBUG
-#undef CHECK
-#define CHECK(x) Common::checkResult(x, Common::format(" file: ",__FILE__, " line: ", __LINE__ ))
-#undef ASSERT
-#define ASSERT(x,y) Common::Assert(x, Common::format(y, " file: ", __FILE__, " line: ", __LINE__ ))
-#undef LOG
-#define LOG Common::log
-#else
-#define CHECK(x) x;
-#define ASSERT(x,y) 
-#define LOG
 
-#endif
 
 static Renderer::DebugInfo debugInfo;
 static Renderer::DebugInfo debugInfoCache;
@@ -498,7 +486,8 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 		STDMETHOD(Open)(THIS_ D3D_INCLUDE_TYPE IncludeType, LPCSTR pFileName, LPCVOID pParentData, LPCVOID *ppData, UINT *pBytes)
 		{
 			std::fstream file(Renderer::getSingleton()->findFile(pFileName), std::ios::in | std::ios::binary);
-			Common::Assert(!!file, std::string("cannot find included file ") + pFileName );
+			if (!!file)
+				LOG(std::string("cannot find included file ") + pFileName );
 			file.seekg(0,std::ios::end);
 			size_t size = file.tellg();
 			file.seekg(0,std::ios::beg);

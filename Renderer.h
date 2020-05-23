@@ -103,74 +103,69 @@ public:
 	class WeakPtr
 	{
 	public:
-		WeakPtr()
+		inline WeakPtr()
 		{
 		}
 
-		WeakPtr(const std::shared_ptr<T>& p) :
+		inline WeakPtr(const std::shared_ptr<T>& p) :
 			mPointer(p)
 		{
 		}
 
-		//WeakPtr(const std::weak_ptr<T>& p):
-		//	mPointer(p)
-		//{
-		//}
-
-		WeakPtr(WeakPtr&& p) noexcept :
+		inline WeakPtr(WeakPtr&& p) noexcept :
 			mPointer(std::move(p.mPointer))
 		{
 		}
 
-		WeakPtr(const WeakPtr& p) :
+		inline WeakPtr(const WeakPtr& p) :
 			mPointer(p.mPointer)
 		{
 		}
 		
 
 		template<class U>
-		WeakPtr(const WeakPtr<U>& p):
+		inline WeakPtr(const WeakPtr<U>& p):
 			mPointer(std::static_pointer_cast<T>(p.shared()))
 		{
 		}
 
-		void operator=(const WeakPtr& p) 
+		inline void operator=(const WeakPtr& p)
 		{
 			mPointer = p.mPointer;
 		}
 
-		operator bool() const
+		inline operator bool() const
 		{
 			return !mPointer.expired();
 		}
 
 
-		bool operator==(const WeakPtr<T>& p)const
+		inline bool operator==(const WeakPtr<T>& p)const
 		{
 			if (mPointer.expired() || p.mPointer.expired())
 				return false;
 			return mPointer.lock().get() == p.mPointer.lock().get();
 		}
 		
-		bool operator== (const std::shared_ptr<T>& p)const
+		inline bool operator== (const std::shared_ptr<T>& p)const
 		{
 			if (mPointer.expired())
 				return false;
 			return mPointer.lock().get() == p.get();
 		}
 
-		std::shared_ptr<T> operator->()const
+		inline std::shared_ptr<T> operator->()const
 		{
-			Common::Assert(!mPointer.expired(), "invalid pointer");
+			ASSERT(!mPointer.expired(), "invalid pointer");
 			return mPointer.lock();
 		}
 
 
-		std::weak_ptr<T> weak()const {
+		inline std::weak_ptr<T> weak()const {
 			return mPointer;
 		}
 
-		std::shared_ptr<T> shared() const{
+		inline std::shared_ptr<T> shared() const{
 			return mPointer.lock();
 		}
 	private:

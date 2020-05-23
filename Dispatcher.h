@@ -14,10 +14,10 @@ public:
 	Dispatcher(asio::io_context& context = sharedContext);
 	
 	~Dispatcher();
-	void invoke(const Handler& handler);
-	void invoke_strand(const Handler& handler);
-	void execute(const Handler& handler);
-	void execute_strand(const Handler& handler);
+	void invoke( Handler&& handler);
+	void invoke_strand( Handler&& handler);
+	void execute( Handler&& handler);
+	void execute_strand( Handler&& handler);
 
 	static void poll_one(bool block);
 	static void run(asio::io_context& context);
