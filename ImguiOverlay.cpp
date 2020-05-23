@@ -135,18 +135,22 @@ Renderer::RenderTask ImGuiPass::draw()
 		auto& IndexBuffer = mIndexBuffer[renderer->getCurrentFrameIndex()];
 		if (!VertexBuffer || VertexBuffer->getSize() < data->TotalVtxCount * sizeof(ImDrawVert))
 		{
+			if (VertexBuffer)
+				renderer->destroyResource(VertexBuffer);
 			auto size = data->TotalIdxCount;
 			VertexBuffer = renderer->createBuffer(size * sizeof(ImDrawVert), sizeof(ImDrawVert), false, D3D12_HEAP_TYPE_UPLOAD);
 		}
 
 		if (!IndexBuffer || IndexBuffer->getSize() < data->TotalIdxCount * sizeof(ImDrawIdx))
 		{
+			if (IndexBuffer)
+				renderer->destroyResource(IndexBuffer);
 			auto size = data->TotalIdxCount;
 			IndexBuffer = renderer->createBuffer(size * sizeof(ImDrawIdx), sizeof(ImDrawIdx), false, D3D12_HEAP_TYPE_UPLOAD);
 		}
 
-		auto vertices = VertexBuffer->getResource()->map(0);
-		auto indices = IndexBuffer->getResource()->map(0);
+		auto vertices = VertexBuffer->map(0);
+		auto indices = IndexBuffer->map(0);
 
 		for (int n = 0; n < data->CmdListsCount; n++)
 		{
@@ -159,8 +163,8 @@ Renderer::RenderTask ImGuiPass::draw()
 			indices += numIndices;
 		}
 
-		VertexBuffer->getResource()->unmap(0);
-		IndexBuffer->getResource()->unmap(0);
+		VertexBuffer->unmap(0);
+		IndexBuffer->unmap(0);
 
 		float L = data->DisplayPos.x;
 		float R = data->DisplayPos.x + data->DisplaySize.x;

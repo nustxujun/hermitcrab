@@ -34,9 +34,9 @@ ResourceHandle::Ptr Pipeline::addPostprocessPass(RenderGraph& rg, const std::str
 	auto rt = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], targetfmt);
 
 	rg.addPass(name, [srvs = std::move(srvs), f = std::move(f), rt, argvs = std::move(argvs)](auto& builder){
-		builder.write(rt, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		builder.write(rt, RenderGraph::Builder::IT_NONE);
 		for (auto& t: srvs)
-			builder.read(t.second, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+			builder.read(t.second);
 		return [f = std::move(f), srvs = std::move(srvs), rt, argvs = std::move(argvs)](auto cmdlist) {
 			std::map<std::string, D3D12_GPU_DESCRIPTOR_HANDLE> inputs;
 			for (auto& t: srvs)
@@ -139,8 +139,8 @@ void DefaultPipeline::update()
 	hdr->setClearValue({0,0,0,0});
 	d->setClearValue({1.0f, 0});
 	graph.addPass("scene", [this, rt = hdr, d](auto& builder) {
-		builder.write(rt, RenderGraph::Builder::IT_CLEAR, D3D12_RESOURCE_STATE_RENDER_TARGET);
-		builder.write(d, RenderGraph::Builder::IT_CLEAR, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+		builder.write(rt, RenderGraph::Builder::IT_CLEAR);
+		builder.write(d, RenderGraph::Builder::IT_CLEAR);
 		return [=](auto cmdlist) {
 			auto context = RenderContext::getSingleton();
 			auto cam = context->getMainCamera();
@@ -164,10 +164,10 @@ void DefaultPipeline::update()
 
 
 	////if (mSettings.switchers["atmosphere"])
-	//{
-	//	auto out = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UNORM);
-	//	mAtmosphere.execute(graph);
-	//}
+	{
+		auto out = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], DXGI_FORMAT_R8G8B8A8_UNORM);
+		mAtmosphere.execute(graph, hdr);
+	}
 
 	connectPostprocess("tone", { {"frame", hdr} }, {}, DXGI_FORMAT_R8G8B8A8_UNORM);
 
@@ -194,7 +194,7 @@ void DefaultPipeline::update()
 	});
 
 	graph.addPass("gui",[this, dst = rt](auto& builder) {
-		builder.write(dst, RenderGraph::Builder::IT_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		builder.write(dst, RenderGraph::Builder::IT_NONE);
 
 		auto task = mGui.execute();
 		return [this, dst, task = std::move(task)](auto cmdlist){
@@ -204,7 +204,7 @@ void DefaultPipeline::update()
 	});
 
 	graph.addPass("present", [this, src = rt](auto& builder) {
-		builder.read(src, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		builder.read(src);
 		return [this, src](auto cmdlist) mutable{
 			auto renderer = Renderer::getSingleton();
 			auto bb = renderer->getBackBuffer();

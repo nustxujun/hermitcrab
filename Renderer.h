@@ -273,7 +273,6 @@ public:
 		const D3D12_RESOURCE_DESC& getDesc()const{return mDesc;}
 		UINT64 getSize()const{return mDesc.Width;}
 		
-		void releaseAllHandle();
 		const D3D12_GPU_DESCRIPTOR_HANDLE& getShaderResource(UINT i = 0);
 		const D3D12_CPU_DESCRIPTOR_HANDLE& getRenderTarget(UINT i = 0);
 		const D3D12_CPU_DESCRIPTOR_HANDLE& getDepthStencil(UINT i = 0);
@@ -292,6 +291,10 @@ public:
 
 	private:
 		DescriptorHandle& assignHandle(UINT i, HandleType type);
+		void releaseAllHandle();
+
+		D3D12_GPU_VIRTUAL_ADDRESS getVirtualAddress()const;
+
 	private:
 		ComPtr<ID3D12Resource> mResource;
 		D3D12_RESOURCE_DESC mDesc;
@@ -322,20 +325,15 @@ public:
 	};
 
 
-	class Buffer
+	class Buffer : public Resource
 	{
+		friend class Renderer;
 	public:
-		using Ptr = std::shared_ptr<Buffer>;
+		using Ref = WeakPtr<Buffer>;
 
-		Buffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type);
-
-		Resource::Ref getResource()const{return mResource;}
-		void blit(const void* buffer, size_t size);
-		UINT getSize()const{ return (UINT)mResource->getSize();}
+		UINT getSize()const{ return (UINT)Resource::getSize();}
 		UINT getStride()const{return  mStride;}
-		D3D12_GPU_VIRTUAL_ADDRESS getVirtualAddress()const{return mResource->get()->GetGPUVirtualAddress();}
 	private:
-		Resource::Ref mResource;
 		UINT mStride;
 	};
 
@@ -438,9 +436,11 @@ public:
 
 	public:
 		Shader(const MemoryData& data, ShaderType type);
-		void registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc);
+		void registerStaticSampler( const D3D12_STATIC_SAMPLER_DESC& desc);
+		void registerStaticSampler(const std::string& name, D3D12_FILTER filter, D3D12_TEXTURE_ADDRESS_MODE mode);
 		void enable32BitsConstants(bool b);
 		void enable32BitsConstantsByName(const std::string& name);
+		void enableStaticSampler(bool b);
 	private:
 		D3D12_SHADER_VISIBILITY getShaderVisibility()const;
 		D3D12_DESCRIPTOR_RANGE_TYPE getRangeType(D3D_SHADER_INPUT_TYPE type)const;
@@ -448,10 +448,12 @@ public:
 	private:
 		ShaderType mType;
 		MemoryData mCodeBlob;
+		bool mUseStaticSamplers = true; 
 		bool mUse32BitsConstants = false;
 		std::set<std::string> mUse32BitsConstantsSet;
 
 		ComPtr<ShaderReflection> mReflection;
+		std::map<std::string, D3D12_STATIC_SAMPLER_DESC> mSamplerMap;
 		std::vector< D3D12_STATIC_SAMPLER_DESC> mStaticSamplers;
 		std::vector<D3D12_ROOT_PARAMETER> mRootParameters;
 		std::vector<D3D12_DESCRIPTOR_RANGE> mRanges;
@@ -546,14 +548,18 @@ public:
 		void setResource(Shader::ShaderType type,const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void setVSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void setPSResource( const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
+		void setCSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 
 		void setResource(Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void setVSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void setPSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
+		void setCSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 
 		void setConstant(Shader::ShaderType type, const std::string& name,const ConstantBuffer::Ptr& c);
 		void setVSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
 		void setPSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
+		void setCSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
+
 
 		void setVariable(Shader::ShaderType type, const std::string& name, const void* data);
 		void setVSVariable( const std::string& name, const void* data);
@@ -610,9 +616,9 @@ public:
 		void setRenderTargets(const std::vector<Resource::Ref>& rts, const Resource::Ref& ds = {});
 		void setRenderTargets(const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& rts, const D3D12_CPU_DESCRIPTOR_HANDLE* ds = 0);
 		void setPipelineState(PipelineState::Ref ps);
-		void setVertexBuffer(const std::vector<Buffer::Ptr>& vertices);
-		void setVertexBuffer(const Buffer::Ptr& vertices);
-		void setIndexBuffer(const Buffer::Ptr& indices);
+		void setVertexBuffer(const std::vector<Buffer::Ref>& vertices);
+		void setVertexBuffer(const Buffer::Ref& vertices);
+		void setIndexBuffer(const Buffer::Ref& indices);
 		void setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		void setRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
@@ -698,17 +704,19 @@ public:
 	Shader::Ptr compileShaderFromFile(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 	Shader::Ptr compileShader(const std::string& name, const std::string& context, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {}, const std::string& cachename = {});
 	Fence::Ptr createFence();
-	Resource::Ref createResource(size_t size, bool isShaderResource, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
+	// resource 
 	void destroyResource(Resource::Ref res);
+	// texture
 	Resource::Ref createResourceView(UINT width, UINT height, DXGI_FORMAT format, ViewType type);
-	Resource::Ref createTexture(UINT width, UINT height, UINT depth, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+	Resource::Ref createTexture2DBase(UINT width, UINT height, UINT depth, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+	Resource::Ref createTexture2D(UINT width, UINT height, DXGI_FORMAT format, UINT miplevels, const void* data, bool srgb);
 	Resource::Ref createTextureCube(UINT size, DXGI_FORMAT format, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
 	Resource::Ref createTextureCubeArray(UINT size, DXGI_FORMAT format, UINT arraySize, UINT nummips = 1, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
-
 	Resource::Ref createTextureFromFile(const std::string& filename, bool srgb);
-	Resource::Ref createTexture2D(UINT width, UINT height, DXGI_FORMAT format ,UINT miplevels, const void* data, bool srgb);
-
-	Buffer::Ptr createBuffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
+	Resource::Ref createTexture3D(UINT width, UINT height, UINT depth, DXGI_FORMAT format, UINT miplevels = 1, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
+	// buffer
+	Resource::Ref Renderer::createBufferBase(size_t size, bool isShaderResource,D3D12_HEAP_TYPE type );
+	Buffer::Ref createBuffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
 	ConstantBuffer::Ptr createConstantBuffer(UINT size);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
 	PipelineState::Ref createComputePipelineState(const Shader::Ptr& shader);

@@ -5,16 +5,21 @@
 
 ResourceHandle::Ptr ResourceHandle::create(Renderer::ViewType type, int w, int h, DXGI_FORMAT format)
 {
-	return std::make_shared<ResourceHandle>(type, w, h, format);
+	return create(type, w, h, 1, format);
+}
+
+ResourceHandle::Ptr ResourceHandle::create(Renderer::ViewType type, int w, int h, int d, DXGI_FORMAT format)
+{
+	return std::make_shared<ResourceHandle>(type, w, h, d, format);
 }
 
 ResourceHandle::Ptr ResourceHandle::clone(ResourceHandle::Ptr res)
 {
-	return create(res->getType(),res->mWidth, res->mHeight,res->mFormat);
+	return create(res->getType(),res->mWidth, res->mHeight,res->mDepth, res->mFormat);
 }
 
-ResourceHandle::ResourceHandle(Renderer::ViewType t, int w, int h, DXGI_FORMAT format):
-	mType(t), mWidth(w), mHeight(h), mFormat(format)
+ResourceHandle::ResourceHandle(Renderer::ViewType t, int w, int h, int d, DXGI_FORMAT format):
+	mType(t), mWidth(w), mHeight(h), mDepth(d), mFormat(format)
 {
 }
 
@@ -42,8 +47,6 @@ void ResourceHandle::setName(const std::wstring & n)
 }
 
 
-
-
 void ResourceHandle::prepare()
 {
 
@@ -54,7 +57,7 @@ const Renderer::Resource::Ref& ResourceHandle::getView()
 	std::lock_guard<std::mutex> lock(mViewMutex);
 	if (!mView)
 	{
-		auto ret = ResourceViewAllocator::Singleton.alloc(mWidth, mHeight, 1, mFormat,mType);
+		auto ret = ResourceViewAllocator::Singleton.alloc(mWidth, mHeight, mDepth, mFormat,mType);
 		mView = ret.first;
 		mHashValue = ret.second;
 	}
@@ -104,27 +107,37 @@ void RenderGraph::execute()
 			},  false);
 		}
 	}
-
-
 }
 
 
-void RenderGraph::Builder::read(const ResourceHandle::Ptr& res, D3D12_RESOURCE_STATES state)
+void RenderGraph::Builder::read(const ResourceHandle::Ptr& res)
 {
-	mTransitions.push_back({res, state, IT_NONE});
+	mTransitions.push_back({res, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, IT_NONE});
 }
 
-void RenderGraph::Builder::write(const ResourceHandle::Ptr& res, InitialType type, D3D12_RESOURCE_STATES state)
+void RenderGraph::Builder::write(const ResourceHandle::Ptr& res, InitialType type)
 {
-	mTransitions.push_back({res, state, type});
+	if (res->getType() == Renderer::VT_DEPTHSTENCIL)
+		mTransitions.push_back({res, D3D12_RESOURCE_STATE_DEPTH_WRITE , type});
+	else
+		mTransitions.push_back({ res, D3D12_RESOURCE_STATE_RENDER_TARGET , type });
+}
+
+void RenderGraph::Builder::access(const ResourceHandle::Ptr& res)
+{
+	mUAVBarriers.push_back(res);
 }
 
 void RenderGraph::Builder::prepare(Renderer::CommandList::Ref cmdlist)const
 {
-	//Common::Assert(Thread::isMainThread(), "builder must be in main thread");
 	for (auto& t : mTransitions)
 	{
 		cmdlist->transitionBarrier(t.res->getView(), t.state,0);
+	}
+
+	for (auto& t : mUAVBarriers)
+	{
+		cmdlist->uavBarrier(t->getView());
 	}
 
 	cmdlist->flushResourceBarrier();

@@ -18,9 +18,11 @@ public:
 	};
 
 	static ResourceHandle::Ptr create(Renderer::ViewType type, int w, int h, DXGI_FORMAT format);
+	static ResourceHandle::Ptr create(Renderer::ViewType type, int w, int h, int d, DXGI_FORMAT format);
+
 	static ResourceHandle::Ptr clone(ResourceHandle::Ptr res);
 
-	ResourceHandle(Renderer::ViewType t, int w, int h, DXGI_FORMAT format);
+	ResourceHandle(Renderer::ViewType t, int w, int h, int d, DXGI_FORMAT format);
 	~ResourceHandle();
 
 	Renderer::ViewType getType()const;
@@ -36,6 +38,7 @@ private:
 	Renderer::ViewType mType;
 	int mWidth;
 	int mHeight;
+	int mDepth;
 	DXGI_FORMAT mFormat;
 	Renderer::Resource::Ref mView;
 	ClearValue mClearValue = {};
@@ -59,8 +62,9 @@ public:
 			IT_DISCARD,
 		};
 	
-		void read(const ResourceHandle::Ptr& res, D3D12_RESOURCE_STATES state);
-		void write(const ResourceHandle::Ptr& res, InitialType type, D3D12_RESOURCE_STATES state);
+		void read(const ResourceHandle::Ptr& res);
+		void write(const ResourceHandle::Ptr& res, InitialType type);
+		void access(const ResourceHandle::Ptr& res);
 
 		void prepare(Renderer::CommandList::Ref cmdlist)const;
 		bool empty(){return mTransitions.empty();}
@@ -72,7 +76,7 @@ public:
 			InitialType type;
 		};
 		std::vector<Transition> mTransitions;
-
+		std::vector<ResourceHandle::Ptr> mUAVBarriers;
 	};
 
 	using RenderPass = std::function<RenderTask(Builder&)>;

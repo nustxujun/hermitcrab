@@ -53,8 +53,8 @@ struct Mesh : public Object
 	};
 
 	Texture::Ptr texture;
-	Renderer::Buffer::Ptr vertices;
-	Renderer::Buffer::Ptr indices;
+	Renderer::Buffer::Ref vertices;
+	Renderer::Buffer::Ref indices;
 	size_t numIndices;
 	std::vector<SubMesh> submeshes ;
 
@@ -64,8 +64,8 @@ struct Mesh : public Object
 		indices = Renderer::getSingleton()->createBuffer((UINT)is.size(), (UINT)isstride, false, D3D12_HEAP_TYPE_DEFAULT, is.data(), (UINT)is.size());
 		numIndices = ni;
 
-		vertices->getResource()->setName(("Vertex " + name));
-		indices->getResource()->setName(("Index " + name ));
+		vertices->setName(("Vertex " + name));
+		indices->setName(("Index " + name ));
 
 	}
 };

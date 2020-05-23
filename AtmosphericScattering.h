@@ -9,15 +9,30 @@ class AtmosphericScattering
 public:
 	AtmosphericScattering();
 
-	void execute(RenderGraph& graph);
+	void execute(RenderGraph& graph,ResourceHandle::Ptr rendertarget);
 
-    Renderer::Resource::Ref getTransmittanceToTop();
+    ResourceHandle::Ptr getTransmittanceToTop();
 private:
     void initAtmospehre();
 private:
-	Quad::Ptr mQuad;
-	Renderer::ConstantBuffer::Ptr mAtmosphereConsts;
-	Renderer::Resource::Ref mTransmittanceToAtmosphereTop;
+    enum
+    {
+        TRANSMITTANCE,
+        SINGLESCATTERING,
+
+        FINAL,
+        NUM
+    };
+
+	std::array<Quad, NUM> mQuads;
+	std::array<Renderer::ConstantBuffer::Ptr, NUM> mConsts;
+    Renderer::PipelineState::Ref mScatteringPSO;
+
+	ResourceHandle::Ptr mTransmittance;
+    ResourceHandle::Ptr mScattering;
+    ResourceHandle::Ptr mSingleMieScattering;
+
+
 	bool mRecompute = true;
 
     struct DensityProfileLayer
@@ -64,7 +79,7 @@ private:
             DensityProfile absorption_density;
         } params;
 
-        float2 texture_size;
+        float3 texture_size;
 	}mAtmosphereParams;
 
     ImGuiOverlay::ImGuiObject* mSettings;

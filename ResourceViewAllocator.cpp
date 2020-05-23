@@ -1,4 +1,5 @@
 #include "ResourceViewAllocator.h"
+#include "D3DHelper.h"
 
 ResourceViewAllocator ResourceViewAllocator::Singleton;
 
@@ -17,17 +18,53 @@ std::pair<Renderer::Resource::Ref, size_t> ResourceViewAllocator::alloc(UINT wid
 		case Renderer::VT_UNORDEREDACCESS: flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS; break;
 		}
 
-		auto res = Renderer::getSingleton()->createTexture(width, height, depth, format,1,D3D12_HEAP_TYPE_DEFAULT, flags);
+		Renderer::Resource::Ref res;
+		if (depth == 1)
+			res = Renderer::getSingleton()->createTexture2DBase(width, height, depth, format,1,D3D12_HEAP_TYPE_DEFAULT, flags);
+		else
+			res = Renderer::getSingleton()->createTexture3D(width, height, depth, format, 1, flags, D3D12_HEAP_TYPE_DEFAULT);
 		switch (type)
 		{
-		case Renderer::VT_RENDERTARGET: res->createRenderTargetView(NULL); res->createTexture2D();break;
-		case Renderer::VT_DEPTHSTENCIL: res->createDepthStencilView(NULL); break;
-		case Renderer::VT_UNORDEREDACCESS: res->createUnorderedAccessView(NULL); res->createTexture2D(); break;
+		case Renderer::VT_RENDERTARGET: 
+			{
+				res->createRenderTargetView(NULL); 
+				res->createShaderResource(NULL); 
+				break;
+			}
+		case Renderer::VT_DEPTHSTENCIL: 
+			{
+				auto [srvfmt, dsvfmt] = D3DHelper::matchReadableDepthFormat(format);
+				{
+					D3D12_DEPTH_STENCIL_VIEW_DESC desc = {};
+					desc.Format = dsvfmt;
+					desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+					desc.Flags = D3D12_DSV_FLAG_NONE;
+					desc.Texture2D.MipSlice = 0;
+					res->createDepthStencilView(&desc);
+				}
+			
+				if (srvfmt != DXGI_FORMAT_UNKNOWN)
+				{
+					D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
+					desc.Format = srvfmt;
+					desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+					desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+					desc.Texture2D.MostDetailedMip = 0;
+					desc.Texture2D.MipLevels = -1;
+					res->createShaderResource(&desc);
+				}
+			}
+			break;
+		case Renderer::VT_UNORDEREDACCESS: 
+			{
+				res->createUnorderedAccessView(NULL); 
+				res->createShaderResource(NULL);
+				break;
+			}
 		}
 
 		return {res, hv};
 	}
-
 	auto res = stack.back();
 	stack.pop_back();
 	return {res, hv};

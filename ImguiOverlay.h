@@ -27,8 +27,8 @@ private:
 	LRESULT process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 private:
 	Renderer::PipelineState::Ref mPipelineState;
-	Renderer::Buffer::Ptr mVertexBuffer[Renderer::NUM_BACK_BUFFERS];
-	Renderer::Buffer::Ptr mIndexBuffer[Renderer::NUM_BACK_BUFFERS];
+	Renderer::Buffer::Ref mVertexBuffer[Renderer::NUM_BACK_BUFFERS];
+	Renderer::Buffer::Ref mIndexBuffer[Renderer::NUM_BACK_BUFFERS];
 	std::vector<char> mCaches[2];
 	Renderer::Resource::Ref mFonts;
 	int mWidth = 0;

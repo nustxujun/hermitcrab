@@ -38,6 +38,19 @@ void ProfileMgr::reset()
 	mLastOutputs.clear();
 	std::map<std::string, std::vector<Output>> temp;
 	mMutex.lock();
+
+	{
+		auto& s = mAllocatteds[0].second;
+		auto& v = mAllocatteds[0].first;
+		for (auto i = 0; i < s; ++i)
+		{
+			auto& p = v[i];
+			mLastOutputs.push_back({p.first, p.second->getCPUTime(), p.second->getGPUTime()});
+		}
+		mAllocatteds[0].second = 0;
+	}
+
+
 	for (auto& t : mAllocatteds)
 	{
 		if (t.second.second == 0)

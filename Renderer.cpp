@@ -596,30 +596,9 @@ Renderer::Fence::Ptr Renderer::createFence()
 	return fence;
 }
 
-Renderer::Resource::Ref Renderer::createResource(size_t size, bool isShaderResource, D3D12_HEAP_TYPE type )
-{
 
-	D3D12_RESOURCE_DESC resdesc = {};
-	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	resdesc.Alignment = 0;
-	resdesc.Width = size;
-	resdesc.Height = 1;
-	resdesc.DepthOrArraySize = 1;
-	resdesc.MipLevels = 1;
-	resdesc.Format = DXGI_FORMAT_UNKNOWN;
-	resdesc.SampleDesc.Count = 1;
-	resdesc.SampleDesc.Quality = 0;
-	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	resdesc.Flags = isShaderResource ? D3D12_RESOURCE_FLAG_NONE : D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
 
-	auto res = Resource::create();
-	res->init(resdesc, type, D3D12_RESOURCE_STATE_COMMON);
-	addResource(res);
-
-	return res;
-}
-
-Renderer::Resource::Ref Renderer::createTexture(UINT width, UINT height, UINT depth,  DXGI_FORMAT format, UINT nummips, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags)
+Renderer::Resource::Ref Renderer::createTexture2DBase(UINT width, UINT height, UINT depth,  DXGI_FORMAT format, UINT nummips, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags)
 {
 	if (width == 0 || height == 0)
 	{
@@ -660,14 +639,14 @@ Renderer::Resource::Ref Renderer::createTexture(UINT width, UINT height, UINT de
 
 Renderer::Resource::Ref Renderer::createTextureCube(UINT size, DXGI_FORMAT format, UINT nummips,D3D12_HEAP_TYPE type, D3D12_RESOURCE_FLAGS flags)
 {
-	auto texcube = createTexture(size, size, 6 ,format, nummips,type, flags);
+	auto texcube = createTexture2DBase(size, size, 6 ,format, nummips,type, flags);
 	texcube->createTextureCube();
 	return texcube;
 }
 
 Renderer::Resource::Ref Renderer::createTextureCubeArray(UINT size, DXGI_FORMAT format, UINT arraySize, UINT nummips, D3D12_HEAP_TYPE type, D3D12_RESOURCE_FLAGS flags)
 {
-	auto texcube = createTexture(size, size, 6 * arraySize, format, nummips, type, flags);
+	auto texcube = createTexture2DBase(size, size, 6 * arraySize, format, nummips, type, flags);
 	texcube->createTextureCubeArray();
 	return texcube;
 }
@@ -703,9 +682,41 @@ Renderer::Resource::Ref Renderer::createTextureFromFile(const std::string& filen
 	return tex;
 }
 
+Renderer::Resource::Ref Renderer::createTexture3D(UINT width, UINT height, UINT depth, DXGI_FORMAT format, UINT miplevels, D3D12_RESOURCE_FLAGS flags, D3D12_HEAP_TYPE type)
+{
+	ASSERT(width != 0 && height != 0 && depth != 0, "size cannot be zero");
+	ASSERT(format != DXGI_FORMAT_UNKNOWN, "format cannot be unknown");
+
+	unsigned long maxmips;
+	_BitScanReverse(&maxmips, width | height | depth);
+	miplevels = std::min((UINT)maxmips + 1, miplevels);
+
+	D3D12_RESOURCE_DESC resdesc = {};
+	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE3D;
+	resdesc.Alignment = 0;
+	resdesc.Width = width;
+	resdesc.Height = height;
+	resdesc.DepthOrArraySize = depth;
+	resdesc.MipLevels = miplevels;
+	resdesc.Format = format;
+	resdesc.SampleDesc.Count = 1;
+	resdesc.SampleDesc.Quality = 0;
+	resdesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resdesc.Flags = flags;
+
+	auto tex = Resource::create();
+	tex->init(resdesc, type, D3D12_RESOURCE_STATE_COMMON);
+
+	if ((flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE) == 0)
+		tex->createShaderResource();
+
+	addResource(tex);
+	return tex;
+}
+
 Renderer::Resource::Ref Renderer::createTexture2D(UINT width, UINT height, DXGI_FORMAT format, UINT miplevels, const void* data, bool srgb)
 {
-	auto tex = createTexture(width, height, 1, format, miplevels,D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE);
+	auto tex = createTexture2DBase(width, height, 1, format, miplevels,D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE);
 	tex->createTexture2D();
 
 	auto size = width * height * D3DHelper::sizeof_DXGI_FORMAT(format);
@@ -723,18 +734,46 @@ Renderer::Resource::Ref Renderer::createTexture2D(UINT width, UINT height, DXGI_
 	return tex;
 }
 
-Renderer::Buffer::Ptr Renderer::createBuffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type, const void* buffer, size_t count)
+Renderer::Resource::Ref Renderer::createBufferBase(size_t size, bool isShaderResource, D3D12_HEAP_TYPE type)
 {
-	auto b = Buffer::Ptr(new Buffer(size, stride, isShaderResource, type));
+
+	D3D12_RESOURCE_DESC resdesc = {};
+	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	resdesc.Alignment = 0;
+	resdesc.Width = size;
+	resdesc.Height = 1;
+	resdesc.DepthOrArraySize = 1;
+	resdesc.MipLevels = 1;
+	resdesc.Format = DXGI_FORMAT_UNKNOWN;
+	resdesc.SampleDesc.Count = 1;
+	resdesc.SampleDesc.Quality = 0;
+	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	resdesc.Flags = isShaderResource ? D3D12_RESOURCE_FLAG_NONE : D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
+
+	auto b = new Buffer();
+	auto res = Resource::Ptr(b);
+	res->init(resdesc, type, D3D12_RESOURCE_STATE_COMMON);
+	addResource(res);
+
+	return Resource::Ref(res);
+}
+
+Renderer::Buffer::Ref Renderer::createBuffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type, const void* buffer, size_t count)
+{
+
+	auto res = createBufferBase(size, isShaderResource,type);
+
 	if (buffer)
 	{
 		if (type == D3D12_HEAP_TYPE_UPLOAD)
 		{
-			b->blit(buffer, std::min(count, (size_t)size));
+			res->blit(buffer, std::min(count, (size_t)size));
 		}
 		else
-			updateBuffer(b->getResource(), 0, buffer, size);
+			updateBuffer(res, 0, buffer, size);
 	}
+	Buffer::Ref b = Resource::Ref(res);
+	b->mStride = stride;
 	return b;
 }
 
@@ -767,7 +806,7 @@ Renderer::Resource::Ref Renderer::createResourceView(UINT width, UINT height, DX
 	case Renderer::VT_DEPTHSTENCIL:flag = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL; break;
 	case Renderer::VT_UNORDEREDACCESS:flag = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS; break;
 	}
-	return createTexture(width, height, 1, format,1, D3D12_HEAP_TYPE_DEFAULT, flag);
+	return createTexture2DBase(width, height, 1, format,1, D3D12_HEAP_TYPE_DEFAULT, flag);
 }
 
 Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs)
@@ -798,7 +837,7 @@ void Renderer::generateMips(Resource::Ref texture)
 	if (desc.MipLevels == 1)
 		return;
 
-	Resource::Ref dst = createTexture(
+	Resource::Ref dst = createTexture2DBase(
 		(UINT)desc.Width,
 		desc.Height,
 		desc.DepthOrArraySize,
@@ -1030,7 +1069,7 @@ void Renderer::initProfile()
 	desc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
 
 	CHECK(mDevice->CreateQueryHeap(&desc, IID_PPV_ARGS(&mTimeStampQueryHeap)));
-	mProfileReadBack = createResource(1024 * sizeof(uint64_t),false,D3D12_HEAP_TYPE_READBACK);
+	mProfileReadBack = createBufferBase(1024 * sizeof(uint64_t),false,D3D12_HEAP_TYPE_READBACK);
 
 }
 
@@ -1488,6 +1527,7 @@ Renderer::Resource::Resource()
 
 Renderer::Resource::~Resource()
 {
+	releaseAllHandle();
 }
 
 void Renderer::Resource::init(UINT64 size, D3D12_HEAP_TYPE heaptype, DXGI_FORMAT format)
@@ -1502,7 +1542,7 @@ void Renderer::Resource::init(UINT64 size, D3D12_HEAP_TYPE heaptype, DXGI_FORMAT
 	resdesc.Format = format;
 	resdesc.SampleDesc.Count = 1;
 	resdesc.SampleDesc.Quality = 0;
-	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	resdesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	resdesc.Flags = D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
 
 	init(resdesc, heaptype, D3D12_RESOURCE_STATE_COMMON);
@@ -1621,6 +1661,11 @@ void Renderer::Resource::releaseAllHandle()
 			heap->dealloc(h);
 		mHandles[HT_DepthStencil].clear();
 	}
+}
+
+D3D12_GPU_VIRTUAL_ADDRESS Renderer::Resource::getVirtualAddress() const
+{
+	return get()->GetGPUVirtualAddress();
 }
 
 Renderer::ViewType Renderer::Resource::getViewType() const
@@ -1998,7 +2043,7 @@ void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
 		mCmdList->SetComputeRootSignature(ps->getRootSignature());
 }
 
-void Renderer::CommandList::setVertexBuffer(const std::vector<Buffer::Ptr>& vertices)
+void Renderer::CommandList::setVertexBuffer(const std::vector<Buffer::Ref>& vertices)
 {
 	std::vector<D3D12_VERTEX_BUFFER_VIEW> views;
 	for (auto& v: vertices)
@@ -2007,13 +2052,13 @@ void Renderer::CommandList::setVertexBuffer(const std::vector<Buffer::Ptr>& vert
 		mCmdList->IASetVertexBuffers(0,(UINT)views.size(), views.data());
 }
 
-void Renderer::CommandList::setVertexBuffer(const Buffer::Ptr& vertices)
+void Renderer::CommandList::setVertexBuffer(const Buffer::Ref& vertices)
 {
 	D3D12_VERTEX_BUFFER_VIEW view = {vertices->getVirtualAddress(), vertices->getSize(), vertices->getStride()};
 	mCmdList->IASetVertexBuffers(0, 1, &view);
 }
 
-void Renderer::CommandList::setIndexBuffer(const Buffer::Ptr & indices)
+void Renderer::CommandList::setIndexBuffer(const Buffer::Ref& indices)
 {
 	D3D12_INDEX_BUFFER_VIEW view = {indices->getVirtualAddress(), indices->getSize(), indices->getStride() == 2? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT };
 	mCmdList->IASetIndexBuffer(&view);
@@ -2187,9 +2232,26 @@ Renderer::Shader::Shader(const MemoryData& data, ShaderType type) :
 {
 }
 
-void Renderer::Shader::registerStaticSampler(const D3D12_STATIC_SAMPLER_DESC& desc)
+void Renderer::Shader::registerStaticSampler( const D3D12_STATIC_SAMPLER_DESC& desc)
 {
-	mStaticSamplers.push_back(desc);
+	mStaticSamplers.push_back( desc);
+}
+
+void Renderer::Shader::registerStaticSampler(const std::string& name, D3D12_FILTER filter, D3D12_TEXTURE_ADDRESS_MODE mode)
+{
+	mSamplerMap[name] = {
+		filter,
+		mode, 
+		mode,
+		mode,
+		0,0,
+		D3D12_COMPARISON_FUNC_NEVER,
+		D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+		0,
+		D3D12_FLOAT32_MAX,
+		0,0,
+		D3D12_SHADER_VISIBILITY_ALL,
+	};
 }
 
 void Renderer::Shader::enable32BitsConstants(bool b)
@@ -2200,6 +2262,11 @@ void Renderer::Shader::enable32BitsConstants(bool b)
 void Renderer::Shader::enable32BitsConstantsByName(const std::string& name)
 {
 	mUse32BitsConstantsSet.insert(name);
+}
+
+void Renderer::Shader::enableStaticSampler(bool b)
+{
+	mUseStaticSamplers = b;
 }
 
 D3D12_SHADER_VISIBILITY Renderer::Shader::getShaderVisibility() const
@@ -2237,6 +2304,7 @@ void Renderer::Shader::createRootParameters()
 {
 	mRootParameters.clear();
 	mRanges.clear();
+	auto endsamplers = mSamplerMap.end();
 
 	CHECK(D3DReflect(mCodeBlob->data(), mCodeBlob->size(), IID_PPV_ARGS(&mReflection)));
 
@@ -2249,35 +2317,41 @@ void Renderer::Shader::createRootParameters()
 		ShaderInputBindDesc desc;
 		mReflection->GetResourceBindingDesc(i,&desc);
 
-
-		if (desc.Type == D3D_SIT_SAMPLER)
-			continue;
-
+		auto type = getRangeType(desc.Type);
 		UINT slot = (UINT)mRootParameters.size();
-		mRootParameters.push_back({});
-		auto& rootparam = mRootParameters.back();
-		rootparam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootparam.ShaderVisibility = getShaderVisibility();
-		rootparam.DescriptorTable.NumDescriptorRanges = 1;
-		
-		rootparam.DescriptorTable.pDescriptorRanges = &mRanges[i];
 
-		auto& range = mRanges[i];
-		range.RangeType = getRangeType(desc.Type);
-		range.BaseShaderRegister = desc.BindPoint;
-		range.NumDescriptors = desc.BindCount;
-		range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+		if (!(desc.Type == D3D_SIT_SAMPLER && mUseStaticSamplers))
+		{
+			mRootParameters.push_back({});
+			auto& rootparam = mRootParameters.back();
+			rootparam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+			rootparam.ShaderVisibility = getShaderVisibility();
+			rootparam.DescriptorTable.NumDescriptorRanges = 1;
 
-		UINT space = 0;
+			rootparam.DescriptorTable.pDescriptorRanges = &mRanges[i];
+
+			auto& range = mRanges[i];
+			range.RangeType = type;
+			range.BaseShaderRegister = desc.BindPoint;
+			range.NumDescriptors = desc.BindCount;
+			range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+			UINT space = 0;
 #ifndef D3D12ON7
-		space = desc.Space;
+			space = desc.Space;
 #endif
-		range.RegisterSpace = space;
+			range.RegisterSpace = space;
+		}
 
-		switch (range.RangeType)
+
+
+		switch (type)
 		{
 		case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
 			{
+				auto& rootparam = mRootParameters.back();
+				auto& range = mRanges[i];
+
 				auto cbuffer = mReflection->GetConstantBufferByName(desc.Name);
 				ShaderBufferDesc bd;
 				cbuffer->GetDesc(&bd);
@@ -2318,7 +2392,17 @@ void Renderer::Shader::createRootParameters()
 			mSemanticsMap.uavs[desc.Name] = slot;
 			break;
 		case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
-			mSemanticsMap.samplers[desc.Name] = slot;
+			mSemanticsMap.samplers[desc.Name] =  slot;
+			if (mUseStaticSamplers)
+			{
+				auto ret = mSamplerMap.find(desc.Name);
+				if (ret != endsamplers)
+				{
+					ret->second.RegisterSpace = desc.Space;
+					ret->second.ShaderRegister = desc.BindPoint;
+					mStaticSamplers.push_back(ret->second);
+				}
+			}
 			break;
 		}
 	}
@@ -2488,6 +2572,11 @@ void Renderer::PipelineState::setPSResource( const std::string & name, const D3D
 	setResource(Shader::ST_PIXEL, name, handle);
 }
 
+void Renderer::PipelineState::setCSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+{
+	setResource(Shader::ST_COMPUTE, name, handle);
+}
+
 void Renderer::PipelineState::setResource(Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
 {
 	auto& textures = mSemanticsMap[type].texturesBySlot;
@@ -2505,6 +2594,11 @@ void Renderer::PipelineState::setVSResource(UINT slot, const D3D12_GPU_DESCRIPTO
 void Renderer::PipelineState::setPSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
 {
 	return setResource(Shader::ST_PIXEL, slot, handle);
+}
+
+void Renderer::PipelineState::setCSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+{
+	return setResource(Shader::ST_COMPUTE, slot, handle);
 }
 
 void Renderer::PipelineState::setConstant(Shader::ShaderType type, const std::string & name, const ConstantBuffer::Ptr& c)
@@ -2526,6 +2620,11 @@ void Renderer::PipelineState::setVSConstant(const std::string & name, const Cons
 void Renderer::PipelineState::setPSConstant(const std::string & name, const ConstantBuffer::Ptr& c)
 {
 	setConstant(Shader::ST_PIXEL, name, c);
+}
+
+void Renderer::PipelineState::setCSConstant(const std::string& name, const ConstantBuffer::Ptr& c)
+{
+	setConstant(Shader::ST_COMPUTE, name, c);
 }
 
 void Renderer::PipelineState::setVariable(Shader::ShaderType type, const std::string & name, const void * data)
@@ -2626,20 +2725,6 @@ void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
 	}
 }
 
-Renderer::Buffer::Buffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type)
-{
-	auto renderer = Renderer::getSingleton();
-	mResource = renderer->createResource(size,isShaderResource, type);
-	if (isShaderResource)
-		mResource->createShaderResource();
-	mStride = stride;
-
-}
-
-void Renderer::Buffer::blit(const void* buffer, size_t size)
-{
-	mResource->blit(buffer,size);
-}
 
 Renderer::Profile::Profile(UINT index)
 {
@@ -2685,7 +2770,7 @@ void Renderer::Profile::end(Renderer::CommandList::Ref cl)
 
 Renderer::ConstantBufferAllocator::ConstantBufferAllocator()
 {
-	mResource = Renderer::getSingleton()->createResource(cache_size,false,D3D12_HEAP_TYPE_UPLOAD);
+	mResource = Renderer::getSingleton()->createBufferBase(cache_size,false,D3D12_HEAP_TYPE_UPLOAD);
 	mEnd = mCache.data();
 }
 
