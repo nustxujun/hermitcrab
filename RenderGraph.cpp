@@ -128,6 +128,15 @@ void RenderGraph::Builder::access(const ResourceHandle::Ptr& res)
 	mUAVBarriers.push_back(res);
 }
 
+void RenderGraph::Builder::copy(const ResourceHandle::Ptr& src, const ResourceHandle::Ptr& dst)
+{
+	if (src)
+		mTransitions.push_back({ src, D3D12_RESOURCE_STATE_COPY_SOURCE, IT_NONE });
+	if (dst)
+		mTransitions.push_back({ src, D3D12_RESOURCE_STATE_COPY_DEST, IT_DISCARD});
+
+}
+
 void RenderGraph::Builder::prepare(Renderer::CommandList::Ref cmdlist)const
 {
 	for (auto& t : mTransitions)

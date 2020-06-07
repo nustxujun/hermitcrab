@@ -181,7 +181,7 @@ class RenderContext
 	static RenderContext* instance;
 public:
 	void recompileMaterials(Material::Visualizaion v);
-	virtual void renderScene(Renderer::CommandList::Ref cmdlist, Camera::Ptr cam, UINT flags = 0, UINT mask = 0xffffffff) = 0;
+	//virtual void renderScene(Renderer::CommandList::Ref cmdlist, Camera::Ptr cam, UINT flags = 0, UINT mask = 0xffffffff) = 0;
 	virtual void renderScreen(const Quad* quad, Renderer::CommandList::Ref cmdlist) ;
 
 	template<class T>

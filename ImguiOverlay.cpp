@@ -25,17 +25,6 @@ void ImGuiPass::initImGui()
 	ImGui::CreateContext();
 	ImGui::StyleColorsClassic();
 
-
-	//mInput->listen([&io](const Input::Mouse& mouse, const Input::Keyboard& keyboard) {
-	//	io.MousePos = { (float)mouse.x, (float)mouse.y };
-	//	io.MouseDown[0] = mouse.leftButton;
-	//	io.MouseDown[1] = mouse.rightButton;
-	//	io.MouseDown[2] = mouse.middleButton;
-	//	//io.MouseWheel = mouse.scrollWheelValue;
-	//	
-	//	return io.WantCaptureMouse;
-	//	}, 2);
-
 }
 
 void ImGuiPass::initRendering()

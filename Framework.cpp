@@ -61,6 +61,13 @@ void Framework::update()
 	}
 }
 
+std::pair<int, int> Framework::getSize()
+{
+	RECT rect;
+	::GetClientRect(mWindow, &rect);
+	return {rect.right - rect.left, rect.bottom - rect.top};
+}
+
 void Framework::setProcessor(const std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)>& f)
 {
 	processor = f;

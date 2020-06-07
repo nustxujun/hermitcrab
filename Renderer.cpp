@@ -155,7 +155,7 @@ void Renderer::beginFrame()
 
 
 	addRenderTask([this](auto cmdlist){
-		cmdlist->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_RENDER_TARGET, 0, true);
+		//cmdlist->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_RENDER_TARGET, 0, true);
 		mRenderProfile = ProfileMgr::Singleton.begin("render", cmdlist);
 	},false, true);
 
@@ -166,7 +166,7 @@ void Renderer::endFrame()
 {
 
 	addRenderTask([this](auto cmdlist){
-		cmdlist->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_PRESENT, 0, true);
+		//cmdlist->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_PRESENT, 0, true);
 		ProfileMgr::Singleton.end(mRenderProfile, cmdlist);
 	}, false, true);
 
@@ -486,7 +486,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 		STDMETHOD(Open)(THIS_ D3D_INCLUDE_TYPE IncludeType, LPCSTR pFileName, LPCVOID pParentData, LPCVOID *ppData, UINT *pBytes)
 		{
 			std::fstream file(Renderer::getSingleton()->findFile(pFileName), std::ios::in | std::ios::binary);
-			if (!!file)
+			if (!file)
 				LOG(std::string("cannot find included file ") + pFileName );
 			file.seekg(0,std::ios::end);
 			size_t size = file.tellg();
@@ -1150,6 +1150,9 @@ std::string Renderer::findFile(const std::string & filename)
 		}
 	}
 
+	char curdir[256]= {0};
+	::GetCurrentDirectoryA(256, curdir);
+	LOG("cannot find file ", filename.c_str(), " in ", curdir);
 	return {};
 }
 

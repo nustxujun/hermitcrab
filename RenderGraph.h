@@ -65,6 +65,7 @@ public:
 		void read(const ResourceHandle::Ptr& res);
 		void write(const ResourceHandle::Ptr& res, InitialType type);
 		void access(const ResourceHandle::Ptr& res);
+		void copy(const ResourceHandle::Ptr& src, const ResourceHandle::Ptr& dst);
 
 		void prepare(Renderer::CommandList::Ref cmdlist)const;
 		bool empty(){return mTransitions.empty();}

@@ -21,11 +21,11 @@
 #include <bitset>
 #include <chrono>
 
-#if defined(NO_UE4) || defined(_CONSOLE)
+//#if defined(NO_UE4) || defined(_CONSOLE)
 #include <Windows.h>
-#else
-#include "Windows/MinWindows.h"
-#endif
+//#else
+//#include "Windows/MinWindows.h"
+//#endif
 #include <wrl/client.h>
 
 // d3d
@@ -33,6 +33,8 @@
 #include <dxgi1_4.h>
 #include <D3Dcompiler.h>
 
+// break asio error
+#include <WinSock2.h>
 
 // macros
 #define ALIGN(x,y) (((x + y - 1) & ~(y - 1)) )
@@ -51,6 +53,7 @@ public :
 	{
 		auto context = format(args ...) + "\n";
 		OutputDebugStringA(context.c_str());
+		std::cout << context;
 		::MessageBoxA(NULL, context.c_str(), NULL, NULL);
 	}
 
