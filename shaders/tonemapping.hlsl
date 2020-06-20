@@ -18,9 +18,12 @@ half4 ps(QuadInput input):SV_Target
 {
 	half4 color = frame.Sample(linearSampler, input.uv);
 
+	// do in shading
+	color = pow(color, 1.0f / 2.2f);
+
+
 	color.rgb = ACESFilm(color.rgb);
 
-	color = pow(color, 1.0f / 2.2f);
 
 	return color;
 	//return half4(input.uv,0,1);

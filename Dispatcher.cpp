@@ -9,7 +9,6 @@ Dispatcher::Dispatcher(asio::io_context& context):
 
 Dispatcher::~Dispatcher()
 {
-	mContext.stop();
 }
 
 void Dispatcher::invoke(Handler&& handler)

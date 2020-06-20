@@ -5,55 +5,106 @@
 #include "Profile.h"
 #include "ResourceViewAllocator.h"
 
-ImGuiPass::Ptr Pipeline::mGui;
 
 Pipeline::Pipeline()
 {
-	if (!mGui)
-		mGui = ImGuiPass::Ptr(new ImGuiPass);
+	mGui = ImGuiPass::Ptr(new ImGuiPass);
 }
 
-Pipeline::RenderPass Pipeline::postprocess(const std::string& ps, DXGI_FORMAT fmt)
+//Pipeline::RenderPass Pipeline::postprocess(const std::string& ps, DXGI_FORMAT fmt)
+//{
+//	Quad::Ptr quad = Quad::Ptr(new Quad());
+//	auto rs = Renderer::RenderState::Default;
+//	rs.setRenderTargetFormat({fmt});
+//	quad->init(ps,rs);
+//
+//	return [quad](auto cmdlist, auto& srvs, auto& rtvs,  auto& argvs)
+//	{
+//		cmdlist->setRenderTargets(rtvs);
+//
+//		for (auto& i : srvs)
+//			quad->setResource(i.first, i.second);
+//
+//		if (argvs)
+//			argvs(quad.get());
+//
+//		quad->fitToScreen();
+//		RenderContext::getSingleton()->renderScreen(quad.get(), cmdlist);
+//	};
+//}
+//
+//ResourceHandle::Ptr Pipeline::addPostprocessPass(RenderGraph& rg, const std::string& name, RenderPass&& f, std::map<std::string, ResourceHandle::Ptr>&& srvs, std::function<void(Quad*)>&& argvs, DXGI_FORMAT targetfmt)
+//{
+//	auto r = Renderer::getSingleton();
+//	auto s = r->getSize();
+//	auto rt = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], targetfmt);
+//
+//	rg.addPass(name, [srvs = std::move(srvs), f = std::move(f), rt, argvs = std::move(argvs)](auto& builder){
+//		builder.write(rt, RenderGraph::Builder::IT_NONE);
+//		for (auto& t: srvs)
+//			builder.read(t.second);
+//		return [f = std::move(f), srvs = std::move(srvs), rt, argvs = std::move(argvs)](auto cmdlist) {
+//			std::map<std::string, D3D12_GPU_DESCRIPTOR_HANDLE> inputs;
+//			for (auto& t: srvs)
+//				inputs[t.first] = t.second->getView()->getShaderResource();
+//			f(cmdlist, inputs, {rt->getView()->getRenderTarget()}, argvs);
+//		};
+//	});
+//
+//	return rt;
+//}
+
+void Pipeline::addPostProcessPass(const std::string& name,  DXGI_FORMAT fmt)
 {
 	Quad::Ptr quad = Quad::Ptr(new Quad());
 	auto rs = Renderer::RenderState::Default;
 	rs.setRenderTargetFormat({fmt});
-	quad->init(ps,rs);
+	quad->init(name,rs);
 
-	return [quad](auto cmdlist, auto& srvs, auto& rtvs,  auto& argvs)
+
+	auto pass = [quad, name, fmt](std::map<std::string, ResourceHandle::Ptr>&& srvs, std::function<void(Quad*)>&& argvs)
 	{
-		cmdlist->setRenderTargets(rtvs);
+		auto size = Renderer::getSingleton()->getSize();
+		auto rt = ResourceHandle::create(Renderer::VT_RENDERTARGET, size[0], size[1], fmt);
+		
+		return std::make_pair(rt, [name, quad, srvs = std::move(srvs), argvs = std::move(argvs), rt](RenderGraph& graph, ResourceHandle::Ptr preRT, ResourceHandle::Ptr ds) mutable{
+				if (srvs.find("frame") == srvs.end())
+					srvs["frame"] = preRT;
 
-		for (auto& i : srvs)
-			quad->setResource(i.first, i.second);
+				graph.addPass(name,[quad, srvs = std::move(srvs), argvs = std::move(argvs), rt](RenderGraph::Builder& builder){
+					for (auto& s : srvs)
+						builder.read(s.second);
+					builder.write(rt, RenderGraph::Builder::IT_DISCARD);
+					return[quad, srvs = std::move(srvs), argvs = std::move(argvs), rt](Renderer::CommandList::Ref cmdlist){
+						cmdlist->setRenderTargets({rt->getView()->getRenderTarget()});
 
-		if (argvs)
-			argvs(quad.get());
+						for (auto& i : srvs)
+							quad->setResource(i.first, i.second->getView()->getShaderResource());
 
-		quad->fitToScreen();
-		RenderContext::getSingleton()->renderScreen(quad.get(), cmdlist);
+						if (argvs)
+							argvs(quad.get());
+
+						quad->fitToScreen();
+						RenderContext::getSingleton()->renderScreen(quad.get(), cmdlist);
+					};
+				});
+				return rt;
+			}
+		);
 	};
+	mPasses[name] = std::move(pass);
 }
 
-ResourceHandle::Ptr Pipeline::addPostprocessPass(RenderGraph& rg, const std::string& name, RenderPass&& f, std::map<std::string, ResourceHandle::Ptr>&& srvs, std::function<void(Quad*)>&& argvs, DXGI_FORMAT targetfmt)
+ResourceHandle::Ptr Pipeline::postprocess(const std::string& name, std::map<std::string, ResourceHandle::Ptr>&& srvs, std::function<void(Quad*)>&& argvs)
 {
-	auto r = Renderer::getSingleton();
-	auto s = r->getSize();
-	auto rt = ResourceHandle::create(Renderer::VT_RENDERTARGET, s[0], s[1], targetfmt);
-
-	rg.addPass(name, [srvs = std::move(srvs), f = std::move(f), rt, argvs = std::move(argvs)](auto& builder){
-		builder.write(rt, RenderGraph::Builder::IT_NONE);
-		for (auto& t: srvs)
-			builder.read(t.second);
-		return [f = std::move(f), srvs = std::move(srvs), rt, argvs = std::move(argvs)](auto cmdlist) {
-			std::map<std::string, D3D12_GPU_DESCRIPTOR_HANDLE> inputs;
-			for (auto& t: srvs)
-				inputs[t.first] = t.second->getView()->getShaderResource();
-			f(cmdlist, inputs, {rt->getView()->getRenderTarget()}, argvs);
-		};
-	});
-
+	auto [rt, pp] = mPasses[name](std::move(srvs), std::move(argvs));
+	mPostProcess.emplace_back(std::move(pp));
 	return rt;
+}
+
+void Pipeline::postprocess(PostProcess&& pp)
+{
+	mPostProcess.emplace_back(std::move(pp));
 }
 
 void Pipeline::addRenderScene(RenderScene&& rs)
@@ -66,10 +117,11 @@ bool Pipeline::is(const std::string& n)
 	return mSettings.switchers[n];
 }
 
-void ForwardPipleline::postProcess(PostProcess&& pp)
+void Pipeline::set(const std::string& n, bool v)
 {
-	mPostProcess = std::move(pp);
+	mSettings.switchers[n] = v;
 }
+
 
 void ForwardPipleline::execute()
 {
@@ -103,9 +155,10 @@ void ForwardPipleline::execute()
 		};
 	});
 
-	if (mPostProcess)
-		rt = mPostProcess(graph, rt, ds);
-
+	
+	for (auto& pp: mPostProcess)
+		rt = pp(graph, rt, ds);
+	mPostProcess.clear();
 
 	graph.addPass("gui", [this, dst = rt](auto& builder) {
 		builder.write(dst, RenderGraph::Builder::IT_NONE);

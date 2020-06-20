@@ -112,6 +112,9 @@ void RenderGraph::execute()
 
 void RenderGraph::Builder::read(const ResourceHandle::Ptr& res)
 {
+	if (res->getType() == Renderer::VT_UNORDEREDACCESS)
+		mUAVBarriers.push_back(res);
+
 	mTransitions.push_back({res, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, IT_NONE});
 }
 

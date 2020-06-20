@@ -54,7 +54,8 @@ public :
 		auto context = format(args ...) + "\n";
 		OutputDebugStringA(context.c_str());
 		std::cout << context;
-		::MessageBoxA(NULL, context.c_str(), NULL, NULL);
+		//_CrtDbgBreak();
+		//::MessageBoxA(NULL, context.c_str(), NULL, NULL);
 	}
 
 	static void checkResult(HRESULT hr, std::string_view info = {})
@@ -65,6 +66,7 @@ public :
 		char msg[1024] = { 0 };
 		FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, 0, hr, 0, msg, sizeof(msg), 0);
 		std::cout << Common::format(msg, info) ;
+		OutputDebugStringA(msg);
 		MessageBoxA(NULL, Common::format(msg, info).c_str(), NULL, MB_ICONERROR);
 		_CrtDbgBreak();
 		//abort();
@@ -76,6 +78,7 @@ public :
 		if (v)
 			return;
 		std::cout << what;
+		OutputDebugStringA(what.c_str());
 		MessageBoxA(0, what.c_str(), 0, MB_ICONERROR);
 		_CrtDbgBreak();
 		//abort();

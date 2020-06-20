@@ -27,7 +27,7 @@ static Renderer::DebugInfo debugInfoCache;
 
 DXGI_FORMAT constexpr Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
 DXGI_FORMAT constexpr Renderer::BACK_BUFFER_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
-size_t const Renderer::NUM_COMMANDLIST = 256;
+size_t const Renderer::NUM_COMMANDLIST = 1024;
 Renderer::Ptr Renderer::create()
 {
 	instance = Renderer::Ptr(new Renderer());
@@ -64,16 +64,6 @@ Renderer::~Renderer()
 void Renderer::initialize(HWND window)
 {
 	mWindow = window;
-
-#if defined(_DEBUG) && !defined (D3D12ON7)
-	{
-		ComPtr<ID3D12Debug> debugController;
-		if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
-		{
-			debugController->EnableDebugLayer();
-		}
-	}
-#endif
 
 	initDevice();
 	initCommands();
@@ -182,6 +172,9 @@ void Renderer::endFrame()
 
 	collectDebugInfo();
 
+	for(auto& t: mFencingTasks)
+		t();
+	mFencingTasks.clear();
 }
 
 std::array<LONG, 2> Renderer::getSize()
@@ -473,9 +466,9 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 
 #if defined(_DEBUG)
 	// Enable better shader debugging with the graphics debugging tools.
-	UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_ENABLE_STRICTNESS;
+	UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_WARNINGS_ARE_ERRORS;
 #else
-	UINT compileFlags = 0;
+	UINT compileFlags = D3DCOMPILE_OPTIMIZATION_LEVEL3;
 #endif
 
 	struct Include : public ID3DInclude
@@ -775,15 +768,7 @@ Renderer::ConstantBuffer::Ptr Renderer::createConstantBuffer(UINT size)
 void Renderer::destroyResource(Resource::Ref res)
 {
 	std::lock_guard<std::mutex> lock(mResourceMutex);
-	auto endi = mResources.end();
-	for (auto i = mResources.begin(); i != endi; ++i)
-	{
-		if (res == *i)
-		{
-			mResources.erase(i);
-			return;
-		}
-	}
+	mResources.erase(std::find(mResources.begin(), mResources.end(), res.shared()));
 }
 
 Renderer::Resource::Ref Renderer::createResourceView(UINT width, UINT height, DXGI_FORMAT format, ViewType type)
@@ -810,6 +795,21 @@ Renderer::PipelineState::Ref Renderer::createComputePipelineState(const Shader::
 	auto pso = PipelineState::create(shader);
 	mPipelineStates.push_back(pso);
 	return pso;
+}
+
+void Renderer::destroyPipelineState(PipelineState::Ref pso)
+{
+	std::lock_guard<std::mutex> lock(mResourceMutex);
+	//auto endi = mPipelineStates.end();
+	//for (auto i = mPipelineStates.begin(); i != endi; ++i)
+	//{
+	//	if (pso == *i)
+	//	{
+	//		mPipelineStates.erase(i);
+	//		return;
+	//	}
+	//}
+	mPipelineStates.erase(std::find(mPipelineStates.begin(), mPipelineStates.end(), pso.shared()));
 }
 
 Renderer::Profile::Ref Renderer::createProfile()
@@ -909,6 +909,7 @@ void Renderer::addRenderTask(RenderTask&& task, bool strand, bool impl )
 {
 	CHECK_RENDER_THREAD;
 	auto index = mNumCommandLists.fetch_add(1, std::memory_order_relaxed);
+	ASSERT(index < NUM_COMMANDLIST, "too many render tasks");
 	auto make_task = [t = std::move(task), index, this](){
 		mCommandLists[index]->reset();
 		auto heap = mDescriptorHeaps[DHT_CBV_SRV_UAV]->get();
@@ -921,6 +922,11 @@ void Renderer::addRenderTask(RenderTask&& task, bool strand, bool impl )
 		make_task();
 	else
 		mRenderTasks.addTask(make_task, strand);
+}
+
+void Renderer::addFencingTask(ObjectTask&& task)
+{
+	mFencingTasks.push_back(task);
 }
 
 
@@ -966,6 +972,16 @@ void Renderer::uninitialize()
 
 void Renderer::initDevice()
 {
+#if defined(_DEBUG) && !defined (D3D12ON7)
+	{
+		ComPtr<ID3D12Debug> debugController;
+		if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
+		{
+			debugController->EnableDebugLayer();
+		}
+	}
+#endif
+
 	auto adapters = getAdapter();
 	ComPtr<IDXGIAdapter> adapter;
 
@@ -1261,7 +1277,15 @@ void Renderer::present()
 		mWindow,
 		mVSync? D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK: D3D12_DOWNLEVEL_PRESENT_FLAG_NONE));
 #else
-	CHECK(mSwapChain->Present(mVSync? 1: 0,0));
+	HRESULT hr = (mSwapChain->Present(mVSync? 1: 0,0));
+	if (hr == 0x887a0005)
+	{
+		CHECK(mDevice->GetDeviceRemovedReason());
+	}
+	else if (hr != S_OK)
+	{
+		CHECK(hr);
+	}
 #endif
 
 	
@@ -1882,12 +1906,11 @@ void Renderer::CommandList::flushResourceBarrier()
 			for (UINT i = 0; i < desc.MipLevels;++i)
 				res->mState[i] = t.second.state;
 		}
-		else
+		else if (res->getState(t.second.subresource) != t.second.state)
 		{
 			b.Transition.StateBefore = res->getState(t.second.subresource);
 			barriers.emplace_back(b);
 			res->mState[t.second.subresource] = t.second.state;
-			ASSERT(b.Transition.StateAfter != b.Transition.StateBefore, "cannot be");
 		}	
 	}
 
@@ -2302,6 +2325,7 @@ void Renderer::Shader::createRootParameters()
 
 	ShaderDesc shaderdesc;
 	mReflection->GetDesc(&shaderdesc);
+	LOG(shaderdesc.InstructionCount);
 	mRanges.resize(shaderdesc.BoundResources);
 	
 	for (UINT i = 0; i < shaderdesc.BoundResources; ++i)
@@ -2645,6 +2669,11 @@ void Renderer::PipelineState::setVSVariable(const std::string & name, const void
 void Renderer::PipelineState::setPSVariable(const std::string & name, const void * data)
 {
 	setVariable(Shader::ST_PIXEL, name, data);
+}
+
+void Renderer::PipelineState::setCSVariable(const std::string& name, const void* data)
+{
+	setVariable(Shader::ST_COMPUTE, name, data);
 }
 
 Renderer::ConstantBuffer::Ptr Renderer::PipelineState::createConstantBuffer(Shader::ShaderType type,const std::string& name)

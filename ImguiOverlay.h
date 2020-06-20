@@ -24,7 +24,6 @@ private:
 	void initFonts();
 	Renderer::RenderTask draw();
 
-	LRESULT process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 private:
 	Renderer::PipelineState::Ref mPipelineState;
 	Renderer::Buffer::Ref mVertexBuffer[Renderer::NUM_BACK_BUFFERS];
@@ -101,6 +100,12 @@ public:
 	std::vector<ImGuiObject*> children;
 	ImGuiObject* parent = nullptr;
 
+	static void init()
+	{
+		IMGUI_CHECKVERSION();
+		ImGui::CreateContext();
+		ImGui::StyleColorsClassic();
+	}
 
 	static ImGuiObject* root() 
 	{
@@ -108,13 +113,18 @@ public:
 		return &r;
 	}
 
-	static void clear()
+	static void close()
 	{
 		std::vector<ImGuiObject*> tmp;
 		tmp.swap(root()->children);
 		for (auto& c: tmp)
 			delete c;
+
+		ImGui::DestroyContext();
 	}
+
+	static bool process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+
 
 	using Cmd = std::function<void(void)>;
 

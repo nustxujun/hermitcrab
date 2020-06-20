@@ -4,17 +4,19 @@
 #include "RenderContext.h"
 #include "ImGuiOverlay.h"
 
-#include "AtmosphericScattering.h"
 class Pipeline
 {
 public:
 	Pipeline();
 	using Ptr = std::shared_ptr<Pipeline>;
 
-	using RenderPass = std::function<void (Renderer::CommandList::Ref&, const std::map<std::string,D3D12_GPU_DESCRIPTOR_HANDLE>&, const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>&,  const std::function<void(Quad*)>&) >;
-	
-	RenderPass postprocess(const std::string& ps, DXGI_FORMAT fmt );
-	ResourceHandle::Ptr addPostprocessPass(RenderGraph& rg, const std::string& name, RenderPass&& f, std::map<std::string, ResourceHandle::Ptr>&& srvs, std::function<void(Quad*)>&& argvs, DXGI_FORMAT targetfmt);
+	using PostProcess = std::function<ResourceHandle::Ptr(RenderGraph&, ResourceHandle::Ptr, ResourceHandle::Ptr)>;
+	using RenderPass = std::function<std::pair<ResourceHandle::Ptr, PostProcess> (std::map<std::string,ResourceHandle::Ptr>&&,  std::function<void(Quad*)>&&) >;
+	using SetupQuad = std::function<void(Quad&, std::map<std::string, ResourceHandle::Ptr>&&, ResourceHandle::Ptr, ResourceHandle::Ptr)>;
+	//RenderPass postprocess(const std::string& ps, DXGI_FORMAT fmt );
+	void addPostProcessPass( const std::string& name,  DXGI_FORMAT fmt);
+	ResourceHandle::Ptr postprocess(const std::string& name, std::map<std::string, ResourceHandle::Ptr>&& srvs = {}, std::function<void(Quad*)>&& argvs = {});
+	void postprocess( PostProcess&& pp);
 
 	using RenderScene = std::function<void(Renderer::CommandList::Ref cmdlist, Camera::Ptr cam, UINT flags , UINT mask )>;
 	void addRenderScene(RenderScene&& rs);
@@ -22,6 +24,7 @@ public:
 	virtual void execute() {};
 
 	bool is(const std::string& n);
+	void set(const std::string& n, bool v);
 protected:
 
 	struct RenderSettings
@@ -30,20 +33,20 @@ protected:
 	}
 	mSettings;
 	Dispatcher mDispatcher;
-	static ImGuiPass::Ptr mGui;
+	ImGuiPass::Ptr mGui;
 	RenderScene mRenderScene;
+	std::map<std::string, RenderPass> mPasses;
+	std::vector<PostProcess> mPostProcess;
+
 };
 
-class ForwardPipleline:public Pipeline
+class ForwardPipleline : public Pipeline 
 {
 public:
 	using Pipeline::Pipeline;
-	using PostProcess = std::function<ResourceHandle::Ptr(RenderGraph&, ResourceHandle::Ptr, ResourceHandle::Ptr)>;
-	void postProcess(PostProcess&& pp);
 
 	void execute() override;
 private:
-	PostProcess mPostProcess;
 };
 
 //class DefaultPipeline: public Pipeline

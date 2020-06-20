@@ -2,7 +2,7 @@
 #include "RenderContext.h"
 #include "Profile.h"
 #include "Dispatcher.h"
-
+#include "ImguiOverlay.h"
 std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)> Framework::processor;
 bool Framework::needPaint = true;
 
@@ -23,10 +23,14 @@ Framework::Framework()
 			Dispatcher::run(Dispatcher::getSharedContext());
 		});
 	}
+
+	ImGuiOverlay::ImGuiObject::init();
+
 }
 
 Framework::~Framework()
 {
+	ImGuiOverlay::ImGuiObject::close();
 	Renderer::destory();
 
 	Dispatcher::stop(Dispatcher::getSharedContext());
@@ -137,6 +141,8 @@ LRESULT Framework::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 		}
 		return 0 ;
 	}
+
+	ImGuiOverlay::ImGuiObject::process(hWnd,message, wParam, lParam);
 
 	if (processor)
 		return processor(hWnd, message, wParam, lParam);

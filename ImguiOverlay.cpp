@@ -3,27 +3,30 @@
 #include "Profile.h"
 ImGuiPass::ImGuiPass()
 {
-	initImGui();
+	//initImGui();
 	initRendering();
 	initFonts();
-
-	auto p = std::bind(&ImGuiPass::process, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
-	Framework::setProcessor(p);
 }
 
 ImGuiPass::~ImGuiPass()
 {
-	ImGuiOverlay::ImGuiObject::clear();
-	Framework::setProcessor({});
-	ImGui::DestroyContext();
+	auto r = Renderer::getSingleton();
+	if (r)
+	{
+		for (auto b : mVertexBuffer)
+			r->destroyResource(b);
+
+		for (auto b : mIndexBuffer)
+			r->destroyResource(b);
+
+		r->destroyResource(mFonts);
+		r->destroyPipelineState(mPipelineState);
+	}
 }
 
 
 void ImGuiPass::initImGui()
 {
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGui::StyleColorsClassic();
 
 }
 
@@ -218,8 +221,10 @@ Renderer::RenderTask ImGuiPass::draw()
 #define GET_X_LPARAM(lp)	((int)(short)LOWORD(lp))
 #define GET_Y_LPARAM(lp)	((int)(short)HIWORD(lp))
 
-LRESULT ImGuiPass::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+bool ImGuiOverlay::ImGuiObject::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+	if (ImGui::GetCurrentContext() == NULL)
+		return false;
 	auto& io = ImGui::GetIO();
 	switch (message)
 	{
@@ -232,8 +237,7 @@ LRESULT ImGuiPass::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 
 	case WM_MOUSEMOVE: {io.MousePos.x = (float)GET_X_LPARAM(lParam); io.MousePos.y = (float)GET_Y_LPARAM(lParam);} break;
 	}
-
-	return DefWindowProcW(hWnd, message, wParam, lParam);
+	return false;
 }
 
 

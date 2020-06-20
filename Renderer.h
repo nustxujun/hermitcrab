@@ -559,6 +559,8 @@ public:
 		void setVariable(Shader::ShaderType type, const std::string& name, const void* data);
 		void setVSVariable( const std::string& name, const void* data);
 		void setPSVariable( const std::string& name, const void* data);
+		void setCSVariable(const std::string& name, const void* data);
+
 
 		ConstantBuffer::Ptr createConstantBuffer(Shader::ShaderType type, const std::string& name);
 		const D3D12_GRAPHICS_PIPELINE_STATE_DESC& getDesc()const;
@@ -715,12 +717,13 @@ public:
 	ConstantBuffer::Ptr createConstantBuffer(UINT size);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
 	PipelineState::Ref createComputePipelineState(const Shader::Ptr& shader);
+	void destroyPipelineState(PipelineState::Ref pso);
 	Profile::Ref createProfile();
 	void generateMips(Resource::Ref texture);
 
 
 	void addRenderTask(RenderTask&& task, bool strand = false, bool impl = false);
-
+	void addFencingTask(ObjectTask&& task);
 private:
 	MemoryData createMemoryData(size_t size = 0)
 	{
@@ -785,7 +788,7 @@ private:
 
 	asio::io_context mRenderThread;
 	TaskExecutor mRenderTasks{ Dispatcher::getSharedContext() };
-
+	std::vector<ObjectTask> mFencingTasks;
 	std::mutex mResourceMutex;
 
 };
