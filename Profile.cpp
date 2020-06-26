@@ -2,84 +2,79 @@
 #include "Thread.h"
 
 ProfileMgr ProfileMgr::Singleton;
-thread_local std::string ProfileMgr::table;
-
+thread_local std::stack<ProfileMgr::Node*> ProfileMgr::nodeStack;
 Renderer::Profile::Ref ProfileMgr::begin(const std::string& name, Renderer::CommandList::Ref cl)
 {
 	auto r = Renderer::getSingleton();
 	auto tid = Thread::getId();
 	mMutex.lock();
-	auto& allocs = mAllocatteds[tid];
-	while (allocs.first.size() < allocs.second + 1)
+
+	std::string index;
+	if (Thread::getId() == 0)
+		index = "main";
+	if (!nodeStack.empty())
+		index += "_" + nodeStack.top()->name;
+	index += "_" + name;
+
+	Node* node = mProfiles[index];
+	if (node == NULL)
 	{
-		allocs.first.emplace_back("",r->createProfile());
+		node = new Node();
+		node->name = name;
+		if (Thread::getId() != 0)
+			node->name += " on thread";
+		node->profile = Renderer::getSingleton()->createProfile();
+
+		if (!nodeStack.empty())
+		{
+			auto parent = nodeStack.top();
+			node->parent = parent;
+			parent->addChild(node);
+		}
+
+		mProfiles[index] = node;
 	}
-	auto& p = allocs.first[allocs.second++];
 
-	p.first = Common::format(table , name , " on " , tid);
-	p.second->begin(cl);
 	mMutex.unlock();
+	node->profile->begin(cl);
 
-	table.push_back('\t');
-
-	return p.second;
+	nodeStack.push(node);
+	node->timestamp = std::chrono::high_resolution_clock::now();
+	return node->profile;
 }
 
 void ProfileMgr::end(Renderer::Profile::Ref p, Renderer::CommandList::Ref cl)
 {
-	table.pop_back();
 	p->end(cl);
+	nodeStack.pop();
 }
 
 
 void ProfileMgr::reset()
 {
-	PROFILE("export profile", {});
-	mLastOutputs.clear();
-	std::map<std::string, std::vector<Output>> temp;
+}
+
+void ProfileMgr::visit(const std::function<void(Node*, size_t)>& visitor)
+{
 	mMutex.lock();
-
+	for (auto& n : mProfiles)
 	{
-		auto& s = mAllocatteds[0].second;
-		auto& v = mAllocatteds[0].first;
-		for (auto i = 0; i < s; ++i)
-		{
-			auto& p = v[i];
-			mLastOutputs.push_back({p.first, p.second->getCPUTime(), p.second->getGPUTime()});
-		}
-		mAllocatteds[0].second = 0;
-	}
-
-
-	for (auto& t : mAllocatteds)
-	{
-		if (t.second.second == 0)
+		if (n.second->parent)
 			continue;
-		auto& vec = temp[t.second.first[0].first];
-		
-		for (auto i = 0; i < t.second.second; ++i)
-		{
-			auto& p = t.second.first[i];
-			vec.push_back({ p.first, p.second->getCPUTime(), p.second->getGPUTime() });
-		}
-		t.second.second = 0;
+
+
+		n.second->visit(visitor);
+		//n.second->visit([&](Node* n, size_t depth) {
+			//std::string blank(depth, '	');
+			//mLastOutputs.push_back({ blank + n->name, n->profile->getCPUTime(), n->profile->getGPUTime() });
+			//});
 	}
+
 	mMutex.unlock();
 
-	for (auto& t : temp)
-	{
-		for (auto& v : t.second)
-		{
-			mLastOutputs.push_back(v);
-		}
-	}
-
 }
 
-std::vector<ProfileMgr::Output> ProfileMgr::output()
-{
-	return mLastOutputs;
-}
+
 
 ProfileMgr::Auto::Auto(const std::string& name, Renderer::CommandList::Ref cl)
 {

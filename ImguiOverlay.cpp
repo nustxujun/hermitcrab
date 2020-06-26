@@ -3,6 +3,7 @@
 #include "Profile.h"
 ImGuiPass::ImGuiPass()
 {
+
 	//initImGui();
 	initRendering();
 	initFonts();
@@ -110,21 +111,45 @@ void ImGuiPass::initRendering()
 }
 
 
-Renderer::RenderTask ImGuiPass::draw()
+
+#define GET_X_LPARAM(lp)	((int)(short)LOWORD(lp))
+#define GET_Y_LPARAM(lp)	((int)(short)HIWORD(lp))
+
+//bool ImGuiOverlay::ImGuiObject::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+//{
+//	if (ImGui::GetCurrentContext() == NULL)
+//		return false;
+//	auto& io = ImGui::GetIO();
+//	switch (message)
+//	{
+//	case WM_LBUTTONDOWN: io.MouseDown[0] = true;break;
+//	case WM_LBUTTONUP: io.MouseDown[0] = false; break;
+//	case WM_RBUTTONDOWN: io.MouseDown[1] = true; break;
+//	case WM_RBUTTONUP: io.MouseDown[1] = false; break;
+//	case WM_MBUTTONDOWN: io.MouseDown[2] = true; break;
+//	case WM_MBUTTONUP: io.MouseDown[2] = false; break;
+//
+//	case WM_MOUSEMOVE: {io.MousePos.x = (float)GET_X_LPARAM(lParam); io.MousePos.y = (float)GET_Y_LPARAM(lParam);} break;
+//	}
+//	return false;
+//}
+
+
+Renderer::RenderTask ImGuiPass::execute(ImGuiPass::Ptr pass)
 {
-	return [this](auto cmdlist) {
+	return [pass](auto cmdlist) {
 		{
-			PROFILE("waitting gui update",{});
-		mFence.wait();
+			PROFILE("waitting gui update", {});
+			pass->mFence.wait();
 		}
 		auto data = ImGui::GetDrawData();
 
-		if (data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f || data->TotalIdxCount <= 0)
+		if (data == NULL || data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f || data->TotalIdxCount <= 0)
 			return;
 
 		auto renderer = Renderer::getSingleton();
-		auto& VertexBuffer = mVertexBuffer[renderer->getCurrentFrameIndex()];
-		auto& IndexBuffer = mIndexBuffer[renderer->getCurrentFrameIndex()];
+		auto& VertexBuffer = pass->mVertexBuffer[renderer->getCurrentFrameIndex()];
+		auto& IndexBuffer = pass->mIndexBuffer[renderer->getCurrentFrameIndex()];
 		if (!VertexBuffer || VertexBuffer->getSize() < data->TotalVtxCount * sizeof(ImDrawVert))
 		{
 			if (VertexBuffer)
@@ -172,9 +197,9 @@ Renderer::RenderTask ImGuiPass::draw()
 		};
 
 
-		cmdlist->setPipelineState(mPipelineState);
+		cmdlist->setPipelineState(pass->mPipelineState);
 
-		mPipelineState->setVSVariable("ProjectionMatrix", mvp);
+		pass->mPipelineState->setVSVariable("ProjectionMatrix", mvp);
 
 		//cmdlist->set32BitConstants(1,16,mvp,0);
 
@@ -207,7 +232,7 @@ Renderer::RenderTask ImGuiPass::draw()
 					const D3D12_RECT r = { (LONG)(pcmd->ClipRect.x - clip_off.x), (LONG)(pcmd->ClipRect.y - clip_off.y), (LONG)(pcmd->ClipRect.z - clip_off.x), (LONG)(pcmd->ClipRect.w - clip_off.y) };
 					cmdlist->setScissorRect(r);
 					auto handle = (D3D12_GPU_DESCRIPTOR_HANDLE*)&pcmd->TextureId;
-					mPipelineState->setPSResource("texture0", *handle);
+					pass->mPipelineState->setPSResource("texture0", *handle);
 					cmdlist->drawIndexedInstanced(pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
 				}
 			}
@@ -217,34 +242,6 @@ Renderer::RenderTask ImGuiPass::draw()
 
 	};
 
-}
-#define GET_X_LPARAM(lp)	((int)(short)LOWORD(lp))
-#define GET_Y_LPARAM(lp)	((int)(short)HIWORD(lp))
-
-bool ImGuiOverlay::ImGuiObject::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-{
-	if (ImGui::GetCurrentContext() == NULL)
-		return false;
-	auto& io = ImGui::GetIO();
-	switch (message)
-	{
-	case WM_LBUTTONDOWN: io.MouseDown[0] = true;break;
-	case WM_LBUTTONUP: io.MouseDown[0] = false; break;
-	case WM_RBUTTONDOWN: io.MouseDown[1] = true; break;
-	case WM_RBUTTONUP: io.MouseDown[1] = false; break;
-	case WM_MBUTTONDOWN: io.MouseDown[2] = true; break;
-	case WM_MBUTTONUP: io.MouseDown[2] = false; break;
-
-	case WM_MOUSEMOVE: {io.MousePos.x = (float)GET_X_LPARAM(lParam); io.MousePos.y = (float)GET_Y_LPARAM(lParam);} break;
-	}
-	return false;
-}
-
-
-Renderer::RenderTask ImGuiPass::execute()
-{
-	//update();
-	return draw();
 }
 
 void ImGuiPass::update()
@@ -256,7 +253,7 @@ void ImGuiPass::update()
 	resize(win, std::max(1L, rect.right), std::max(1L, rect.bottom));
 
 	ImGui::NewFrame();
-	//ImGui::ShowDemoWindow();
+	ImGui::ShowDemoWindow();
 	ImGuiOverlay::ImGuiObject::root()->framemove();
 
 	ImGui::Render();

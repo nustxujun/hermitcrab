@@ -14,7 +14,7 @@ public:
 	ImGuiPass();
 	~ImGuiPass();
 
-	Renderer::RenderTask execute() ;
+	static Renderer::RenderTask execute(ImGuiPass::Ptr pass) ;
 	void update();
 	void resize(HWND win, int width, int height);
 
@@ -22,13 +22,11 @@ private:
 	void initImGui();
 	void initRendering();
 	void initFonts();
-	Renderer::RenderTask draw();
 
 private:
 	Renderer::PipelineState::Ref mPipelineState;
 	Renderer::Buffer::Ref mVertexBuffer[Renderer::NUM_BACK_BUFFERS];
 	Renderer::Buffer::Ref mIndexBuffer[Renderer::NUM_BACK_BUFFERS];
-	std::vector<char> mCaches[2];
 	Renderer::Resource::Ref mFonts;
 	int mWidth = 0;
 	int mHeight = 0;
@@ -44,9 +42,15 @@ public:
 	void framemove() 
 	{
 		if (visible)
-		{
 			update();
-		}
+
+		if (!mUpdate.load(std::memory_order_relaxed))
+			return;
+
+		std::lock_guard<std::mutex> lock(mMutex);
+		for (auto& f : mFencingQueue)
+			f();
+		mFencingQueue.clear();
 	}
 	virtual void update() {
 		for (auto& i : children)
@@ -57,7 +61,12 @@ public:
 	{
 		auto c = new T(args...);
 		c->parent = this;
-		children.push_back(c);
+		//children.push_back(c);
+		mUpdate.store(true, std::memory_order_relaxed);
+		std::lock_guard<std::mutex> lock(mMutex);
+		mFencingQueue.push_back([=](){
+			children.push_back(c);
+		});
 		return c;
 	}
 
@@ -123,8 +132,6 @@ public:
 		ImGui::DestroyContext();
 	}
 
-	static bool process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-
 
 	using Cmd = std::function<void(void)>;
 
@@ -139,7 +146,9 @@ public:
 	std::function<bool(ImGuiObject*)> drawCallback;
 protected:
 	std::map<int, std::function<void(void)>> mCmdMaps;
-
+	std::vector<std::function<void()>> mFencingQueue;
+	std::mutex mMutex;
+	std::atomic_bool mUpdate = false;
 };
 
 struct ImGuiWindow: public ImGuiObject

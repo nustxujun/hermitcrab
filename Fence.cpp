@@ -11,10 +11,17 @@ void FenceObject::signal(std::function<void()>&& dosomething)
 	mCondVar.notify_one();
 }
 
-void FenceObject::wait(std::function<bool()>&& cond)
+bool FenceObject::wait(std::function<bool()>&& cond ,bool block )
 {
 	std::unique_lock<std::mutex> lock(mMutex);
-
+	if (!block)
+	{
+		if (cond)
+			return cond();
+		else
+			return mCond.load(std::memory_order_relaxed);
+	}
+		
 	if (cond)
 		mCondVar.wait(lock,[this, cond = std::move(cond)]() {
 				return cond() ;

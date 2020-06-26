@@ -40,13 +40,13 @@ class Renderer
 
 public:
 	static constexpr auto FEATURE_LEVEL = D3D_FEATURE_LEVEL_12_0;
-	static auto constexpr NUM_BACK_BUFFERS = 2;
+	static auto constexpr NUM_BACK_BUFFERS = 3;
 	static auto constexpr NUM_MAX_RENDER_TARGET_VIEWS = 8 * 1024;
 	static auto constexpr NUM_MAX_DEPTH_STENCIL_VIEWS = 4 * 1024;
 	static auto constexpr NUM_MAX_CBV_SRV_UAVS = 32 * 1024;
 	static DXGI_FORMAT const FRAME_BUFFER_FORMAT;
 	static DXGI_FORMAT const BACK_BUFFER_FORMAT;
-	static size_t const NUM_COMMANDLIST;
+	static size_t const  NUM_COMMANDLISTS;
 	enum DescriptorHeapType
 	{
 		DHT_BACKBUFFER,
@@ -356,30 +356,33 @@ public:
 
 	};
 
+	class CommandQueue;
 	class Fence : public Interface<Fence>
 	{
+		friend class Renderer::CommandQueue;
 	public :
 		Fence();
 		~Fence();
 		void wait();
+		void wait(ID3D12CommandQueue* q);
 		void signal();
+		void signal(ID3D12CommandQueue* q);
 		bool completed();
-
-		private:
-			ComPtr<ID3D12Fence> mFence;
-			HANDLE mFenceEvent;
-			UINT64 mFenceValue;
+	private:
+		ComPtr<ID3D12Fence> mFence;
+		HANDLE mFenceEvent;
+		UINT64 mFenceValue;
 	};
 
 	class CommandAllocator final: public Interface<CommandAllocator>
 	{
 	friend class Renderer::CommandList;
 	public:
-		CommandAllocator();
+		CommandAllocator(D3D12_COMMAND_LIST_TYPE type);
 		~CommandAllocator();
 		void reset();
 		void wait();
-		void signal();
+		void signal(ID3D12CommandQueue* q);
 		bool completed();
 		ID3D12CommandAllocator* get();
 
@@ -583,10 +586,11 @@ public:
 
 	class CommandList final : public Interface<CommandList>
 	{
+		friend class Renderer;
 	public:
-		CommandList();
+		CommandList(ID3D12CommandQueue* q, D3D12_COMMAND_LIST_TYPE type);
 		~CommandList();
-		ID3D12GraphicsCommandList* get();
+		//ID3D12GraphicsCommandList* get();
 
 
 		void close();
@@ -618,6 +622,7 @@ public:
 		void setIndexBuffer(const Buffer::Ref& indices);
 		void setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+		void setDescriptorHeap(DescriptorHeap::Ref heap);
 		void setRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void setComputeRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void set32BitConstants(UINT slot, UINT num, const void* data, UINT offset);
@@ -632,6 +637,7 @@ public:
 		CommandAllocator::Ref getAllocator(){return mAllocators[mCurrentAllocator];}
 	private:
 		static const auto NUM_ALLOCATORS = 4;
+		ID3D12CommandQueue* mQueue;
 		std::array<CommandAllocator::Ptr, NUM_ALLOCATORS> mAllocators;
 		size_t mCurrentAllocator = 0;
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
@@ -657,16 +663,57 @@ public:
 		float getCPUTime();
 		float getGPUTime();
 
+		float getCPUMax();
+		float getGPUMax();
+
+		void reset();
+
 		void begin(Renderer::CommandList::Ref cl);
 		void end(Renderer::CommandList::Ref cl);
 	private:
 		UINT mIndex;
 		float mCPUHistory = 0;
+		float mCPUMax = 0;
 		float mGPUHistory = 0;
+		float mGPUMax = 0;
 		std::chrono::high_resolution_clock::time_point mCPUTime;
 	};
 
-	using RenderTask = std::function<void(CommandList::Ref)>;
+
+
+	class CommandQueue : public Interface<CommandQueue>
+	{
+	public:
+		using Command = std::function<void(CommandList::Ref)>;
+	public:
+		CommandQueue(D3D12_COMMAND_LIST_TYPE type, size_t maxCmdlistSize = NUM_COMMANDLISTS);
+		~CommandQueue();
+
+		void addCommand(Command&& task, bool strand = false, bool impl = false);
+
+		void execute();
+		void flush();
+		ID3D12CommandQueue* get();
+
+		void signal();
+		void wait();
+		void wait(CommandQueue::Ref prequeue);
+
+		Fence::Ref getFence();
+	private:
+		std::vector<CommandList::Ptr> mCommandLists;
+		std::vector<ID3D12CommandList*> mOriginCommandLists;
+		size_t mMaxCommandListSize;
+
+		ComPtr<ID3D12CommandQueue> mQueue;
+		UINT mUsedCommandListsCount = 0;
+		TaskExecutor mTaskExecutor{ Dispatcher::getSharedContext() };
+		Fence::Ptr mFence;
+		std::mutex mMutex;
+		DescriptorHeap::Ref mHeap;
+	};
+
+	using RenderTask = CommandQueue::Command;
 	using ObjectTask = std::function<void()>;
 
 
@@ -689,14 +736,14 @@ public:
 	const DebugInfo& getDebugInfo()const;
 	HWND getWindow()const;
 	ID3D12Device* getDevice();
-	ID3D12CommandQueue* getCommandQueue();
+	CommandQueue::Ref getRenderQueue();
+	CommandQueue::Ref getComputeQueue();
 	Resource::Ref getBackBuffer();
 	UINT getCurrentFrameIndex();
-	void flushCommandQueue();
 	void updateResource(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref, UINT)>& copy);
 	void updateBuffer(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size);
 	void updateTexture(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, bool srgb);
-	void executeResourceCommands(const std::function<void(CommandList::Ref)>& dofunc);
+	void executeResourceCommands(RenderTask&& dofunc);
 
 	Shader::Ptr compileShaderFromFile(const std::string& path, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {});
 	Shader::Ptr compileShader(const std::string& name, const std::string& context, const std::string& entry, const std::string& target, const std::vector<D3D_SHADER_MACRO>& macros = {}, const std::string& cachename = {});
@@ -758,20 +805,17 @@ private:
 
 	ComPtr<ID3D12Device> mDevice;
 	ComPtr<IDXGISwapChain3> mSwapChain;
-	ComPtr<ID3D12CommandQueue> mCommandQueue;
-	Fence::Ptr mQueueFence;
-	//CommandList::Ptr mCommandList;
-	std::vector<CommandList::Ptr> mCommandLists;
-	std::vector<ID3D12CommandList*> mOriginCommandLists;
-	std::atomic_uint64_t mNumCommandLists = 0;
-	CommandList::Ptr mResourceCommandList;
+	CommandQueue::Ptr mRenderQueue;
+	CommandQueue::Ptr mComputeQueue;
+	CommandQueue::Ptr mResourceQueue;
+	CommandQueue::Ptr mTimerQueue;
+
 
 	UINT mCurrentFrame;
 
 
 	std::array< Resource::Ptr, NUM_BACK_BUFFERS> mBackbuffers;
 	std::array<DescriptorHeap::Ptr, DHT_MAX_NUM> mDescriptorHeaps;
-	std::vector<D3D12_RESOURCE_BARRIER> mResourceBarriers;
 	std::vector<Resource::Ptr> mResources;
 
 	std::unordered_map<std::string, Resource::Ref> mTextureMap;
@@ -780,15 +824,15 @@ private:
 	std::vector<Profile::Ptr> mProfiles;
 	Profile::Ref mRenderProfile;
 	Resource::Ref mProfileReadBack;
-	CommandAllocator::Ptr mProfileCmdAlloc;
+	//CommandAllocator::Ptr mProfileCmdAlloc;
 	ConstantBufferAllocator::Ptr mConstantBufferAllocator;
 	std::array<PipelineState::Ref, 4> mGenMipsPSO;
 	PipelineState::Ref mSRGBConv;
 	bool mVSync = false;
 
-	asio::io_context mRenderThread;
-	TaskExecutor mRenderTasks{ Dispatcher::getSharedContext() };
-	std::vector<ObjectTask> mFencingTasks;
-	std::mutex mResourceMutex;
+	asio::io_context mFencingContext;
+	TaskExecutor mFencingTasks{ mFencingContext };
+	//std::vector<ObjectTask> mFencingTasks;
+
 
 };

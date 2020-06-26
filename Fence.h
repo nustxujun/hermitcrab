@@ -10,7 +10,7 @@ public:
 	using Ptr = std::shared_ptr<FenceObject>;
 
 	void signal(std::function<void()>&& dosomething = {});
-	void wait(std::function<bool()>&& cond = {});
+	bool wait(std::function<bool()>&& cond = {}, bool block = true);
 private:
 	std::mutex mMutex;
 	std::condition_variable mCondVar;

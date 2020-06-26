@@ -81,27 +81,26 @@ RenderGraph::Barrier::Ptr RenderGraph::addBarrier(const std::string& name)
 	return barrier;
 }
 
-void RenderGraph::execute()
+void RenderGraph::execute(Renderer::CommandQueue::Ref queue)
 {
 	CHECK_RENDER_THREAD;
-	auto r = Renderer::getSingleton();
 
 	for (auto& pass : mPasses)
 	{
-		PROFILE("pass " + pass.first, {});
+		PROFILE("add pass " + pass.first, {});
 		Builder b;
 		auto task = pass.second(b);
 
 		if (!b.empty())
 		{
-			r->addRenderTask([b = std::move(b)](auto cmdlist){
+			queue->addCommand([b = std::move(b)](auto cmdlist){
 				b.prepare(cmdlist);
 			},  true);
 		}
 		if (task)
 		{
 			
-			r->addRenderTask([n = std::move(pass.first), t = std::move(task)](auto cmdlist) {
+			queue->addCommand([n = std::move(pass.first), t = std::move(task)](auto cmdlist) {
 				PROFILE(n, cmdlist);
 				t(cmdlist);
 			},  false);
@@ -112,9 +111,6 @@ void RenderGraph::execute()
 
 void RenderGraph::Builder::read(const ResourceHandle::Ptr& res)
 {
-	if (res->getType() == Renderer::VT_UNORDEREDACCESS)
-		mUAVBarriers.push_back(res);
-
 	mTransitions.push_back({res, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, IT_NONE});
 }
 
@@ -126,9 +122,9 @@ void RenderGraph::Builder::write(const ResourceHandle::Ptr& res, InitialType typ
 		mTransitions.push_back({ res, D3D12_RESOURCE_STATE_RENDER_TARGET , type });
 }
 
-void RenderGraph::Builder::access(const ResourceHandle::Ptr& res)
+void RenderGraph::Builder::access(const ResourceHandle::Ptr& res, InitialType type)
 {
-	mUAVBarriers.push_back(res);
+	mTransitions.push_back({res, D3D12_RESOURCE_STATE_UNORDERED_ACCESS , type });
 }
 
 void RenderGraph::Builder::copy(const ResourceHandle::Ptr& src, const ResourceHandle::Ptr& dst)
@@ -142,12 +138,15 @@ void RenderGraph::Builder::copy(const ResourceHandle::Ptr& src, const ResourceHa
 
 void RenderGraph::Builder::prepare(Renderer::CommandList::Ref cmdlist)const
 {
+	std::vector<ResourceHandle::Ptr> uavBarriers;
 	for (auto& t : mTransitions)
 	{
 		cmdlist->transitionBarrier(t.res->getView(), t.state,0);
+		if (t.type == IT_FENCE && t.res->getType() == Renderer::VT_UNORDEREDACCESS)
+			uavBarriers.emplace_back(t.res);
 	}
 
-	for (auto& t : mUAVBarriers)
+	for (auto& t : uavBarriers)
 	{
 		cmdlist->uavBarrier(t->getView());
 	}

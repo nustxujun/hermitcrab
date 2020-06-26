@@ -14,8 +14,11 @@ Framework::Framework()
 	createWindow();
 	mRenderer = Renderer::create();
 
-
+#ifndef _DEBUG
 	auto maxworkers = std::thread::hardware_concurrency() - 1;
+#else
+	auto maxworkers = 0;
+#endif
 	mThread.reserve(maxworkers);
 	for (auto i = 0; i < maxworkers; ++i)
 	{
@@ -142,7 +145,7 @@ LRESULT Framework::process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 		return 0 ;
 	}
 
-	ImGuiOverlay::ImGuiObject::process(hWnd,message, wParam, lParam);
+	//ImGuiOverlay::ImGuiObject::process(hWnd,message, wParam, lParam);
 
 	if (processor)
 		return processor(hWnd, message, wParam, lParam);

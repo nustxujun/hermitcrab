@@ -60,11 +60,12 @@ public:
 			IT_NONE,
 			IT_CLEAR,
 			IT_DISCARD,
+			IT_FENCE,
 		};
 	
 		void read(const ResourceHandle::Ptr& res);
 		void write(const ResourceHandle::Ptr& res, InitialType type);
-		void access(const ResourceHandle::Ptr& res);
+		void access(const ResourceHandle::Ptr& res, InitialType type = IT_NONE);
 		void copy(const ResourceHandle::Ptr& src, const ResourceHandle::Ptr& dst);
 
 		void prepare(Renderer::CommandList::Ref cmdlist)const;
@@ -77,7 +78,7 @@ public:
 			InitialType type;
 		};
 		std::vector<Transition> mTransitions;
-		std::vector<ResourceHandle::Ptr> mUAVBarriers;
+		//std::vector<ResourceHandle::Ptr> mUAVBarriers;
 	};
 
 	using RenderPass = std::function<RenderTask(Builder&)>;
@@ -106,7 +107,7 @@ public:
 
 	void addPass(const std::string& name, RenderPass&& callback );
 	Barrier::Ptr addBarrier(const std::string& name);
-	void execute();
+	void execute(Renderer::CommandQueue::Ref queue);
 private:
 
 	std::vector<std::pair<std::string,RenderPass>> mPasses;

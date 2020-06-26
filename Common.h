@@ -58,32 +58,9 @@ public :
 		//::MessageBoxA(NULL, context.c_str(), NULL, NULL);
 	}
 
-	static void checkResult(HRESULT hr, std::string_view info = {})
-	{
-		if (hr == S_OK) return;
-	
-	
-		char msg[1024] = { 0 };
-		FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, 0, hr, 0, msg, sizeof(msg), 0);
-		std::cout << Common::format(msg, info) ;
-		OutputDebugStringA(msg);
-		MessageBoxA(NULL, Common::format(msg, info).c_str(), NULL, MB_ICONERROR);
-		_CrtDbgBreak();
-		//abort();
-		throw std::exception("terminate client");
-	}
+	static void checkResult(HRESULT hr, std::string_view info = {});
 
-	static void Assert(bool v, const std::string& what)
-	{
-		if (v)
-			return;
-		std::cout << what;
-		OutputDebugStringA(what.c_str());
-		MessageBoxA(0, what.c_str(), 0, MB_ICONERROR);
-		_CrtDbgBreak();
-		//abort();
-		throw std::exception("terminate client");
-	}
+	static void Assert(bool v, const std::string& what);
 
 	template<class T, class ... Args>
 	static std::string format(const T& v, Args&& ... args)
@@ -93,19 +70,9 @@ public :
 		return ss.str();
 	}
 
-	static std::string convert(const std::wstring& str)
-	{
-		std::wstring_convert<std::codecvt<wchar_t, char, std::mbstate_t>>
-			converter(new std::codecvt<wchar_t, char, std::mbstate_t>("CHS"));
-		return converter.to_bytes(str);
-	}
+	static std::string convert(const std::wstring& str);
 
-	static std::wstring convert(const std::string& str)
-	{
-		std::wstring_convert<std::codecvt<wchar_t, char, std::mbstate_t>>
-			converter(new std::codecvt<wchar_t, char, std::mbstate_t>("CHS"));
-		return converter.from_bytes(str);
-	}
+	static std::wstring convert(const std::string& str);
 
 private:
 	static std::string format()
@@ -137,9 +104,6 @@ struct AABB
 #undef min
 #undef max
 
-#ifdef _DEBUG
-#else
-#endif
 
 #undef CHECK
 #undef ASSERT

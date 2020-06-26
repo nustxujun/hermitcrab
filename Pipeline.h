@@ -34,7 +34,7 @@ protected:
 	mSettings;
 	Dispatcher mDispatcher;
 	ImGuiPass::Ptr mGui;
-	RenderScene mRenderScene;
+	std::shared_ptr<RenderScene> mRenderScene;
 	std::map<std::string, RenderPass> mPasses;
 	std::vector<PostProcess> mPostProcess;
 
