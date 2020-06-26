@@ -2,7 +2,7 @@
 #include "Thread.h"
 
 ProfileMgr ProfileMgr::Singleton;
-thread_local std::stack<ProfileMgr::Node*> ProfileMgr::nodeStack;
+thread_local std::vector<ProfileMgr::Node*> ProfileMgr::nodeStack;
 Renderer::Profile::Ref ProfileMgr::begin(const std::string& name, Renderer::CommandList::Ref cl)
 {
 	auto r = Renderer::getSingleton();
@@ -13,7 +13,12 @@ Renderer::Profile::Ref ProfileMgr::begin(const std::string& name, Renderer::Comm
 	if (Thread::getId() == 0)
 		index = "main";
 	if (!nodeStack.empty())
-		index += "_" + nodeStack.top()->name;
+	{
+		for (auto& n: nodeStack)
+			index += "_" + n->name;
+		//while(auto& l: nondStack.)
+		//index += "_" + nodeStack.top()->name;
+	}
 	index += "_" + name;
 
 	Node* node = mProfiles[index];
@@ -27,7 +32,7 @@ Renderer::Profile::Ref ProfileMgr::begin(const std::string& name, Renderer::Comm
 
 		if (!nodeStack.empty())
 		{
-			auto parent = nodeStack.top();
+			auto parent = nodeStack.back();
 			node->parent = parent;
 			parent->addChild(node);
 		}
@@ -38,7 +43,7 @@ Renderer::Profile::Ref ProfileMgr::begin(const std::string& name, Renderer::Comm
 	mMutex.unlock();
 	node->profile->begin(cl);
 
-	nodeStack.push(node);
+	nodeStack.push_back(node);
 	node->timestamp = std::chrono::high_resolution_clock::now();
 	return node->profile;
 }
@@ -46,7 +51,7 @@ Renderer::Profile::Ref ProfileMgr::begin(const std::string& name, Renderer::Comm
 void ProfileMgr::end(Renderer::Profile::Ref p, Renderer::CommandList::Ref cl)
 {
 	p->end(cl);
-	nodeStack.pop();
+	nodeStack.pop_back();
 }
 
 

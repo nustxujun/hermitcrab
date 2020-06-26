@@ -163,7 +163,6 @@ void Renderer::endFrame()
 
 	processTasks();
 
-	commitCommands();
 
 	present();
 
@@ -173,7 +172,10 @@ void Renderer::endFrame()
 
 	collectDebugInfo();
 
+	{
+	PROFILE("fencing tasks", {});
 	mFencingContext.poll();
+	}
 	/*for(auto& t: mFencingTasks)
 		t();
 	mFencingTasks.clear();*/
@@ -1136,17 +1138,6 @@ std::string Renderer::findFile(const std::string & filename)
 	return {};
 }
 
-void Renderer::commitCommands()
-{
-
-
-#ifndef D3D12ON7
-	PROFILE("commit commands", {});
-
-	mRenderQueue->wait(mComputeQueue);
-	mRenderQueue->execute();
-#endif
-}
 
 void Renderer::fetchNextFrame()
 {
@@ -1161,13 +1152,13 @@ void Renderer::fetchNextFrame()
 
 void Renderer::processTasks()
 {
-	//{
-	//	PROFILE("poll tasks", {});
 
-	//	auto& cnt = Dispatcher::getSharedContext();
+#ifndef D3D12ON7
+	PROFILE("process tasks", {});
 
-	//	while ( cnt.poll_one() != 0);
-	//}
+	mRenderQueue->wait(mComputeQueue);
+	mRenderQueue->execute();
+#endif
 
 }
 
@@ -1223,7 +1214,7 @@ void Renderer::addResource(Resource::Ptr res)
 }
 void Renderer::present()
 {
-	PROFILE("swapchain preset", {});
+	PROFILE("swapchain present", {});
 
 #if defined(D3D12ON7)
 	ComPtr<ID3D12CommandQueueDownlevel> commandQueueDownlevel;
@@ -1247,9 +1238,9 @@ void Renderer::updateTimeStamp()
 	if (!mTimerQueue->getFence()->completed())
 		return;
 
+	PROFILE("udpate timestamp", {});
 	{
-		PROFILE("udpate timestamp", {});
-
+		PROFILE("read back", {});
 		UINT64 frequency;
 		CHECK(mResourceQueue->get()->GetTimestampFrequency(&frequency));
 		double tickdelta = 1000.0 / (double)frequency;
@@ -2956,14 +2947,21 @@ void Renderer::CommandQueue::addCommand(Command&& task, bool strand, bool impl)
 
 void Renderer::CommandQueue::execute()
 {
-	auto& cnt = Dispatcher::getSharedContext();
-	while (cnt.poll_one() != 0);
+	PROFILE("execute commandqueue", {});
+	{
+		PROFILE("fill commandlist", {});
 
-	mTaskExecutor.wait();
+		auto& cnt = Dispatcher::getSharedContext();
+		while (cnt.poll_one() != 0);
 
-	std::unique_lock<std::mutex> lock(mMutex);
-	mQueue->ExecuteCommandLists(UINT(mUsedCommandListsCount), mOriginCommandLists.data());
-	mUsedCommandListsCount = 0;
+		mTaskExecutor.wait();
+	}
+	{
+		PROFILE("execute commandlist", {});
+		std::unique_lock<std::mutex> lock(mMutex);
+		mQueue->ExecuteCommandLists(UINT(mUsedCommandListsCount), mOriginCommandLists.data());
+		mUsedCommandListsCount = 0;
+	}
 }
 
 void Renderer::CommandQueue::flush()

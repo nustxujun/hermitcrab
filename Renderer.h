@@ -786,7 +786,6 @@ private:
 	Shader::ShaderType mapShaderType(const std::string& target);
 	void collectDebugInfo();
 
-	void commitCommands();
 	void fetchNextFrame();
 	void processTasks();
 

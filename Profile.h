@@ -64,7 +64,7 @@ public:
 	void visit(const std::function<void(Node*, size_t)>& visitor);
 	
 private:
-	static thread_local std::stack<Node*> nodeStack;
+	static thread_local std::vector<Node*> nodeStack;
 	std::map<std::string, Node*> mProfiles;
 	size_t mCount = 0;
 	std::mutex mMutex;
