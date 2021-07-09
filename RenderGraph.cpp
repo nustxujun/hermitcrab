@@ -97,13 +97,13 @@ void RenderGraph::execute(Renderer::CommandQueue::Ref queue)
 				b.prepare(cmdlist);
 			},  true);
 		}
-		if (task)
+		//if (task)
 		{
-			
-			queue->addCommand([n = std::move(pass.first), t = std::move(task)](auto cmdlist) {
-				PROFILE(n, cmdlist);
-				t(cmdlist);
-			},  false);
+			queue->addCoroutineCommand(std::move(task), false);
+			//queue->addCommand([n = std::move(pass.first), t = std::move(task)](auto cmdlist) {
+			//	PROFILE(n, cmdlist);
+			//	t(cmdlist);
+			//},  false);
 		}
 	}
 }
@@ -136,7 +136,7 @@ void RenderGraph::Builder::copy(const ResourceHandle::Ptr& src, const ResourceHa
 
 }
 
-void RenderGraph::Builder::prepare(Renderer::CommandList::Ref cmdlist)const
+void RenderGraph::Builder::prepare(Renderer::CommandList * cmdlist)const
 {
 	std::vector<ResourceHandle::Ptr> uavBarriers;
 	for (auto& t : mTransitions)

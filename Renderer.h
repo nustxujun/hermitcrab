@@ -640,11 +640,11 @@ public:
 		void endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx);
 
 		//Fence::Ptr getFence(){return mAllocator->mFence;}
-		CommandAllocator::Ref getAllocator(){return mAllocators[mCurrentAllocator];}
+		CommandAllocator * getAllocator(){return &mAllocators[mCurrentAllocator];}
 	private:
 		static const auto NUM_ALLOCATORS = 4;
 		ID3D12CommandQueue* mQueue;
-		std::array<CommandAllocator::Ptr, NUM_ALLOCATORS> mAllocators;
+		std::vector<CommandAllocator> mAllocators;
 		size_t mCurrentAllocator = 0;
 		ComPtr<ID3D12GraphicsCommandList> mCmdList;
 		PipelineState::Ref mCurrentPipelineState;
@@ -674,8 +674,8 @@ public:
 
 		void reset();
 
-		void begin(Renderer::CommandList::Ref cl);
-		void end(Renderer::CommandList::Ref cl);
+		void begin(Renderer::CommandList * cl);
+		void end(Renderer::CommandList * cl);
 	private:
 		UINT mIndex;
 		float mCPUHistory = 0;
@@ -690,13 +690,17 @@ public:
 	class CommandQueue : public Interface<CommandQueue>
 	{
 	public:
-		using Command = std::function<void(CommandList::Ref)>;
+		using Command = std::function<void(CommandList*)>;
+		using CoroutineCommand = std::function<Future<Promise>(CommandList*)>;
+
 	public:
 		CommandQueue(D3D12_COMMAND_LIST_TYPE type, size_t maxCmdlistSize = NUM_COMMANDLISTS, asio::io_context& context = Dispatcher::getSharedContext());
 		~CommandQueue();
 
-		void addCommand(Command&& task, bool strand = false, bool impl = false);
+		void addCommand(Command&& task, bool strand = false);
+		void addCoroutineCommand(CoroutineCommand&& task, bool strand = false);
 
+		CommandList& acquireComandList();
 		void execute();
 		void flush();
 		ID3D12CommandQueue* get();
@@ -707,12 +711,12 @@ public:
 
 		Fence::Ref getFence();
 	private:
-		std::vector<CommandList::Ptr> mCommandLists;
+		std::vector<CommandList> mCommandLists;
 		std::vector<ID3D12CommandList*> mOriginCommandLists;
 		size_t mMaxCommandListSize;
 
 		ComPtr<ID3D12CommandQueue> mQueue;
-		UINT mUsedCommandListsCount = 0;
+		std::atomic<size_t> mUsedCommandListsCount = 0;
 		TaskExecutor mTaskExecutor{ Dispatcher::getSharedContext() };
 		Fence::Ptr mFence;
 		std::mutex mMutex;
@@ -746,7 +750,7 @@ public:
 	CommandQueue::Ref getComputeQueue();
 	Resource::Ref getBackBuffer();
 	UINT getCurrentFrameIndex();
-	void updateResource(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref, UINT)>& copy);
+	void updateResource(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, const std::function<void(CommandList *, Resource::Ref, UINT)>& copy);
 	void updateBuffer(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size);
 	void updateTexture(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, bool srgb);
 	void executeResourceCommands(RenderTask&& dofunc);
@@ -775,7 +779,7 @@ public:
 	void generateMips(Resource::Ref texture);
 
 
-	void addRenderTask(RenderTask&& task, bool strand = false, bool impl = false);
+	//void addRenderTask(RenderTask&& task, bool strand = false, bool impl = false);
 	void addFencingTask(ObjectTask&& task);
 private:
 	MemoryData createMemoryData(size_t size = 0)

@@ -25,7 +25,7 @@ public:
 	void setRect(const D3D12_RECT& r){mRect = r;}
 	void fitToScreen();
 
-	void draw(Renderer::CommandList::Ref& cmdlist)const;
+	void draw(Renderer::CommandList *& cmdlist)const;
 private:
 	D3D12_RECT mRect;
 	Renderer::PipelineState::Ref mPipelineState;

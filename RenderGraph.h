@@ -50,7 +50,7 @@ private:
 class RenderGraph
 {
 public:
-	using RenderTask = std::function<void(Renderer::CommandList::Ref)>;
+	using RenderTask = std::function<Future<Promise>(Renderer::CommandList *)>;
 
 	class Builder
 	{
@@ -68,7 +68,7 @@ public:
 		void access(const ResourceHandle::Ptr& res, InitialType type = IT_NONE);
 		void copy(const ResourceHandle::Ptr& src, const ResourceHandle::Ptr& dst);
 
-		void prepare(Renderer::CommandList::Ref cmdlist)const;
+		void prepare(Renderer::CommandList * cmdlist)const;
 		bool empty(){return mTransitions.empty();}
 	private:
 		struct Transition

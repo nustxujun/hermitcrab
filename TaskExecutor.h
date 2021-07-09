@@ -10,13 +10,14 @@ class TaskExecutor
 public:
 	using Future = Future<Promise>;
 	using Coroutine = Coroutine<Promise>;
-	template<class ... Args>
 	class Task
 	{
+		friend class TaskExecutor;
 	public:
-		using Process = Future(*)(Args ... );
 
-		Task(	Process f,Args&& ... args ) :
+
+		template<class F, class ... Args>
+		explicit Task(F&& f, Args&& ... args ) :
 			mCoroutine(std::move(f), std::forward<Args>(args) ...)
 		{
 		}
@@ -30,10 +31,7 @@ public:
 			task.mDone = {};
 		}
 
-		Task(const Task& t) :
-			mCoroutine({}),
-			mMove({}),
-			mDone({})
+		Task(const Task& t) 
 		{
 
 		}
@@ -41,8 +39,9 @@ public:
 		{
 			if (mCoroutine.isValid())
 				mCoroutine.resume();
-
-			if (mCoroutine.isValid())
+			else
+				return;
+			if (!mCoroutine.done())
 				mMove(std::move(*this));
 			else
 				mDone();
@@ -57,30 +56,27 @@ public:
 	using Ptr = std::shared_ptr<TaskExecutor>;
 
 	TaskExecutor(asio::io_context& context);
-	void addTask(std::function<void()>&& task);
+	void addTask(std::function<void()>&& task, bool strand);
 
-	template<class ... Args>
-	void addCoroutineTask(Task<Args ...>::Process&& task, Args&& ... args)
+	template<class F, class ... Args>
+	void addCoroutineTask(F&& task,bool strand, Args&& ... args)
 	{
 		mTaskCount.fetch_add(1, std::memory_order_relaxed);
 
-		Task<Args ...> t(std::move(task), std::forward<Args>(args)...);
+		Task t(std::move(task), std::forward<Args>(args)...);
 		t.mMove = [=](Task&& t)
 		{
-			addTask(std::move(t));
+			addTask(std::move(t),strand);
 		};
 		t.mDone = [=]() 
 		{
 			mTaskCount.fetch_sub(1, std::memory_order_relaxed);
 		};
 
-		addTask(std::move(t));
+		addTask(std::move(t), strand);
 	}
-	template<class T>
-	void addTask(T&& task)
-	{
-		mDispatcher.invoke_strand(std::move(task));
-	}
+	void addTask(Task&& task, bool strand);
+	
 
 	void wait();
 

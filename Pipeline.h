@@ -27,7 +27,7 @@ public:
 	ResourceHandle::Ptr postprocess(const std::string& name, std::map<std::string, ResourceHandle::Ptr>&& srvs = {}, std::function<void(Quad*)>&& argvs = {});
 	void postprocess( PostProcess&& pp);
 
-	using RenderScene = std::function<void(Renderer::CommandList::Ref cmdlist, const CameraInfo&, UINT flags , UINT mask )>;
+	using RenderScene = std::function<void(Renderer::CommandList * cmdlist, const CameraInfo&, UINT flags , UINT mask )>;
 	void addRenderScene(RenderScene&& rs);
 
 

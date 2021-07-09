@@ -10,7 +10,7 @@ void RenderContext::recompileMaterials(Material::Visualizaion v)
 	//	m->compileShaders(v);
 }
 
-void RenderContext::renderScreen(const Quad* quad, Renderer::CommandList::Ref cmdlist)
+void RenderContext::renderScreen(const Quad* quad, Renderer::CommandList * cmdlist)
 {
 	quad->draw(cmdlist);
 }

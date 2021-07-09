@@ -20,7 +20,7 @@ class Promise
 {
 public:
 	inline Future<Promise> get_return_object(){return Future(std::coroutine_handle<Promise>::from_promise(*this));};
-	constexpr std::suspend_always initial_suspend()noexcept { return {}; }
+	constexpr std::suspend_never initial_suspend()noexcept { return {}; }
 	constexpr std::suspend_always final_suspend() noexcept { return {}; }
 	inline void unhandled_exception() { throw std::exception("unhandled_exception in coroutine"); }
 	inline void return_void() {}
@@ -37,10 +37,14 @@ public:
 	Coroutine(const Coroutine&) = delete;
 	void operator=(const Coroutine&) = delete;
 
-	template<class ... Args>
-	Coroutine(Future(*func)(Args ... args), Args && ... args)
+	template<class F, class ... Args>
+	Coroutine(F&& func, Args && ... args)
 	{
-		mFuture = func(std::forward<Args>(args));
+		mFuture = func(std::forward<Args>(args) ...);
+	}
+
+	Coroutine()
+	{
 	}
 
 	Coroutine(Coroutine&& co)
@@ -50,8 +54,10 @@ public:
 
 	~Coroutine()
 	{
-		if (isValid())
+		if (!!mFuture.getHandle())
+		{
 			mFuture.getHandle().destroy();
+		}
 	}
 
 	Coroutine& operator = (Coroutine&& co)
@@ -69,8 +75,12 @@ public:
 
 	bool isValid()const
 	{
-		auto h = mFuture.getHandle();
-		return !!h && !h.done();
+		return !!mFuture.getHandle();
+	}
+
+	bool done()const
+	{
+		return mFuture.getHandle().done();
 	}
 
 	Promise& getPromise()const

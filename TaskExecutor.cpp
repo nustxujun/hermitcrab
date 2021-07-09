@@ -34,11 +34,32 @@ struct Test
 
 int Test::i = 0;
 
-void TaskExecutor::addTask(std::function<void()>&& task)
+void TaskExecutor::addTask(std::function<void()>&& task, bool strand)
 {
-	addTask(std::move(task));
+	//auto task_func = [](std::function<void> t)->Future
+	//{
+	//	co_return;
+	//};
+
+	addCoroutineTask([](std::function<void()> t)->Future
+	{
+		co_await std::suspend_always();
+		t();
+		co_return;
+	}, strand, std::move(task));
 }
 
+void TaskExecutor::addTask(Task&& task, bool strand)
+{
+	if (strand)
+	{
+		mDispatcher.invoke_strand(std::move(task));
+	}
+	else
+	{
+		mDispatcher.invoke(std::move(task));
+	}
+}
 
 
 

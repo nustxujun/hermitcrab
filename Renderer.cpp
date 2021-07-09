@@ -1,6 +1,7 @@
 #include "Renderer.h"
 #include "Profile.h"
 #include "Fence.h"
+#include "TaskExecutor.h"
 
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"dxgi.lib")
@@ -27,7 +28,7 @@ static Renderer::DebugInfo debugInfoCache;
 
 DXGI_FORMAT constexpr Renderer::FRAME_BUFFER_FORMAT = DXGI_FORMAT_R16G16B16A16_FLOAT;
 DXGI_FORMAT constexpr Renderer::BACK_BUFFER_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
-size_t constexpr Renderer::NUM_COMMANDLISTS = 1024;
+size_t constexpr Renderer::NUM_COMMANDLISTS = 256;
 Renderer::Ptr Renderer::create()
 {
 	instance = Renderer::Ptr(new Renderer());
@@ -144,22 +145,12 @@ void Renderer::beginFrame()
 {
 	debugInfo.reset();
 
-
-	addRenderTask([this](auto cmdlist){
-		//cmdlist->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_RENDER_TARGET, 0, true);
-		mRenderProfile = ProfileMgr::Singleton.begin("render", cmdlist);
-	},false, true);
-
-	
+	mRenderProfile = ProfileMgr::Singleton.begin("render", &mRenderQueue->acquireComandList());
 }
 
 void Renderer::endFrame()
 {
-
-	addRenderTask([this](auto cmdlist){
-		//cmdlist->transitionBarrier(mBackbuffers[mCurrentFrame], D3D12_RESOURCE_STATE_PRESENT, 0, true);
-		ProfileMgr::Singleton.end(mRenderProfile, cmdlist);
-	}, false, true);
+	ProfileMgr::Singleton.end(mRenderProfile, &mRenderQueue->acquireComandList());
 
 	processTasks();
 
@@ -231,7 +222,7 @@ UINT Renderer::getCurrentFrameIndex()
 }
 
 
-void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref, UINT)>& copy)
+void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, const std::function<void(CommandList *, Resource::Ref, UINT)>& copy)
 {
 	auto src = Resource::create();
 	addUploadingResource(src);
@@ -278,7 +269,7 @@ void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* b
 	else
 		WARN("unsupported resource.");
 
-	executeResourceCommands([=](CommandList::Ref cmdlist){
+	executeResourceCommands([=](CommandList * cmdlist){
 		cmdlist->transitionBarrier(res, D3D12_RESOURCE_STATE_COPY_DEST, -1, true);
 		copy(cmdlist, src, subresource);
 	});
@@ -286,7 +277,7 @@ void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* b
 
 void Renderer::updateBuffer(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size)
 {
-	updateResource(res, subresource, buffer, size, [dst = res, size](CommandList::Ref cmdlist, Resource::Ref src, UINT sub){
+	updateResource(res, subresource, buffer, size, [dst = res, size](CommandList * cmdlist, Resource::Ref src, UINT sub){
 		cmdlist->copyBuffer(dst, sub, src, 0, size);
 	});
 }
@@ -344,7 +335,7 @@ void Renderer::updateTexture(Resource::Ref res, UINT subresource, const void* bu
 void Renderer::executeResourceCommands(RenderTask&& dofunc)
 {
 
-	mResourceQueue->addCommand(std::move(dofunc),true, false);
+	mResourceQueue->addCommand(std::move(dofunc),true);
 
 	//mResourceQueue->execute();
 	//mResourceQueue->flush();
@@ -903,14 +894,14 @@ void Renderer::generateMips(Resource::Ref texture)
 }
 
 
-void Renderer::addRenderTask(RenderTask&& task, bool strand, bool impl )
-{
-	mRenderQueue->addCommand(std::move(task), strand, impl);
-}
+//void Renderer::addRenderTask(RenderTask&& task, bool strand, bool impl )
+//{
+//	mRenderQueue->addCommand(std::move(task), strand);
+//}
 
 void Renderer::addFencingTask(ObjectTask&& task)
 {
-	mFencingTasks.addTask(std::move(task));
+	mFencingTasks.addTask(std::move(task),true);
 }
 
 
@@ -1810,9 +1801,9 @@ Renderer::CommandList::CommandList(ID3D12CommandQueue* q, D3D12_COMMAND_LIST_TYP
 	auto renderer = Renderer::getSingleton();
 	auto device = renderer->getDevice();
 	mCurrentAllocator = 0;
-	for (auto& a : mAllocators)
-		a = CommandAllocator::Ptr(new CommandAllocator(type));
-	CHECK(device->CreateCommandList(0, type, mAllocators[0]->get(), nullptr, IID_PPV_ARGS(&mCmdList)));
+	for (auto i = 0; i < NUM_ALLOCATORS; ++i)
+		mAllocators.emplace_back(type);
+	CHECK(device->CreateCommandList(0, type, mAllocators[0].get(), nullptr, IID_PPV_ARGS(&mCmdList)));
 }
 
 Renderer::CommandList::~CommandList()
@@ -2138,12 +2129,12 @@ void Renderer::CommandList::close()
 
 void Renderer::CommandList::reset()
 {
-	mAllocators[mCurrentAllocator]->signal(mQueue);
+	mAllocators[mCurrentAllocator].signal(mQueue);
 	//r->recycleCommandAllocator(mAllocator);
 	mCurrentAllocator = (mCurrentAllocator + 1) % NUM_ALLOCATORS;
 	auto& a = mAllocators[mCurrentAllocator];
-	a->reset();
-	CHECK(mCmdList->Reset(a->get(), nullptr));
+	a.reset();
+	CHECK(mCmdList->Reset(a.get(), nullptr));
 }
 
 
@@ -2813,7 +2804,7 @@ void Renderer::Profile::reset()
 	mGPUMax = 0;
 }
 
-void Renderer::Profile::begin(Renderer::CommandList::Ref cl)
+void Renderer::Profile::begin(Renderer::CommandList * cl)
 {
 	auto renderer = Renderer::getSingleton();
 	if (cl)
@@ -2825,7 +2816,7 @@ void Renderer::Profile::begin(Renderer::CommandList::Ref cl)
 	mCPUTime = std::chrono::high_resolution_clock::now();
 }
 
-void Renderer::Profile::end(Renderer::CommandList::Ref cl)
+void Renderer::Profile::end(Renderer::CommandList * cl)
 {
 	float dtime = float((double)(std::chrono::high_resolution_clock::now() - mCPUTime).count() / 1000000.0);
 	mCPUMax = std::max(dtime, mCPUMax);
@@ -2994,11 +2985,12 @@ Renderer::CommandQueue::CommandQueue(D3D12_COMMAND_LIST_TYPE type, size_t maxsiz
 
 	for (UINT i = 0; i < mMaxCommandListSize; ++i)
 	{
-		auto cmdlist = CommandList::create(mQueue.Get(), type);
-		mCommandLists.emplace_back(cmdlist);
-		cmdlist->close();
-		mOriginCommandLists.emplace_back(cmdlist->mCmdList.Get());
-		cmdlist->mCmdList->SetName(M2U(Common::format(cmdlistNames[type], "_CommandList", i)).c_str());
+		//auto cmdlist = CommandList::create();
+		mCommandLists.emplace_back(mQueue.Get(), type);
+		auto& cmdlist = mCommandLists.back();
+		cmdlist.close();
+		mOriginCommandLists.emplace_back(cmdlist.mCmdList.Get());
+		cmdlist.mCmdList->SetName(M2U(Common::format(cmdlistNames[type], "_CommandList", i)).c_str());
 	}
 
 	mHeap = renderer->getDescriptorHeap(DHT_CBV_SRV_UAV);
@@ -3009,30 +3001,50 @@ Renderer::CommandQueue::~CommandQueue()
 	flush();
 }
 
-void Renderer::CommandQueue::addCommand(Command&& task, bool strand, bool impl)
+Renderer::CommandList& Renderer::CommandQueue::acquireComandList()
 {
-	std::unique_lock<std::mutex> lock(mMutex);
-	auto index = mUsedCommandListsCount++;
+	auto index = mUsedCommandListsCount.fetch_add(1, std::memory_order::memory_order_acquire);
 	ASSERT(index < mMaxCommandListSize, "too many render tasks");
-	auto make_task = [t = std::move(task), index, this](){
-		auto& cmdlist = mCommandLists[index];
+	
+	return mCommandLists[index];
+}
+
+
+void Renderer::CommandQueue::addCommand(Command&& task, bool strand)
+{
+	//std::unique_lock<std::mutex> lock(mMutex);
+	auto cmdlist = &acquireComandList();
+	auto make_task = [t = std::move(task), cmdlist , this](){
 		cmdlist->reset();
 		cmdlist->setDescriptorHeap(mHeap);
 		t(cmdlist);
 		cmdlist->close();
 	};
-	if (!impl)
-	{
-		mTaskExecutor.addTask(std::move(make_task));
-		return;
-	}
 
-	lock.unlock();
-	make_task();
+	mTaskExecutor.addTask(std::move(make_task), strand);
 }
+
+void Renderer::CommandQueue::addCoroutineCommand(CoroutineCommand&& task, bool strand)
+{
+	auto cmdlist = &acquireComandList();
+	Coroutine<Promise> co(task, cmdlist);
+	mTaskExecutor.addCoroutineTask([](CommandList* cmdlist, Coroutine<Promise> co, DescriptorHeap::Ref heap)->Future<Promise>
+	{
+		co_await std::suspend_always();
+		cmdlist->reset();
+		cmdlist->setDescriptorHeap(heap);
+		while (!co.done())
+			co.resume();
+		cmdlist->close();
+		co_return;
+	}, strand,cmdlist, std::move(co), mHeap);
+}
+
 
 void Renderer::CommandQueue::execute()
 {
+	auto count = UINT(mUsedCommandListsCount.exchange(0, std::memory_order::relaxed));
+
 	PROFILE("execute commandqueue", {});
 	{
 		PROFILE("fill commandlist", {});
@@ -3049,8 +3061,8 @@ void Renderer::CommandQueue::execute()
 	}
 	{
 		PROFILE("execute commandlist", {});
-		std::unique_lock<std::mutex> lock(mMutex);
-		mQueue->ExecuteCommandLists(UINT(mUsedCommandListsCount), mOriginCommandLists.data());
+		//std::unique_lock<std::mutex> lock(mMutex);
+		mQueue->ExecuteCommandLists(count, mOriginCommandLists.data());
 		mUsedCommandListsCount = 0;
 	}
 }

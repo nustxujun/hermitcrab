@@ -9,10 +9,10 @@ public:
 
 	class Auto
 	{
-		Renderer::CommandList::Ref cmdlist;
+		Renderer::CommandList * cmdlist;
 		Renderer::Profile::Ref profile;
 	public:
-		Auto(const std::string& name, Renderer::CommandList::Ref cl);
+		Auto(const std::string& name, Renderer::CommandList * cl);
 
 		~Auto();
 	};
@@ -57,8 +57,8 @@ public:
 	};
 	
 
-	Renderer::Profile::Ref begin(const std::string& name, Renderer::CommandList::Ref cl);
-	void end(Renderer::Profile::Ref p, Renderer::CommandList::Ref cl);
+	Renderer::Profile::Ref begin(const std::string& name, Renderer::CommandList * cl);
+	void end(Renderer::Profile::Ref p, Renderer::CommandList * cl);
 	void reset();
 
 	void visit(const std::function<void(Node*, size_t)>& visitor);

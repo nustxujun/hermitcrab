@@ -3,7 +3,7 @@
 
 ProfileMgr ProfileMgr::Singleton;
 thread_local std::vector<ProfileMgr::Node*> ProfileMgr::nodeStack;
-Renderer::Profile::Ref ProfileMgr::begin(const std::string& name, Renderer::CommandList::Ref cl)
+Renderer::Profile::Ref ProfileMgr::begin(const std::string& name, Renderer::CommandList * cl)
 {
 	auto r = Renderer::getSingleton();
 	auto tid = Thread::getId();
@@ -48,7 +48,7 @@ Renderer::Profile::Ref ProfileMgr::begin(const std::string& name, Renderer::Comm
 	return node->profile;
 }
 
-void ProfileMgr::end(Renderer::Profile::Ref p, Renderer::CommandList::Ref cl)
+void ProfileMgr::end(Renderer::Profile::Ref p, Renderer::CommandList * cl)
 {
 	p->end(cl);
 	nodeStack.pop_back();
@@ -81,7 +81,7 @@ void ProfileMgr::visit(const std::function<void(Node*, size_t)>& visitor)
 
 
 
-ProfileMgr::Auto::Auto(const std::string& name, Renderer::CommandList::Ref cl)
+ProfileMgr::Auto::Auto(const std::string& name, Renderer::CommandList * cl)
 {
 	profile = ProfileMgr::Singleton.begin(name, cl);
 	cmdlist = cl;

@@ -65,7 +65,7 @@ void Quad::fitToScreen()
 	mRect = {0,0,(LONG)size[0], (LONG)size[1]};
 }
 
-void Quad::draw(Renderer::CommandList::Ref& cmdlist)const
+void Quad::draw(Renderer::CommandList *& cmdlist)const
 {
 	auto renderer = Renderer::getSingleton();
 	cmdlist->setScissorRect(mRect);

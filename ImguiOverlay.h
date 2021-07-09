@@ -14,7 +14,7 @@ public:
 	ImGuiPass();
 	~ImGuiPass();
 
-	static Renderer::RenderTask execute(ImGuiPass::Ptr pass) ;
+	static RenderGraph::RenderTask execute(ImGuiPass::Ptr pass) ;
 	void update(const std::function<void(void)>& callback = 0);
 	void resize(HWND win, int width, int height);
 
@@ -32,6 +32,7 @@ private:
 	int mHeight = 0;
 
 	FenceObject mFence;
+	std::atomic<bool> mReady = false;
 };
 
 namespace ImGuiOverlay

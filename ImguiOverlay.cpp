@@ -135,17 +135,21 @@ void ImGuiPass::initRendering()
 //}
 
 
-Renderer::RenderTask ImGuiPass::execute(ImGuiPass::Ptr pass)
+RenderGraph::RenderTask ImGuiPass::execute(ImGuiPass::Ptr pass)
 {
-	return [pass](auto cmdlist) {
-		{
-			PROFILE("waitting gui update", {});
-			pass->mFence.wait();
-		}
+	return [p = pass](auto cmdlist)->Future<Promise>
+	{
+		ImGuiPass::Ptr pass = p;
+		co_await std::suspend_always();
+
+		while (!pass->mReady.load())
+			co_await std::suspend_always();
+
+		pass->mReady.store(false);
 		auto data = ImGui::GetDrawData();
 
 		if (data == NULL || data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f || data->TotalIdxCount <= 0)
-			return;
+			co_return;
 
 		auto renderer = Renderer::getSingleton();
 		auto& VertexBuffer = pass->mVertexBuffer[renderer->getCurrentFrameIndex()];
@@ -239,7 +243,7 @@ Renderer::RenderTask ImGuiPass::execute(ImGuiPass::Ptr pass)
 			global_idx_offset += cmd_list->IdxBuffer.Size;
 			global_vtx_offset += cmd_list->VtxBuffer.Size;
 		}
-
+		co_return;
 	};
 
 }
@@ -259,7 +263,8 @@ void ImGuiPass::update(const std::function<void(void)>& callback)
 		callback();
 
 	ImGui::Render();
-	mFence.signal();
+	//mFence.signal();
+	mReady.store(true);
 }
 
 void ImGuiPass::resize(HWND win, int width, int height)
