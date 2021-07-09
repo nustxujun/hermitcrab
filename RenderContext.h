@@ -35,6 +35,9 @@ struct Texture: public Object
 		texture = Renderer::getSingleton()->createTexture2D((UINT)width, (UINT)height, format,-1, data, srgb);
 		texture->setName(("Texture " + name));
 	}
+
+	void init(const std::string& path, bool srgb);
+
 	Renderer::Resource::Ref texture;
 
 
@@ -58,10 +61,10 @@ struct Mesh : public Object
 	size_t numIndices;
 	std::vector<SubMesh> submeshes ;
 
-	void init(const std::vector<char>& vs, const std::vector<char>& is, size_t vsstride, size_t isstride, size_t ni)
+	void init(const void* vs, size_t vs_size, const void* is, size_t is_size, size_t vsstride, size_t isstride, size_t ni)
 	{
-		vertices = Renderer::getSingleton()->createBuffer((UINT)vs.size(), (UINT)vsstride,false, D3D12_HEAP_TYPE_DEFAULT, vs.data(), (UINT)vs.size());
-		indices = Renderer::getSingleton()->createBuffer((UINT)is.size(), (UINT)isstride, false, D3D12_HEAP_TYPE_DEFAULT, is.data(), (UINT)is.size());
+		vertices = Renderer::getSingleton()->createBuffer((UINT)vs_size, (UINT)vsstride,false, D3D12_HEAP_TYPE_DEFAULT, vs, (UINT)vs_size);
+		indices = Renderer::getSingleton()->createBuffer((UINT)is_size, (UINT)isstride, false, D3D12_HEAP_TYPE_DEFAULT, is, (UINT)is_size);
 		numIndices = ni;
 
 		vertices->setName(("Vertex " + name));
@@ -85,6 +88,24 @@ struct Material: public Object
 		Num,
 	};
 
+	enum ElementType
+	{
+		Position,
+		TextureCoord,
+		Normal,
+		Tangent,
+		Binormal,
+		Color,
+	};
+
+	struct Element
+	{
+		ElementType type;
+		DXGI_FORMAT format;
+	};
+
+
+
 
 	Renderer::PipelineState::Ref pipelineState;
 	std::array<Renderer::PipelineState::Ref,(size_t)Visualizaion::Num> pipelineStateCaches;
@@ -102,7 +123,7 @@ struct Material: public Object
 
 
 	void init(const std::string& vsname, const std::string& psname, const std::string& pscontent);
-	void compileShaders(Visualizaion v);
+	void compileShaders(Visualizaion v, const std::vector<Element> layout, D3D12_PRIMITIVE_TOPOLOGY_TYPE primtype = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 
 private:
 	std::string genShaderContent(Visualizaion v);
@@ -114,17 +135,20 @@ struct Model : public Object
 {
 	using Ptr = std::shared_ptr<Model>;
 
-	Mesh::Ptr mesh;
+	
 	Matrix transform;
 	Matrix normTransform;
 	AABB aabb;
 	float boundingradius;
+
+	Mesh::Ptr mesh;
 	std::vector<Material::Ptr> materials;
-	std::vector<std::array<Renderer::ConstantBuffer::Ptr, Renderer::Shader::ST_MAX_NUM>> cbuffers;
+
 
 	void init();
 
 	void visitConstant( Renderer::Shader::ShaderType type,UINT index, const std::function<void (Renderer::ConstantBuffer::Ptr&)>& visitor);
+	std::vector<std::array<Renderer::ConstantBuffer::Ptr, Renderer::Shader::ST_MAX_NUM>> cbuffers;
 };
 
 struct Light : public Object
@@ -218,7 +242,7 @@ public:
 	}
 
 	template<class T>
-	void visiteObjects(const std::function<void(std::shared_ptr<T>)>& f)
+	void visitObjects(const std::function<void(std::shared_ptr<T>)>& f)
 	{
 		auto& type = typeid(T);
 		for (auto& o : mObjects[type.name()])
@@ -230,14 +254,7 @@ public:
 	void resize(int width, int height);
 	Camera::Ptr getMainCamera()const;
 
-	RenderContext()
-	{
-		instance = this;
-
-		mCamera = createObject<Camera>("main");
-
-
-	}
+	RenderContext();
 
 	virtual ~RenderContext()
 	{
@@ -273,6 +290,7 @@ public:
 	}
 protected:
 	Camera::Ptr mCamera;
+	Light::Ptr mSun;
 	std::map<std::string,std::map<std::string, Object::Ptr>> mObjects;
 	std::vector<Light::Ptr> mLights;
 	std::vector<Model::Ptr> mRenderList;

@@ -71,4 +71,5 @@ private:
 };
 
 #define PROFILE(name, cl) ProfileMgr::Auto __auto_profile(name, cl)
+
 //#define PROFILE(name, cl)

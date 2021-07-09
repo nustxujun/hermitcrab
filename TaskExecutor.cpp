@@ -1,24 +1,46 @@
 #include "TaskExecutor.h"
-
-
-void TaskExecutor::addTask(std::function<void()>&& task, bool strand)
+#include <iostream>
+struct Test
 {
-	mTaskCount.fetch_add(1, std::memory_order_relaxed);
-	auto lambda = [this, task = std::move(task)](){
-		task();
-		mComplete.signal([this]() {
-			mTaskCount.fetch_sub(1, std::memory_order_relaxed);
-		});
-	};
-	if (strand)
+	int index;
+	Test()
 	{
-		mDispatcher.invoke_strand(std::move(lambda));
+		index = i++;
+		std::cout << "ctor" << index << std::endl;
 	}
-	else
+	Test(const Test& t)
 	{
-		mDispatcher.invoke(std::move(lambda));
+		index = t.index;
+		std::cout << "copy lv" << index << std::endl;
 	}
+
+	Test(Test&& t)
+	{
+		index= t.index;
+		std::cout << "copy rv" << index << std::endl;
+	}
+	~Test()
+	{
+		std::cout << "dctor" << index << std::endl;
+		index = 0xffffffff;
+	}
+
+	void f()const
+	{
+
+	}
+	static int i;
+};
+
+int Test::i = 0;
+
+void TaskExecutor::addTask(std::function<void()>&& task)
+{
+	addTask(std::move(task));
 }
+
+
+
 
 TaskExecutor::TaskExecutor(asio::io_context& context):
 	mContext(context), mDispatcher(context)
@@ -27,7 +49,11 @@ TaskExecutor::TaskExecutor(asio::io_context& context):
 
 void TaskExecutor::wait()
 {
-	mComplete.wait([this](){
-		return mTaskCount.load(std::memory_order_relaxed) == 0;
-	});
+	while(mTaskCount.load(std::memory_order_relaxed) != 0)
+		getContext().poll_one();
+}
+
+asio::io_context& TaskExecutor::getContext()
+{
+	return mContext;
 }

@@ -11,25 +11,7 @@ Dispatcher::~Dispatcher()
 {
 }
 
-void Dispatcher::invoke(Handler&& handler)
-{
-	mContext.post(std::move(handler));
-}
 
-void Dispatcher::invoke_strand(Handler&& handler)
-{
-	mStrand.post(std::move(handler));
-}
-
-void Dispatcher::execute( Handler&& handler)
-{
-	mContext.dispatch(std::move(handler));
-}
-
-void Dispatcher::execute_strand( Handler&& handler)
-{
-	mStrand.dispatch(std::move(handler));
-}
 
 void Dispatcher::poll_one(bool block)
 {

@@ -244,7 +244,7 @@ Renderer::RenderTask ImGuiPass::execute(ImGuiPass::Ptr pass)
 
 }
 
-void ImGuiPass::update()
+void ImGuiPass::update(const std::function<void(void)>& callback)
 {
 	PROFILE("gui update", {});
 	HWND win = Renderer::getSingleton()->getWindow();
@@ -253,8 +253,10 @@ void ImGuiPass::update()
 	resize(win, std::max(1L, rect.right), std::max(1L, rect.bottom));
 
 	ImGui::NewFrame();
-	ImGui::ShowDemoWindow();
+	//ImGui::ShowDemoWindow();
 	ImGuiOverlay::ImGuiObject::root()->framemove();
+	if (callback)
+		callback();
 
 	ImGui::Render();
 	mFence.signal();

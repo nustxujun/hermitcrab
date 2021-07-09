@@ -7,24 +7,35 @@
 class Pipeline
 {
 public:
-	Pipeline();
+	struct CameraInfo
+	{
+		D3D12_VIEWPORT viewport;
+		D3D12_RECT  scissorRect;
+		Matrix view;
+		Matrix proj;
+	};
+
 	using Ptr = std::shared_ptr<Pipeline>;
 
 	using PostProcess = std::function<ResourceHandle::Ptr(RenderGraph&, ResourceHandle::Ptr, ResourceHandle::Ptr)>;
 	using RenderPass = std::function<std::pair<ResourceHandle::Ptr, PostProcess> (std::map<std::string,ResourceHandle::Ptr>&&,  std::function<void(Quad*)>&&) >;
 	using SetupQuad = std::function<void(Quad&, std::map<std::string, ResourceHandle::Ptr>&&, ResourceHandle::Ptr, ResourceHandle::Ptr)>;
+	
+	Pipeline();
 	//RenderPass postprocess(const std::string& ps, DXGI_FORMAT fmt );
 	void addPostProcessPass( const std::string& name,  DXGI_FORMAT fmt);
 	ResourceHandle::Ptr postprocess(const std::string& name, std::map<std::string, ResourceHandle::Ptr>&& srvs = {}, std::function<void(Quad*)>&& argvs = {});
 	void postprocess( PostProcess&& pp);
 
-	using RenderScene = std::function<void(Renderer::CommandList::Ref cmdlist, Camera::Ptr cam, UINT flags , UINT mask )>;
+	using RenderScene = std::function<void(Renderer::CommandList::Ref cmdlist, const CameraInfo&, UINT flags , UINT mask )>;
 	void addRenderScene(RenderScene&& rs);
 
-	virtual void execute() {};
+
+	virtual void execute(CameraInfo caminfo) = 0;
 
 	bool is(const std::string& n);
 	void set(const std::string& n, bool v);
+
 protected:
 
 	struct RenderSettings
@@ -37,7 +48,6 @@ protected:
 	std::shared_ptr<RenderScene> mRenderScene;
 	std::map<std::string, RenderPass> mPasses;
 	std::vector<PostProcess> mPostProcess;
-
 };
 
 class ForwardPipleline : public Pipeline 
@@ -45,8 +55,10 @@ class ForwardPipleline : public Pipeline
 public:
 	using Pipeline::Pipeline;
 
-	void execute() override;
+	void execute(CameraInfo caminfo) override;
+	void setUICallback(std::function<void()>&& f)  { mGUICallback  = std::move(f);};
 private:
+	std::function<void()> mGUICallback;
 };
 
 //class DefaultPipeline: public Pipeline

@@ -11,6 +11,8 @@ public:
 	void initialize();
 
 	void resize(int width, int height);
+	static void resize(HWND hwnd, int width, int height);
+
 	void update();
 	std::pair<int, int> getSize();
 	static void setProcessor(const std::function<LRESULT(HWND, UINT, WPARAM, LPARAM)>& f);
@@ -19,7 +21,6 @@ private:
 	HWND createWindow();
 	void registerWindow();
 	static LRESULT CALLBACK process(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-	static void resize(HWND hwnd, int width, int height);
 	virtual void updateImpl() = 0;
 private:
 	HWND mWindow;

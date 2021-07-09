@@ -9,15 +9,33 @@
 class Dispatcher
 {
 public:
-	using Handler = std::function<void(void)>;
 public:
 	Dispatcher(asio::io_context& context = sharedContext);
 	
 	~Dispatcher();
-	void invoke( Handler&& handler);
-	void invoke_strand( Handler&& handler);
-	void execute( Handler&& handler);
-	void execute_strand( Handler&& handler);
+	template<class Handler>
+	void invoke(Handler&& handler)
+	{
+		mContext.post(std::move(handler));
+	}
+
+	template<class Handler>
+	void invoke_strand(Handler&& handler)
+	{
+		mStrand.post(std::move(handler));
+	}
+
+	template<class Handler>
+	void execute(Handler&& handler)
+	{
+		mContext.dispatch(std::move(handler));
+	}
+
+	template<class Handler>
+	void execute_strand(Handler&& handler)
+	{
+		mStrand.dispatch(std::move(handler));
+	}
 
 	static void poll_one(bool block);
 	static void run(asio::io_context& context);

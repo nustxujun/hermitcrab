@@ -12,7 +12,6 @@ add_definitions(-DWIN32_LEAN_AND_MEAN)
 #display warnings and remain using it
 add_definitions(-D_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17")
 set(IsOnWin7 FALSE CACHE BOOL "if operation system is win7" )
 
 

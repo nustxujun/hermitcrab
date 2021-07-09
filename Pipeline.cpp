@@ -1,6 +1,5 @@
 #include "Pipeline.h"
 #include "Renderer.h"
-#include "RenderContext.h"
 #include <sstream>
 #include "Profile.h"
 #include "ResourceViewAllocator.h"
@@ -42,7 +41,7 @@ void Pipeline::addPostProcessPass(const std::string& name,  DXGI_FORMAT fmt)
 							argvs(quad.get());
 
 						quad->fitToScreen();
-						RenderContext::getSingleton()->renderScreen(quad.get(), cmdlist);
+						quad->draw(cmdlist);
 					};
 				});
 				return rt;
@@ -80,11 +79,11 @@ void Pipeline::set(const std::string& n, bool v)
 }
 
 
-void ForwardPipleline::execute()
+void ForwardPipleline::execute(CameraInfo caminfo)
 {
-	mDispatcher.invoke([gui = mGui]() {
-		gui->update();
-	});
+	//mDispatcher.invoke([gui = mGui, &cb = mGUICallback]() {
+	//	gui->update(cb);
+	//});
 
 	RenderGraph graph;
 
@@ -100,24 +99,23 @@ void ForwardPipleline::execute()
 
 	rt->setClearValue({ 0,0,0,0 });
 	ds->setClearValue({ 1.0f, 0 });
-	graph.addPass("scene", [renderscene = mRenderScene, rt , ds](auto& builder) {
-		builder.write(rt, RenderGraph::Builder::IT_CLEAR);
-		builder.write(ds, RenderGraph::Builder::IT_CLEAR);
-		return [renderscene, rt, ds](auto cmdlist) {
-			if (!renderscene)
-				return;
-			auto cam = RenderContext::getSingleton()->getMainCamera();
-			cmdlist->setRenderTarget(rt->getView(), ds->getView());
-			(*renderscene)(cmdlist, cam, 0, 0);
-		};
-	});
+
+	if (mRenderScene)
+		graph.addPass("scene", [renderscene = mRenderScene, rt , ds, caminfo](auto& builder) {
+			builder.write(rt, RenderGraph::Builder::IT_CLEAR);
+			builder.write(ds, RenderGraph::Builder::IT_CLEAR);
+			return [renderscene, rt, ds, caminfo](auto cmdlist) {
+				cmdlist->setRenderTarget(rt->getView(), ds->getView());
+				(*renderscene)(cmdlist, caminfo, 0, 0);
+			};
+		});
 
 	
 	for (auto& pp: mPostProcess)
 		rt = pp(graph, rt, ds);
 	mPostProcess.clear();
 
-	graph.addPass("gui", [gui = mGui, dst = rt](auto& builder) {
+	graph.addPass("gui", [gui = mGui, dst = rt, &cb = mGUICallback](auto& builder) {
 		builder.write(dst, RenderGraph::Builder::IT_NONE);
 
 		auto task = ImGuiPass::execute(gui);
@@ -140,6 +138,9 @@ void ForwardPipleline::execute()
 
 
 	graph.execute(Renderer::getSingleton()->getRenderQueue());
+
+	mGui->update(mGUICallback);
+
 }
 
 

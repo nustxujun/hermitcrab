@@ -23,9 +23,11 @@ bool FenceObject::wait(std::function<bool()>&& cond ,bool block )
 	}
 		
 	if (cond)
+	{
 		mCondVar.wait(lock,[this, cond = std::move(cond)]() {
 				return cond() ;
 		});
+	}
 	else
 	{
 		mCondVar.wait(lock, [this](){
@@ -33,5 +35,5 @@ bool FenceObject::wait(std::function<bool()>&& cond ,bool block )
 		});
 		mCond.store(false, std::memory_order_relaxed);
 	}
-
+	return true;
 }

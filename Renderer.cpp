@@ -163,7 +163,6 @@ void Renderer::endFrame()
 
 	processTasks();
 
-
 	present();
 
 	fetchNextFrame();
@@ -172,13 +171,11 @@ void Renderer::endFrame()
 
 	collectDebugInfo();
 
-	{
-	PROFILE("fencing tasks", {});
-	mFencingContext.poll();
-	}
-	/*for(auto& t: mFencingTasks)
-		t();
-	mFencingTasks.clear();*/
+	doFencingTasks();
+
+	processRecycle();
+
+	processUploadingResource();
 }
 
 std::array<LONG, 2> Renderer::getSize()
@@ -237,6 +234,7 @@ UINT Renderer::getCurrentFrameIndex()
 void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, const std::function<void(CommandList::Ref, Resource::Ref, UINT)>& copy)
 {
 	auto src = Resource::create();
+	addUploadingResource(src);
 	const auto& desc = res->getDesc();
 
 	if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
@@ -278,9 +276,9 @@ void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* b
 		src->unmap(0);
 	}
 	else
-		ASSERT(0,"unsupported resource.");
+		WARN("unsupported resource.");
 
-	executeResourceCommands([&](CommandList::Ref cmdlist){
+	executeResourceCommands([=](CommandList::Ref cmdlist){
 		cmdlist->transitionBarrier(res, D3D12_RESOURCE_STATE_COPY_DEST, -1, true);
 		copy(cmdlist, src, subresource);
 	});
@@ -295,13 +293,11 @@ void Renderer::updateBuffer(Resource::Ref res, UINT subresource, const void* buf
 
 void Renderer::updateTexture(Resource::Ref res, UINT subresource, const void* buffer, UINT64 size, bool srgb)
 {
-	Resource::Ptr uavref;
-
-	updateResource(res, subresource, buffer, size, [dst = res, srgb , this, pso = mSRGBConv  , &uavref](auto cmdlist, auto src, auto sub) {
+	Resource::Ptr mid = Resource::create();
+	addUploadingResource(mid);
+	updateResource(res, subresource, buffer, size, [dst = res, srgb , this, pso = mSRGBConv  , mid](auto cmdlist, auto src, auto sub) {
 		if (srgb)
 		{
-			auto mid = Resource::create();
-			uavref = mid;
 			auto bufferdesc = src->getDesc();
 			auto& texdesc = dst->getDesc();
 
@@ -328,7 +324,6 @@ void Renderer::updateTexture(Resource::Ref res, UINT subresource, const void* bu
 				uavdesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
 				mid->createUnorderedAccessView(&uavdesc);
 			}
-			//cmdlist->transitionBarrier(src, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 0,true);
 
 			pso->setResource(Shader::ST_COMPUTE,"input", src->getShaderResource());
 			pso->setResource(Shader::ST_COMPUTE, "output", mid->getUnorderedAccess());
@@ -351,15 +346,16 @@ void Renderer::executeResourceCommands(RenderTask&& dofunc)
 
 	mResourceQueue->addCommand(std::move(dofunc),true, false);
 
-	mResourceQueue->execute();
-	mResourceQueue->flush();
+	//mResourceQueue->execute();
+	//mResourceQueue->flush();
 }
 
 Renderer::Shader::Ptr Renderer::compileShaderFromFile(const std::string & absfilepath, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros)
 {
 	auto path = findFile(absfilepath);
 	std::fstream file(path, std::ios::in | std::ios::binary);
-	ASSERT(!!file, "fail to open shader file");
+	if (!file)
+		WARN( "fail to open shader file");
 
 	file.seekg(0, std::ios::end);
 	size_t size = file.tellg();
@@ -367,6 +363,7 @@ Renderer::Shader::Ptr Renderer::compileShaderFromFile(const std::string & absfil
 	std::string context;
 	context.resize(size);
 	file.read(&context[0], size);
+	file.close();
 	return compileShader(absfilepath,context,entry,target,  macros);
 }
 
@@ -384,7 +381,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 
 #if defined(_DEBUG)
 	// Enable better shader debugging with the graphics debugging tools.
-	UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_WARNINGS_ARE_ERRORS;
+	UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_ENABLE_STRICTNESS/* | D3DCOMPILE_WARNINGS_ARE_ERRORS*/;
 #else
 	UINT compileFlags = D3DCOMPILE_OPTIMIZATION_LEVEL3;
 #endif
@@ -458,7 +455,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 				auto buffer = createMemoryData(size);
 				cachefile.read(buffer->data(), size);
 
-				return std::make_shared<Shader>(buffer, mapShaderType(target));
+				return std::make_shared<Shader>(buffer, mapShaderType(target), hash);
 			}
 		}
 	}
@@ -539,7 +536,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 
 
 		::OutputDebugStringA((const char*)err->GetBufferPointer());
-		ASSERT(0, ((const char*)err->GetBufferPointer()));
+		WARN(((const char*)err->GetBufferPointer()));
 		return {};
 	}
 
@@ -567,7 +564,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 	}
 
 
-	return Shader::Ptr(new Shader(result, type));
+	return Shader::Ptr(new Shader(result, type, hash));
 }
 
 
@@ -644,6 +641,8 @@ Renderer::Resource::Ref Renderer::createTextureFromFile(const std::string& filen
 	int width, height, nrComponents;
 
 	std::string fn = (findFile((filename)));
+	if (fn.empty())
+		WARN("cannot find texture");
 	if (stbi_is_hdr(fn.c_str()))
 	{
 		format = DXGI_FORMAT_R32G32B32A32_FLOAT;
@@ -697,6 +696,7 @@ Renderer::Resource::Ref Renderer::createTexture3D(UINT width, UINT height, UINT 
 
 Renderer::Resource::Ref Renderer::createTexture2D(UINT width, UINT height, DXGI_FORMAT format, UINT miplevels, const void* data, bool srgb)
 {
+	PROFILE("create texture2d", {});
 	auto tex = createTexture2DBase(width, height, 1, format, miplevels,D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE);
 	tex->createTexture2D();
 
@@ -766,12 +766,12 @@ Renderer::ConstantBuffer::Ptr Renderer::createConstantBuffer(UINT size)
 
 void Renderer::destroyResource(Resource::Ref res)
 {
-	addFencingTask([=](){
-		mResourceQueue->flush();
-		mComputeQueue->flush();
-		mRenderQueue->flush();
-		mResources.erase(std::find(mResources.begin(), mResources.end(), res.shared()));
-	});
+	if (res)
+	{
+		auto shared = res.shared();
+		mResources.erase(shared);
+		recycle(shared);
+	}
 }
 
 Renderer::Resource::Ref Renderer::createResourceView(UINT width, UINT height, DXGI_FORMAT format, ViewType type)
@@ -789,25 +789,25 @@ Renderer::Resource::Ref Renderer::createResourceView(UINT width, UINT height, DX
 Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs)
 {
 	auto pso = PipelineState::create(rs, shaders);
-	mPipelineStates.push_back(pso);
+	mPipelineStates.insert(pso);
 	return pso;
 }
 
 Renderer::PipelineState::Ref Renderer::createComputePipelineState(const Shader::Ptr & shader)
 {
 	auto pso = PipelineState::create(shader);
-	mPipelineStates.push_back(pso);
+	mPipelineStates.insert(pso);
 	return pso;
 }
 
 void Renderer::destroyPipelineState(PipelineState::Ref pso)
 {
-	addFencingTask([=](){
-		mResourceQueue->flush();
-		mComputeQueue->flush();
-		mRenderQueue->flush();
-		mPipelineStates.erase(std::find(mPipelineStates.begin(), mPipelineStates.end(), pso.shared()));
-	});
+	if (pso)
+	{
+		auto shared = pso.shared();
+		mPipelineStates.erase(shared);
+		recycle(shared);
+	}
 }
 
 Renderer::Profile::Ref Renderer::createProfile()
@@ -910,7 +910,7 @@ void Renderer::addRenderTask(RenderTask&& task, bool strand, bool impl )
 
 void Renderer::addFencingTask(ObjectTask&& task)
 {
-	mFencingTasks.addTask(std::move(task), true);
+	mFencingTasks.addTask(std::move(task));
 }
 
 
@@ -933,10 +933,18 @@ void Renderer::uninitialize()
 	//clear resources
 	mBackbuffers.fill({});
 	mResources.clear();
+	for (auto& v : mRecycleResources)
+	{
+		for (auto& r : v)
+			delete r;
+	}
 	mPipelineStates.clear();
 	mDescriptorHeaps.fill({});
 	mTimeStampQueryHeap.Reset();
 	mProfiles.clear();
+
+
+
 
 	mSwapChain.Reset();
 	auto device = mDevice.Detach();
@@ -1010,7 +1018,7 @@ void Renderer::initCommands()
 {
 	mRenderQueue = CommandQueue::create(D3D12_COMMAND_LIST_TYPE_DIRECT);
 	mComputeQueue = CommandQueue::create(D3D12_COMMAND_LIST_TYPE_DIRECT);
-	mResourceQueue = CommandQueue::create(D3D12_COMMAND_LIST_TYPE_DIRECT,1);
+	mResourceQueue = CommandQueue::create(D3D12_COMMAND_LIST_TYPE_DIRECT);
 	mTimerQueue = CommandQueue::create(D3D12_COMMAND_LIST_TYPE_DIRECT,1);
 
 	mCurrentFrame = 0;
@@ -1073,19 +1081,6 @@ void Renderer::initResources()
 	{
 		auto shader = compileShaderFromFile("shaders/srgb_conv.hlsl", "main", SM_CS );
 		shader->enable32BitsConstants(true);
-		shader->registerStaticSampler({
-			D3D12_FILTER_MIN_MAG_MIP_POINT,
-			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-			D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-			0,0,
-			D3D12_COMPARISON_FUNC_NEVER,
-			D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
-			0,
-			D3D12_FLOAT32_MAX,
-			0,0,
-			D3D12_SHADER_VISIBILITY_ALL
-			});
 		mSRGBConv = createComputePipelineState(shader);
 	}
 }
@@ -1096,11 +1091,13 @@ Renderer::Shader::ShaderType Renderer::mapShaderType(const std::string & target)
 	switch (target[0])
 	{
 	case 'v': type = Shader::ST_VERTEX; break;
+	case 'h': type = Shader::ST_HULL; break;
+	case 'd': type = Shader::ST_DOMAIN; break;
+	case 'g': type = Shader::ST_GEOMETRY; break;
 	case 'p': type = Shader::ST_PIXEL; break;
 	case 'c': type = Shader::ST_COMPUTE; break;
-	case 'g': type = Shader::ST_GEOMETRY; break;
 	default:
-		ASSERT(false, "unsupported!");
+		WARN("unsupported!");
 		break;
 	}
 	return type;
@@ -1208,9 +1205,7 @@ Renderer::DescriptorHeap::Ref Renderer::getDescriptorHeap(DescriptorHeapType typ
 
 void Renderer::addResource(Resource::Ptr res)
 {
-	addFencingTask([=](){
-		mResources.push_back(res);
-	});
+	mResources.insert(res);
 }
 void Renderer::present()
 {
@@ -1281,6 +1276,55 @@ void Renderer::updateTimeStamp()
 
 }
 
+template<class T>
+void Renderer::recycle(std::shared_ptr<T> res)
+{
+	mRecycleResources[mCurrentFrame].push_back(new CustomRecycleObject<T>(res));
+}
+
+void Renderer::processRecycle()
+{
+	for (auto& r: mRecycleResources[mCurrentFrame])
+		delete r;
+	mRecycleResources[mCurrentFrame].clear();
+}
+
+void Renderer::doFencingTasks()
+{
+	PROFILE("fencing tasks", {});
+	mFencingContext.poll();
+}
+
+void Renderer::addUploadingResource(Resource::Ptr res)
+{
+	if (mUploadingResources.empty() || mUploadingResources.back().fence)
+		mUploadingResources.emplace_back();
+	mUploadingResources.back().resources.push_back(res);
+}
+
+void Renderer::processUploadingResource()
+{
+	mResourceQueue->execute();
+	auto i = mUploadingResources.begin();
+	auto endi = mUploadingResources.end();
+	for (; i != endi;)
+	{
+		if (!i->fence)
+		{
+			i->fence = createFence();
+			i->fence->signal(mResourceQueue->get());
+			++i;
+		}
+		else if (i->fence->completed())
+		{
+			i = mUploadingResources.erase(i);
+		}
+		else
+			++i;
+	}
+}
+
+
 Renderer::DescriptorHeap::DescriptorHeap(UINT count, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags)
 {
 	auto device = Renderer::getSingleton()->getDevice();
@@ -1310,7 +1354,7 @@ UINT64 Renderer::DescriptorHeap::allocHeap()
 			}
 		}
 	}
-	ASSERT(0, " cannot alloc from descriptor heap");
+	WARN(" cannot alloc from descriptor heap");
 	return {};
 }
 
@@ -1413,7 +1457,7 @@ Renderer::DescriptorHandle& Renderer::Resource::assignHandle(UINT i, HandleType 
 		htype = DHT_DEPTHSTENCIL;
 		break;
 	default:
-		ASSERT(0, "unsupported.");
+		WARN("unsupported.");
 		break;
 	}
 	auto& heap = Renderer::getSingleton()->mDescriptorHeaps[htype];
@@ -2192,8 +2236,8 @@ Renderer::RenderState::RenderState(DXGI_FORMAT targetfmt)
 	mRTFormats = {targetfmt};
 }
 
-Renderer::Shader::Shader(const MemoryData& data, ShaderType type) :
-	mCodeBlob(data), mType(type)
+Renderer::Shader::Shader(const MemoryData& data, ShaderType type, size_t hash) :
+	mCodeBlob(data), mType(type), mHash(hash)
 {
 }
 
@@ -2204,6 +2248,18 @@ void Renderer::Shader::registerStaticSampler( const D3D12_STATIC_SAMPLER_DESC& d
 
 void Renderer::Shader::registerStaticSampler(const std::string& name, D3D12_FILTER filter, D3D12_TEXTURE_ADDRESS_MODE mode)
 {
+	D3D12_SHADER_VISIBILITY  visibility;
+	switch (mType)
+	{
+	case ST_VERTEX: visibility = D3D12_SHADER_VISIBILITY_VERTEX; break;
+	case ST_PIXEL: visibility = D3D12_SHADER_VISIBILITY_PIXEL; break;
+	case ST_GEOMETRY: visibility = D3D12_SHADER_VISIBILITY_GEOMETRY; break;
+	case ST_HULL: visibility = D3D12_SHADER_VISIBILITY_HULL; break;
+	case ST_DOMAIN: visibility = D3D12_SHADER_VISIBILITY_DOMAIN; break;
+
+	default:
+		visibility = D3D12_SHADER_VISIBILITY_ALL;
+	}
 	mSamplerMap[name] = {
 		filter,
 		mode, 
@@ -2211,11 +2267,11 @@ void Renderer::Shader::registerStaticSampler(const std::string& name, D3D12_FILT
 		mode,
 		0,0,
 		D3D12_COMPARISON_FUNC_NEVER,
-		D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+		D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE,
 		0,
 		D3D12_FLOAT32_MAX,
 		0,0,
-		D3D12_SHADER_VISIBILITY_ALL,
+		visibility,
 	};
 }
 
@@ -2234,6 +2290,7 @@ void Renderer::Shader::enableStaticSampler(bool b)
 	mUseStaticSamplers = b;
 }
 
+
 D3D12_SHADER_VISIBILITY Renderer::Shader::getShaderVisibility() const
 {
 	switch (mType)
@@ -2245,7 +2302,7 @@ D3D12_SHADER_VISIBILITY Renderer::Shader::getShaderVisibility() const
 	case Shader::ST_PIXEL: return D3D12_SHADER_VISIBILITY_PIXEL; 
 	case Shader::ST_COMPUTE: break;
 	default:
-		ASSERT(0,"unknown type");
+		WARN("unknown type");
 		break;
 	}
 	return D3D12_SHADER_VISIBILITY_ALL;
@@ -2260,7 +2317,7 @@ D3D12_DESCRIPTOR_RANGE_TYPE Renderer::Shader::getRangeType(D3D_SHADER_INPUT_TYPE
 	case D3D_SIT_SAMPLER: return D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
 	case D3D_SIT_UAV_RWTYPED: return D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
 	default:
-		ASSERT(0, "unsupported shader input type");
+		WARN( "unsupported shader input type");
 		return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 	}
 }
@@ -2368,6 +2425,16 @@ void Renderer::Shader::createRootParameters()
 					ret->second.ShaderRegister = desc.BindPoint;
 					mStaticSamplers.push_back(ret->second);
 				}
+				else
+				{
+					auto ret = std::find_if(mStaticSamplers.begin(), mStaticSamplers.end(), [=](auto& i){
+						
+						return i.RegisterSpace  ==  desc.Space && i.ShaderRegister == desc.BindPoint ;
+
+					});
+					if (ret == mStaticSamplers.end())
+						WARN(std::string("cannot find sampler: ") + desc.Name);
+				}
 			}
 			break;
 		}
@@ -2448,7 +2515,7 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	ComPtr<ID3D10Blob> err;
 	if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1,&blob,&err)))
 	{
-		ASSERT(false,((const char*)err->GetBufferPointer()));
+		WARN(((const char*)err->GetBufferPointer()));
 	}
 	CHECK(device->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(), IID_PPV_ARGS(&mRootSignature)));
 	
@@ -2491,7 +2558,7 @@ Renderer::PipelineState::PipelineState(const Shader::Ptr & shader)
 	ComPtr<ID3D10Blob> err;
 	if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &err)))
 	{
-		ASSERT(false, ((const char*)err->GetBufferPointer()));
+		WARN(((const char*)err->GetBufferPointer()));
 	}
 
 	CHECK(device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&mRootSignature)));
@@ -2508,6 +2575,22 @@ Renderer::PipelineState::~PipelineState()
 {
 }
 
+std::vector<std::string> Renderer::PipelineState::getRequiredResources(Shader::ShaderType type)const
+{
+	auto i = mSemanticsMap.find(type);
+	if (i == mSemanticsMap.end())
+		return {};
+	std::vector<std::string> ret;
+	for (auto t: i->second.textures)
+		ret.emplace_back(t.first);
+
+	for (auto t: i->second.uavs)
+		ret.emplace_back(t.first);
+
+	return ret;
+}
+
+
 void Renderer::PipelineState::setResource(Shader::ShaderType type, const std::string & name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
 {
 	auto& textures = mSemanticsMap[type].textures;
@@ -2519,7 +2602,9 @@ void Renderer::PipelineState::setResource(Shader::ShaderType type, const std::st
 		auto uav = uavs.find(name);
 		if (uav == uavs.end())
 		{
+#ifdef _DEBUG
 			LOG(name , " is not a bound resource in shader" );
+#endif
 			return;
 		}
 		mTextures[type][uav->second + mSemanticsMap[type].offset] = handle;
@@ -2637,7 +2722,7 @@ Renderer::ConstantBuffer::Ptr Renderer::PipelineState::createConstantBuffer(Shad
 	auto cbuffer = cbuffers.find(name);
 	if (cbuffer == cbuffers.end())
 	{
-		ASSERT(shader != mSemanticsMap.end(), "cannot find specify shader");
+		LOG( "cannot find specify shader");
 		return {};
 	}
 	auto cb = renderer->createConstantBuffer(cbuffer->second.size);
@@ -2875,7 +2960,8 @@ D3D12_GPU_DESCRIPTOR_HANDLE Renderer::ConstantBuffer::getHandle() const
 	return mView.gpu;
 }
 
-Renderer::CommandQueue::CommandQueue(D3D12_COMMAND_LIST_TYPE type, size_t maxsize)
+Renderer::CommandQueue::CommandQueue(D3D12_COMMAND_LIST_TYPE type, size_t maxsize, asio::io_context& context):
+	mTaskExecutor(context)
 {
 	mMaxCommandListSize = maxsize;
 	auto renderer = Renderer::getSingleton();
@@ -2937,7 +3023,7 @@ void Renderer::CommandQueue::addCommand(Command&& task, bool strand, bool impl)
 	};
 	if (!impl)
 	{
-		mTaskExecutor.addTask(make_task, strand);
+		mTaskExecutor.addTask(std::move(make_task));
 		return;
 	}
 
@@ -2951,10 +3037,15 @@ void Renderer::CommandQueue::execute()
 	{
 		PROFILE("fill commandlist", {});
 
-		auto& cnt = Dispatcher::getSharedContext();
-		while (cnt.poll_one() != 0);
-
-		mTaskExecutor.wait();
+		//{
+		//	PROFILE("do tasks", {});
+		//	auto& cnt = Dispatcher::getSharedContext();
+		//	cnt.poll();
+		//}
+		{
+			PROFILE("wait tasks", {});
+			mTaskExecutor.wait();
+		}
 	}
 	{
 		PROFILE("execute commandlist", {});
@@ -2967,6 +3058,7 @@ void Renderer::CommandQueue::execute()
 void Renderer::CommandQueue::flush()
 {
 	signal();
+	mTaskExecutor.getContext().poll();
 	wait();
 }
 

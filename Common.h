@@ -74,6 +74,14 @@ public :
 
 	static std::wstring convert(const std::string& str);
 
+	static void hash_combine(std::size_t& seed) { }
+
+	template <typename T, typename... Rest>
+	static void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
+		std::hash<T> hasher;
+		seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		hash_combine(seed, rest...);
+	}
 private:
 	static std::string format()
 	{
@@ -108,15 +116,16 @@ struct AABB
 #undef CHECK
 #undef ASSERT
 #undef LOG
-
+#define LOG Common::log
 #if _DEBUG
 #define CHECK(x) Common::checkResult(x, Common::format(" file: ",__FILE__, " line: ", __LINE__ ))
 #define ASSERT(x,y) Common::Assert(x, Common::format(y, " file: ", __FILE__, " line: ", __LINE__ ))
 #define CHECK_RENDER_THREAD {Common::Assert(Thread::getId() == 0, "need running on main thread.");}
+#define WARN(x) ASSERT(false, x)
 #else
 #define CHECK(x) x;
 #define ASSERT(x,y) 
 #define CHECK_RENDER_THREAD 
+#define WARN(x) LOG(x)
 #endif
 
-#define LOG Common::log

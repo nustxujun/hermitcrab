@@ -8,9 +8,9 @@ struct PSInput
 {
 	float4 position : SV_POSITION;
 	float2 uv : TEXCOORD;
-	float4 normal: NORMAL0;
-	float4 tangent: NORMAL1;
-	float4 binormal: NORMAL2;
+	float3 normal: NORMAL0;
+	float3 tangent: NORMAL1;
+	float3 binormal: NORMAL2;
 
 	float4 worldPos: COLOR0;
 	float4 color: COLOR1;

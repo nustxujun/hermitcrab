@@ -12,6 +12,8 @@
 	#define SM_CS	"cs_5_0"
 #else
 	#define SM_VS	"vs_5_0"
+	#define SM_HS	"hs_5_0"
+	#define SM_DS	"ds_5_0"
 	#define SM_GS	"gs_5_0"
 	#define SM_PS	"ps_5_0"
 	#define SM_CS	"cs_5_0"
@@ -433,12 +435,13 @@ public:
 		};
 
 	public:
-		Shader(const MemoryData& data, ShaderType type);
+		Shader(const MemoryData& data, ShaderType type, size_t hash);
 		void registerStaticSampler( const D3D12_STATIC_SAMPLER_DESC& desc);
 		void registerStaticSampler(const std::string& name, D3D12_FILTER filter, D3D12_TEXTURE_ADDRESS_MODE mode);
 		void enable32BitsConstants(bool b);
 		void enable32BitsConstantsByName(const std::string& name);
 		void enableStaticSampler(bool b);
+		size_t getHash()const{return mHash;}
 	private:
 		D3D12_SHADER_VISIBILITY getShaderVisibility()const;
 		D3D12_DESCRIPTOR_RANGE_TYPE getRangeType(D3D_SHADER_INPUT_TYPE type)const;
@@ -446,6 +449,7 @@ public:
 	private:
 		ShaderType mType;
 		MemoryData mCodeBlob;
+		size_t mHash;
 		bool mUseStaticSamplers = true; 
 		bool mUse32BitsConstants = false;
 		std::set<std::string> mUse32BitsConstantsSet;
@@ -567,6 +571,8 @@ public:
 
 		ConstantBuffer::Ptr createConstantBuffer(Shader::ShaderType type, const std::string& name);
 		const D3D12_GRAPHICS_PIPELINE_STATE_DESC& getDesc()const;
+
+		std::vector<std::string> getRequiredResources(Shader::ShaderType type)const;
 	private:
 		void setRootDescriptorTable(CommandList* cmdlist);
 	private:
@@ -686,7 +692,7 @@ public:
 	public:
 		using Command = std::function<void(CommandList::Ref)>;
 	public:
-		CommandQueue(D3D12_COMMAND_LIST_TYPE type, size_t maxCmdlistSize = NUM_COMMANDLISTS);
+		CommandQueue(D3D12_COMMAND_LIST_TYPE type, size_t maxCmdlistSize = NUM_COMMANDLISTS, asio::io_context& context = Dispatcher::getSharedContext());
 		~CommandQueue();
 
 		void addCommand(Command&& task, bool strand = false, bool impl = false);
@@ -759,8 +765,8 @@ public:
 	Resource::Ref createTextureFromFile(const std::string& filename, bool srgb);
 	Resource::Ref createTexture3D(UINT width, UINT height, UINT depth, DXGI_FORMAT format, UINT miplevels = 1, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE, D3D12_HEAP_TYPE type = D3D12_HEAP_TYPE_DEFAULT);
 	// buffer
-	Resource::Ref Renderer::createBufferBase(size_t size, bool isShaderResource,D3D12_HEAP_TYPE type );
-	Buffer::Ref createBuffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = 0);
+	Resource::Ref createBufferBase(size_t size, bool isShaderResource,D3D12_HEAP_TYPE type );
+	Buffer::Ref createBuffer(UINT size, UINT stride, bool isShaderResource, D3D12_HEAP_TYPE type, const void* data = nullptr, size_t count = -1);
 	ConstantBuffer::Ptr createConstantBuffer(UINT size);
 	PipelineState::Ref createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs);
 	PipelineState::Ref createComputePipelineState(const Shader::Ptr& shader);
@@ -796,6 +802,13 @@ private:
 
 	void present();
 	void updateTimeStamp();
+	template<class T>
+	void recycle(std::shared_ptr<T> res);
+	void processRecycle();
+	void doFencingTasks();
+
+	void addUploadingResource(Resource::Ptr res);
+	void processUploadingResource();
 private:
 	static Renderer::Ptr instance;
 
@@ -815,10 +828,10 @@ private:
 
 	std::array< Resource::Ptr, NUM_BACK_BUFFERS> mBackbuffers;
 	std::array<DescriptorHeap::Ptr, DHT_MAX_NUM> mDescriptorHeaps;
-	std::vector<Resource::Ptr> mResources;
+	std::set<Resource::Ptr> mResources;
 
 	std::unordered_map<std::string, Resource::Ref> mTextureMap;
-	std::vector<PipelineState::Ptr> mPipelineStates;
+	std::set<PipelineState::Ptr> mPipelineStates;
 	ComPtr<ID3D12QueryHeap> mTimeStampQueryHeap;
 	std::vector<Profile::Ptr> mProfiles;
 	Profile::Ref mRenderProfile;
@@ -833,5 +846,20 @@ private:
 	TaskExecutor mFencingTasks{ mFencingContext };
 	//std::vector<ObjectTask> mFencingTasks;
 
+	struct RecycleObject { virtual ~RecycleObject(){}};
+	template<class T>
+	struct CustomRecycleObject : RecycleObject
+	{
+		std::shared_ptr<T> res;
+		CustomRecycleObject(std::shared_ptr<T> r): res(r) {}
+	};
+	std::array<std::vector<RecycleObject*>, NUM_BACK_BUFFERS> mRecycleResources;
+
+	struct UploadingResource
+	{
+		std::vector<Resource::Ptr> resources;
+		Fence::Ptr fence;
+	};
+	std::list<UploadingResource> mUploadingResources;
 
 };
