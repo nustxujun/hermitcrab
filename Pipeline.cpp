@@ -145,7 +145,10 @@ void ForwardPipleline::execute(CameraInfo caminfo)
 			co_await std::suspend_always();
 			cmdlist->setRenderTarget(dst->getView());
 			while (!co.done())
+			{
+				co_await std::suspend_always();
 				co.resume();
+			}
 			co_return;
 		};
 	});
@@ -165,10 +168,11 @@ void ForwardPipleline::execute(CameraInfo caminfo)
 		};
 	});
 
-
+	Dispatcher::getSharedContext().dispatch([=](){
+		mGui->update(mGUICallback);
+	});
 	graph.execute(Renderer::getSingleton()->getRenderQueue());
 
-	mGui->update(mGUICallback);
 
 }
 

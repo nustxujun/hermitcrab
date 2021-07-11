@@ -642,6 +642,11 @@ public:
 		//Fence::Ptr getFence(){return mAllocator->mFence;}
 		CommandAllocator * getAllocator(){return &mAllocators[mCurrentAllocator];}
 	private:
+		bool checkOpening() 
+		{
+			return mOpening;
+		}
+	private:
 		static const auto NUM_ALLOCATORS = 4;
 		ID3D12CommandQueue* mQueue;
 		std::vector<CommandAllocator> mAllocators;
@@ -658,6 +663,7 @@ public:
 		};
 		std::unordered_map<ID3D12Resource*,Transition> mTransitionBarrier;
 		std::unordered_map<ID3D12Resource*, Resource::Ref> mUAVBarrier;
+		bool mOpening = false;
 	};
 
 	class Profile :public Interface<Profile>
@@ -700,6 +706,22 @@ public:
 		void addCommand(Command&& task, bool strand = false);
 		void addCoroutineCommand(CoroutineCommand&& task, bool strand = false);
 
+		
+		struct CommandListWrapper
+		{
+			CommandListWrapper( CommandQueue* queue);
+			~CommandListWrapper();
+
+			CommandList* operator->()const
+			{
+				return cmdlist;
+			}
+			operator CommandList*()const
+			{
+				return cmdlist;
+			}
+			CommandList* cmdlist;
+		};
 		CommandList& acquireComandList();
 		void execute();
 		void flush();

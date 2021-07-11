@@ -145,12 +145,12 @@ void Renderer::beginFrame()
 {
 	debugInfo.reset();
 
-	mRenderProfile = ProfileMgr::Singleton.begin("render", &mRenderQueue->acquireComandList());
+	mRenderProfile = ProfileMgr::Singleton.begin("render", CommandQueue::CommandListWrapper(mRenderQueue.get()));
 }
 
 void Renderer::endFrame()
 {
-	ProfileMgr::Singleton.end(mRenderProfile, &mRenderQueue->acquireComandList());
+	ProfileMgr::Singleton.end(mRenderProfile, CommandQueue::CommandListWrapper(mRenderQueue.get()));
 
 	processTasks();
 
@@ -1812,6 +1812,7 @@ Renderer::CommandList::~CommandList()
 
 void Renderer::CommandList::transitionBarrier(Resource::Ref res, D3D12_RESOURCE_STATES  state, UINT subresource ,bool autoflush)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	if (subresource == D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES || state != res->getState(subresource))
 	{
 		addResourceTransition(res, state, subresource);
@@ -1822,6 +1823,7 @@ void Renderer::CommandList::transitionBarrier(Resource::Ref res, D3D12_RESOURCE_
 
 void Renderer::CommandList::uavBarrier(Resource::Ref res, bool autoflush)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mUAVBarrier[res->get()] = res;
 
 	if (autoflush)
@@ -1830,6 +1832,7 @@ void Renderer::CommandList::uavBarrier(Resource::Ref res, bool autoflush)
 
 void Renderer::CommandList::addResourceTransition(const Resource::Ref& res, D3D12_RESOURCE_STATES state, UINT subres)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	//Common::Assert(mResourceTransitions.find(res->get()) == mResourceTransitions.end(), "unexpected.");
 	mTransitionBarrier[res->get()] = {res, state, subres};
 }
@@ -1837,6 +1840,7 @@ void Renderer::CommandList::addResourceTransition(const Resource::Ref& res, D3D1
 void Renderer::CommandList::flushResourceBarrier()
 {
 
+	ASSERT(checkOpening(), "cmdlist is close");
 	std::vector<D3D12_RESOURCE_BARRIER> barriers;
 	for (auto& t : mTransitionBarrier)
 	{
@@ -1916,11 +1920,13 @@ void Renderer::CommandList::flushResourceBarrier()
 
 void Renderer::CommandList::copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->CopyBufferRegion(dst->get(), dstStart, src->get(), srcStart, size);
 }
 
 void Renderer::CommandList::copyTexture(Resource::Ref dst, UINT dstSub, const std::array<UINT, 3>& dstStart, Resource::Ref src, UINT srcSub, const D3D12_BOX* srcBox)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	bool dstIsBuffer = dst->getDesc().Dimension == D3D12_RESOURCE_DIMENSION_BUFFER;
 	bool srcIsBuffer = src->getDesc().Dimension == D3D12_RESOURCE_DIMENSION_BUFFER;
 	D3D12_TEXTURE_COPY_LOCATION dstlocal = {dst->get(),dstIsBuffer? D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT:  D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX   , dstSub};
@@ -1939,36 +1945,43 @@ void Renderer::CommandList::copyTexture(Resource::Ref dst, UINT dstSub, const st
 
 void Renderer::CommandList::copyResource(const Resource::Ref& dst, const Resource::Ref& src)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->CopyResource(dst->get(), src->get());
 }
 
 void Renderer::CommandList::discardResource(const Resource::Ref & rt)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->DiscardResource(rt->get(),nullptr);
 }
 
 void Renderer::CommandList::clearRenderTarget(const Resource::Ref & rt, const Color & color)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->ClearRenderTargetView(rt->getRenderTarget(), color.data(),0, nullptr);
 }
 
 void Renderer::CommandList::clearDepth(const Resource::Ref& rt, float depth)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->ClearDepthStencilView(rt->getDepthStencil(), D3D12_CLEAR_FLAG_DEPTH,depth, 0,0, 0);
 }
 
 void Renderer::CommandList::clearStencil(const Resource::Ref & rt, UINT8 stencil)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->ClearDepthStencilView(rt->getDepthStencil(), D3D12_CLEAR_FLAG_STENCIL, 1.0f, stencil, 0, 0);
 }
 
 void Renderer::CommandList::clearDepthStencil(const Resource::Ref & rt, float depth, UINT8 stencil)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->ClearDepthStencilView(rt->getDepthStencil(), D3D12_CLEAR_FLAG_STENCIL | D3D12_CLEAR_FLAG_DEPTH, depth, stencil, 0, 0);
 }
 
 void Renderer::CommandList::setViewport(const D3D12_VIEWPORT& vp)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->RSSetViewports(1, &vp);
 }
 
@@ -1980,6 +1993,7 @@ void Renderer::CommandList::setViewportToScreen()
 
 void Renderer::CommandList::setScissorRect(const D3D12_RECT& rect)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->RSSetScissorRects(1, &rect);
 }
 
@@ -2024,12 +2038,14 @@ void Renderer::CommandList::setRenderTargets(const std::vector<Resource::Ref>& r
 
 void Renderer::CommandList::setRenderTargets(const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& rts,const D3D12_CPU_DESCRIPTOR_HANDLE* ds)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->OMSetRenderTargets((UINT)rts.size(), rts.data(), FALSE,ds);
 }
 		
 
 void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	auto renderer = Renderer::getSingleton();
 	mCurrentPipelineState = ps;
 	mCmdList->SetPipelineState(ps->get());
@@ -2042,6 +2058,7 @@ void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
 
 void Renderer::CommandList::setVertexBuffer(const std::vector<Buffer::Ref>& vertices)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	std::vector<D3D12_VERTEX_BUFFER_VIEW> views;
 	for (auto& v: vertices)
 		views.push_back({v->getVirtualAddress(), v->getSize(), v->getStride()});
@@ -2051,49 +2068,58 @@ void Renderer::CommandList::setVertexBuffer(const std::vector<Buffer::Ref>& vert
 
 void Renderer::CommandList::setVertexBuffer(const Buffer::Ref& vertices)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	D3D12_VERTEX_BUFFER_VIEW view = {vertices->getVirtualAddress(), vertices->getSize(), vertices->getStride()};
 	mCmdList->IASetVertexBuffers(0, 1, &view);
 }
 
 void Renderer::CommandList::setIndexBuffer(const Buffer::Ref& indices)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	D3D12_INDEX_BUFFER_VIEW view = {indices->getVirtualAddress(), indices->getSize(), indices->getStride() == 2? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT };
 	mCmdList->IASetIndexBuffer(&view);
 }
 
 void Renderer::CommandList::setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->IASetPrimitiveTopology(type);
 }
 
 void Renderer::CommandList::setDescriptorHeap(DescriptorHeap::Ref heap)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	auto origin = heap->get();
 	mCmdList->SetDescriptorHeaps(1, &origin);
 }
 
 void Renderer::CommandList::setRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->SetGraphicsRootDescriptorTable(slot, handle);
 }
 
 void Renderer::CommandList::setComputeRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->SetComputeRootDescriptorTable(slot, handle);
 }
 
 void Renderer::CommandList::set32BitConstants(UINT slot, UINT num, const void* data, UINT offset)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->SetGraphicsRoot32BitConstants(slot, num, data, offset);
 }
 
 void Renderer::CommandList::setCompute32BitConstants(UINT slot, UINT num, const void* data, UINT offset)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->SetComputeRoot32BitConstants(slot, num, data, offset);
 }
 
 void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, UINT startVertex, UINT startInstance)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCurrentPipelineState->setRootDescriptorTable(this);
 
 	debugInfo.drawcallCount++;
@@ -2103,6 +2129,7 @@ void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, 
 
 void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount, UINT startIndex, INT startVertex, UINT startInstance)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCurrentPipelineState->setRootDescriptorTable(this);
 
 	debugInfo.drawcallCount++;
@@ -2112,6 +2139,7 @@ void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UIN
 
 void Renderer::CommandList::dispatch(UINT x, UINT y, UINT z)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCurrentPipelineState->setRootDescriptorTable(this);
 
 	mCmdList->Dispatch(x,y,z);
@@ -2119,11 +2147,13 @@ void Renderer::CommandList::dispatch(UINT x, UINT y, UINT z)
 
 void Renderer::CommandList::endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx)
 {
+	ASSERT(checkOpening(), "cmdlist is close");
 	mCmdList->EndQuery(queryheap.Get(),type, queryidx);
 }
 
 void Renderer::CommandList::close()
 {
+	mOpening = false;
 	CHECK(mCmdList->Close());
 }
 
@@ -2135,6 +2165,7 @@ void Renderer::CommandList::reset()
 	auto& a = mAllocators[mCurrentAllocator];
 	a.reset();
 	CHECK(mCmdList->Reset(a.get(), nullptr));
+	mOpening = true;
 }
 
 
@@ -3034,7 +3065,10 @@ void Renderer::CommandQueue::addCoroutineCommand(CoroutineCommand&& task, bool s
 		cmdlist->reset();
 		cmdlist->setDescriptorHeap(heap);
 		while (!co.done())
+		{
+			co_await std::suspend_always();
 			co.resume();
+		}
 		cmdlist->close();
 		co_return;
 	}, strand,cmdlist, std::move(co), mHeap);
@@ -3098,4 +3132,16 @@ void Renderer::CommandQueue::wait(CommandQueue::Ref prequeue)
 {
 	auto fence = prequeue->mFence;
 	mQueue->Wait(fence->mFence.Get(), fence->mFenceValue);
+}
+
+Renderer::CommandQueue::CommandListWrapper::CommandListWrapper( CommandQueue* queue)
+{
+	cmdlist = &queue->acquireComandList();
+	cmdlist->reset();
+	cmdlist->setDescriptorHeap(queue->mHeap);
+}
+
+Renderer::CommandQueue::CommandListWrapper::~CommandListWrapper()
+{
+	cmdlist->close();
 }
