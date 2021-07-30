@@ -2,8 +2,8 @@
 
 #define ASIO_STANDALONE
 #include "Common.h"
-#include "asio/asio.hpp"
-#include "asio/asio/strand.hpp"
+#include "asio.hpp"
+#include "asio/strand.hpp"
 
 
 class Dispatcher
