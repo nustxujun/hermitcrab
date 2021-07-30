@@ -89,19 +89,7 @@ void Renderer::resize(int width, int height)
 	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 	swapChainDesc.SampleDesc.Count = 1;
 
-#if defined(D3D12ON7)
-	
-	ComPtr<ID3D12DeviceDownlevel> deviceDownlevel;
-	CHECK(mDevice.As(&deviceDownlevel));
 
-	for (auto& b: mBackbuffers)
-	{
-		b = Resource::create();
-		b->init(width,height,D3D12_HEAP_TYPE_DEFAULT,swapChainDesc.Format,D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
-		b->createRenderTargetView(nullptr);
-	}
-	mCurrentFrame = 0;
-#else
 	if (mSwapChain)
 	{
 		mBackbuffers.fill({});
@@ -138,7 +126,6 @@ void Renderer::resize(int width, int height)
 
 	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
 
-#endif
 }
 
 void Renderer::beginFrame()
@@ -161,8 +148,6 @@ void Renderer::endFrame()
 	updateTimeStamp();
 
 	collectDebugInfo();
-
-	doFencingTasks();
 
 	processRecycle();
 
@@ -894,17 +879,6 @@ void Renderer::generateMips(Resource::Ref texture)
 }
 
 
-//void Renderer::addRenderTask(RenderTask&& task, bool strand, bool impl )
-//{
-//	mRenderQueue->addCommand(std::move(task), strand);
-//}
-
-void Renderer::addFencingTask(ObjectTask&& task)
-{
-	mFencingTasks.addTask(std::move(task),true);
-}
-
-
 void Renderer::uninitialize()
 {
 	Dispatcher::stop(Dispatcher::getSharedContext());
@@ -942,19 +916,17 @@ void Renderer::uninitialize()
 	auto count = device->Release();
 	if (count != 0)
 	{
-#ifndef D3D12ON7
 		ID3D12DebugDevice* dd;
 		device->QueryInterface(&dd);
 		dd->ReportLiveDeviceObjects(D3D12_RLDO_SUMMARY);
 		dd->Release();
-#endif
 		MessageBox(NULL, TEXT("some objects were not released."), NULL, NULL);
 	}
 }
 
 void Renderer::initDevice()
 {
-#if defined(_DEBUG) && !defined (D3D12ON7)
+#if defined(_DEBUG)
 	{
 		ComPtr<ID3D12Debug> debugController;
 		if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
@@ -1008,7 +980,7 @@ void Renderer::initDevice()
 void Renderer::initCommands()
 {
 	mRenderQueue = CommandQueue::create(D3D12_COMMAND_LIST_TYPE_DIRECT);
-	mComputeQueue = CommandQueue::create(D3D12_COMMAND_LIST_TYPE_DIRECT);
+	mComputeQueue = CommandQueue::create(D3D12_COMMAND_LIST_TYPE_COMPUTE);
 	mResourceQueue = CommandQueue::create(D3D12_COMMAND_LIST_TYPE_DIRECT);
 	mTimerQueue = CommandQueue::create(D3D12_COMMAND_LIST_TYPE_DIRECT,1);
 
@@ -1129,25 +1101,15 @@ std::string Renderer::findFile(const std::string & filename)
 
 void Renderer::fetchNextFrame()
 {
-#ifndef D3D12ON7
 	mCurrentFrame = mSwapChain->GetCurrentBackBufferIndex();
-#else
-	mCurrentFrame = (mCurrentFrame + 1) % NUM_BACK_BUFFERS;
-#endif
-
-
 }
 
 void Renderer::processTasks()
 {
-
-#ifndef D3D12ON7
 	PROFILE("process tasks", {});
 
 	mRenderQueue->wait(mComputeQueue);
 	mRenderQueue->execute();
-#endif
-
 }
 
 
@@ -1159,11 +1121,7 @@ ComPtr<Renderer::IDXGIFACTORY> Renderer::getDXGIFactory()
 #endif
 
 	ComPtr<IDXGIFACTORY> fac;
-#if defined(D3D12ON7)
-	CHECK(CreateDXGIFactory1(IID_PPV_ARGS(&fac)));
-#else
 	CHECK(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&fac)));
-#endif
 	return fac;
 }
 
@@ -1202,21 +1160,7 @@ void Renderer::present()
 {
 	PROFILE("swapchain present", {});
 
-#if defined(D3D12ON7)
-	ComPtr<ID3D12CommandQueueDownlevel> commandQueueDownlevel;
-
-	CHECK(mCommandQueue.As(&commandQueueDownlevel));
-	CHECK(commandQueueDownlevel->Present(
-		mCommandLists[0]->get(),
-		mBackbuffers[mCurrentFrame]->get(),
-		mWindow,
-		mVSync? D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK: D3D12_DOWNLEVEL_PRESENT_FLAG_NONE));
-#else
 	CHECK(mSwapChain->Present(mVSync? 1: 0,0));
-
-#endif
-
-	
 }
 
 void Renderer::updateTimeStamp()
@@ -1278,12 +1222,6 @@ void Renderer::processRecycle()
 	for (auto& r: mRecycleResources[mCurrentFrame])
 		delete r;
 	mRecycleResources[mCurrentFrame].clear();
-}
-
-void Renderer::doFencingTasks()
-{
-	PROFILE("fencing tasks", {});
-	mFencingContext.poll();
 }
 
 void Renderer::addUploadingResource(Resource::Ptr res)

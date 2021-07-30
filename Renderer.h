@@ -3,33 +3,17 @@
 #include "TaskExecutor.h"
 #include "Fence.h"
 
-#if defined(D3D12ON7) 
-	#include "D3D12Downlevel.h"
 
-	#define SM_VS	"vs_5_0"
-	#define SM_GS	"gs_5_0"
-	#define SM_PS	"ps_5_0"
-	#define SM_CS	"cs_5_0"
-#else
-	#define SM_VS	"vs_5_0"
-	#define SM_HS	"hs_5_0"
-	#define SM_DS	"ds_5_0"
-	#define SM_GS	"gs_5_0"
-	#define SM_PS	"ps_5_0"
-	#define SM_CS	"cs_5_0"
-#endif
+#define SM_VS	"vs_5_0"
+#define SM_HS	"hs_5_0"
+#define SM_DS	"ds_5_0"
+#define SM_GS	"gs_5_0"
+#define SM_PS	"ps_5_0"
+#define SM_CS	"cs_5_0"
 
 class Renderer
 {
-#if defined(D3D12ON7)
-	using IDXGIFACTORY = IDXGIFactory1;
 
-	using ShaderReflection =	ID3D11ShaderReflection;
-	using ShaderDesc =			D3D11_SHADER_DESC;
-	using ShaderInputBindDesc = D3D11_SHADER_INPUT_BIND_DESC;
-	using ShaderBufferDesc =	D3D11_SHADER_BUFFER_DESC;
-	using ShaderVariableDesc =	D3D11_SHADER_VARIABLE_DESC;
-#else
 	using IDXGIFACTORY = IDXGIFactory4;
 
 	using ShaderReflection =	ID3D12ShaderReflection;
@@ -37,7 +21,6 @@ class Renderer
 	using ShaderInputBindDesc = D3D12_SHADER_INPUT_BIND_DESC;
 	using ShaderBufferDesc =	D3D12_SHADER_BUFFER_DESC;
 	using ShaderVariableDesc =	D3D12_SHADER_VARIABLE_DESC;
-#endif
 
 
 public:
@@ -801,8 +784,6 @@ public:
 	void generateMips(Resource::Ref texture);
 
 
-	//void addRenderTask(RenderTask&& task, bool strand = false, bool impl = false);
-	void addFencingTask(ObjectTask&& task);
 private:
 	MemoryData createMemoryData(size_t size = 0)
 	{
@@ -831,7 +812,6 @@ private:
 	template<class T>
 	void recycle(std::shared_ptr<T> res);
 	void processRecycle();
-	void doFencingTasks();
 
 	void addUploadingResource(Resource::Ptr res);
 	void processUploadingResource();
@@ -868,9 +848,6 @@ private:
 	PipelineState::Ref mSRGBConv;
 	bool mVSync = false;
 
-	asio::io_context mFencingContext;
-	TaskExecutor mFencingTasks{ mFencingContext };
-	//std::vector<ObjectTask> mFencingTasks;
 
 	struct RecycleObject { virtual ~RecycleObject(){}};
 	template<class T>
