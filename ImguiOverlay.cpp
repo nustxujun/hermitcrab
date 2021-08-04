@@ -274,7 +274,8 @@ void ImGuiPass::resize(HWND win, int width, int height)
 
 	auto& io = ImGui::GetIO();
 	io.DisplaySize = { (float)width, (float)height };
-	io.ImeWindowHandle = win;
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	//io.handl = win;
 
 }
 
