@@ -14,7 +14,7 @@ public:
 	ImGuiPass();
 	~ImGuiPass();
 
-	static RenderGraph::RenderTask execute(ImGuiPass::Ptr pass) ;
+	RenderGraph::RenderTask execute() ;
 	void update(const std::function<void(void)>& callback = 0);
 	void resize(HWND win, int width, int height);
 

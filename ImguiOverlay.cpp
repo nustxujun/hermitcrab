@@ -135,11 +135,11 @@ void ImGuiPass::initRendering()
 //}
 
 
-RenderGraph::RenderTask ImGuiPass::execute(ImGuiPass::Ptr pass)
+RenderGraph::RenderTask ImGuiPass::execute()
 {
-	return [p = pass](auto cmdlist)->Future<Promise>
+	return [this](auto cmdlist)->Future<Promise>
 	{
-		ImGuiPass::Ptr pass = p;
+		ImGuiPass* pass =  this;
 		co_await std::suspend_always();
 
 		while (!pass->mReady.load())
