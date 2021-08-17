@@ -31,11 +31,13 @@ public:
 	void addRenderScene(RenderScene&& rs);
 
 
-	virtual void execute(CameraInfo caminfo) = 0;
+	virtual void execute(CameraInfo caminfo){};
 
 	bool is(const std::string& n);
 	void set(const std::string& n, bool v);
 
+	void addPass(std::string name, RenderGraph::RenderPass rp);
+	void reset();
 protected:
 
 	struct RenderSettings
@@ -48,6 +50,7 @@ protected:
 	std::shared_ptr<RenderScene> mRenderScene;
 	std::map<std::string, RenderPass> mPasses;
 	std::vector<PostProcess> mPostProcess;
+	RenderGraph mGraph;
 };
 
 class ForwardPipleline : public Pipeline 
@@ -55,6 +58,7 @@ class ForwardPipleline : public Pipeline
 public:
 	using Pipeline::Pipeline;
 
+	void init();
 	void execute(CameraInfo caminfo) override;
 	void setUICallback(std::function<void()>&& f)  { mGUICallback  = std::move(f);};
 private:

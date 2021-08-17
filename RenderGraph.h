@@ -108,6 +108,7 @@ public:
 	void addPass(const std::string& name, RenderPass&& callback );
 	Barrier::Ptr addBarrier(const std::string& name);
 	void execute(Renderer::CommandQueue::Ref queue);
+	void reset();
 private:
 
 	std::vector<std::pair<std::string,RenderPass>> mPasses;

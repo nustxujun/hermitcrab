@@ -5,14 +5,13 @@
 class PipelineOperation
 {
 public:
-	RenderGraph::RenderPass renderScene(
+	static RenderGraph::RenderPass renderScene(
 		Pipeline::CameraInfo caminfo,
 		Pipeline::RenderScene&& render_scene, 
 		ResourceHandle::Ptr rendertarget, 
 		ResourceHandle::Ptr depthstencil);
 
-	RenderGraph::RenderPass renderUI(
-		std::function<void(void)>&& callback, 
+	static RenderGraph::RenderPass renderUI( 
 		ResourceHandle::Ptr rendertarget);
 
 };

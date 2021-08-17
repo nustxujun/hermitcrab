@@ -108,6 +108,11 @@ void RenderGraph::execute(Renderer::CommandQueue::Ref queue)
 	}
 }
 
+void RenderGraph::reset()
+{
+	mPasses.clear();
+}
+
 
 void RenderGraph::Builder::read(const ResourceHandle::Ptr& res)
 {

@@ -3,11 +3,12 @@
 #include <sstream>
 #include "Profile.h"
 #include "ResourceViewAllocator.h"
+#include "PipelineOperation.h"
 
 
 Pipeline::Pipeline()
 {
-	mGui = ImGuiPass::Ptr(new ImGuiPass);
+	//mGui = ImGuiPass::Ptr(new ImGuiPass);
 }
 
 void Pipeline::addPostProcessPass(const std::string& name,  DXGI_FORMAT fmt)
@@ -87,15 +88,19 @@ void Pipeline::set(const std::string& n, bool v)
 	mSettings.switchers[n] = v;
 }
 
-
-void ForwardPipleline::execute(CameraInfo caminfo)
+void Pipeline::addPass(std::string name, RenderGraph::RenderPass p)
 {
-	//mDispatcher.invoke([gui = mGui, &cb = mGUICallback]() {
-	//	gui->update(cb);
-	//});
+	mGraph.addPass(name, std::move(p));
+}
 
-	RenderGraph graph;
+void Pipeline::reset()
+{
+	mGraph.reset();
+}
 
+void ForwardPipleline::init()
+{
+	auto& graph = mGraph;
 	auto r = Renderer::getSingleton();
 	auto s = r->getSize();
 
@@ -108,54 +113,56 @@ void ForwardPipleline::execute(CameraInfo caminfo)
 
 	rt->setClearValue({ 0,0,0,0 });
 	ds->setClearValue({ 1.0f, 0 });
-
+	CameraInfo caminfo;
 	if (mRenderScene)
-		graph.addPass("scene", [renderscene = mRenderScene, rt , ds, caminfo](auto& builder)
-		{
-			builder.write(rt, RenderGraph::Builder::IT_CLEAR);
-			builder.write(ds, RenderGraph::Builder::IT_CLEAR);
-			return [rs = renderscene, r = rt, d = ds, c = caminfo](auto cmdlist)->Future<Promise>
+		graph.addPass("scene", [renderscene = mRenderScene, rt, ds, caminfo](auto& builder)
 			{
-				auto renderscene = rs;
-				auto rt = r;
-				auto ds = d;
-				auto caminfo = c;
+				builder.write(rt, RenderGraph::Builder::IT_CLEAR);
+				builder.write(ds, RenderGraph::Builder::IT_CLEAR);
+				return [rs = renderscene, r = rt, d = ds, c = caminfo](auto cmdlist)->Future<Promise>
+				{
+					auto renderscene = rs;
+					auto rt = r;
+					auto ds = d;
+					auto caminfo = c;
 
-				co_await std::suspend_always();
+					co_await std::suspend_always();
 
-				cmdlist->setRenderTarget(rt->getView(), ds->getView());
-				(*renderscene)(cmdlist, caminfo, 0, 0);
-				co_return;
-			};
-		});
+					cmdlist->setRenderTarget(rt->getView(), ds->getView());
+					(*renderscene)(cmdlist, caminfo, 0, 0);
+					co_return;
+				};
+			});
 
-	
-	for (auto& pp: mPostProcess)
+
+	for (auto& pp : mPostProcess)
 		rt = pp(graph, rt, ds);
 	mPostProcess.clear();
 
-	graph.addPass("gui", [gui = mGui, dst = rt, &cb = mGUICallback](auto& builder) {
-		builder.write(dst, RenderGraph::Builder::IT_NONE);
+	//graph.addPass("gui", [gui = mGui, dst = rt, &cb = mGUICallback](auto& builder) {
+	//	builder.write(dst, RenderGraph::Builder::IT_NONE);
 
-		auto task = ImGuiPass::execute(gui);
-		return[ d = dst, task = std::move(task)](auto cmdlist)->Future<Promise>
-		{
-			auto dst = d;
-			Coroutine<Promise> co(std::move(task), cmdlist);
-			co_await std::suspend_always();
-			cmdlist->setRenderTarget(dst->getView());
-			while (!co.done())
-			{
-				co_await std::suspend_always();
-				co.resume();
-			}
-			co_return;
-		};
-	});
+	//	auto task = ImGuiPass::execute(gui);
+	//	return[ d = dst, task = std::move(task)](auto cmdlist)->Future<Promise>
+	//	{
+	//		auto dst = d;
+	//		Coroutine<Promise> co(std::move(task), cmdlist);
+	//		co_await std::suspend_always();
+	//		cmdlist->setRenderTarget(dst->getView());
+	//		while (!co.done())
+	//		{
+	//			co_await std::suspend_always();
+	//			co.resume();
+	//		}
+	//		co_return;
+	//	};
+	//});
 
-	graph.addPass("present", [ src = rt](auto& builder) {
+	graph.addPass("gui", PipelineOperation::renderUI(rt));
+
+	graph.addPass("present", [src = rt](auto& builder) {
 		builder.copy(src, {});
-		return [ s = src](auto cmdlist) ->Future<Promise> 
+		return [s = src](auto cmdlist) ->Future<Promise>
 		{
 			auto src = s;
 			co_await std::suspend_always();
@@ -167,11 +174,19 @@ void ForwardPipleline::execute(CameraInfo caminfo)
 			co_return;
 		};
 	});
+}
 
-	Dispatcher::getSharedContext().dispatch([=](){
-		mGui->update(mGUICallback);
-	});
-	graph.execute(Renderer::getSingleton()->getRenderQueue());
+void ForwardPipleline::execute(CameraInfo caminfo)
+{
+	//mDispatcher.invoke([gui = mGui, &cb = mGUICallback]() {
+	//	gui->update(cb);
+	//});
+
+
+	//Dispatcher::getSharedContext().dispatch([=](){
+	//	mGui->update(mGUICallback);
+	//});
+	mGraph.execute(Renderer::getSingleton()->getRenderQueue());
 
 
 }

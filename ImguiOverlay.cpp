@@ -3,10 +3,11 @@
 #include "Profile.h"
 ImGuiPass::ImGuiPass()
 {
-
 	//initImGui();
 	initRendering();
 	initFonts();
+
+	beginFrame();
 }
 
 ImGuiPass::~ImGuiPass()
@@ -140,17 +141,24 @@ RenderGraph::RenderTask ImGuiPass::execute()
 	return [this](auto cmdlist)->Future<Promise>
 	{
 		ImGuiPass* pass =  this;
-		co_await std::suspend_always();
 
-		while (!pass->mReady.load())
+		co_await std::suspend_always();
+		
+
+		while(!pass->mReady.load())
 			co_await std::suspend_always();
 
-		pass->mReady.store(false);
+		endFrame();
+
+		co_await std::suspend_always();
+
 		auto data = ImGui::GetDrawData();
 
 		if (data == NULL || data->DisplaySize.x <= 0.0f || data->DisplaySize.y <= 0.0f || data->TotalIdxCount <= 0)
+		{
+			beginFrame();
 			co_return;
-
+		}
 		auto renderer = Renderer::getSingleton();
 		auto& VertexBuffer = pass->mVertexBuffer[renderer->getCurrentFrameIndex()];
 		auto& IndexBuffer = pass->mIndexBuffer[renderer->getCurrentFrameIndex()];
@@ -243,35 +251,17 @@ RenderGraph::RenderTask ImGuiPass::execute()
 			global_idx_offset += cmd_list->IdxBuffer.Size;
 			global_vtx_offset += cmd_list->VtxBuffer.Size;
 		}
+
+		beginFrame();
+
 		co_return;
 	};
 
 }
 
-void ImGuiPass::update(const std::function<void(void)>& callback)
+
+void ImGuiPass::resize( int width, int height)
 {
-	PROFILE("gui update", {});
-	HWND win = Renderer::getSingleton()->getWindow();
-	RECT rect;
-	::GetClientRect(win, &rect);
-	resize(win, std::max(1L, rect.right), std::max(1L, rect.bottom));
-
-	ImGui::NewFrame();
-	//ImGui::ShowDemoWindow();
-	ImGuiOverlay::ImGuiObject::root()->framemove();
-	if (callback)
-		callback();
-
-	ImGui::Render();
-	//mFence.signal();
-	mReady.store(true);
-}
-
-void ImGuiPass::resize(HWND win, int width, int height)
-{
-	if (width == mWidth && height == mHeight)
-		return ;
-
 	auto& io = ImGui::GetIO();
 	io.DisplaySize = { (float)width, (float)height };
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -293,4 +283,19 @@ void ImGuiPass::initFonts()
 
 	static_assert(sizeof(ImTextureID) >= sizeof(mFonts->getShaderResource().ptr), "Can't pack descriptor handle into TexID, 32-bit not supported yet.");
 	io.Fonts->TexID = (ImTextureID)mFonts->getShaderResource().ptr;
+}
+
+void ImGuiPass::beginFrame()
+{
+	HWND win = Renderer::getSingleton()->getWindow();
+	RECT rect;
+	::GetClientRect(win, &rect);
+	resize(std::max(1L, rect.right), std::max(1L, rect.bottom));
+
+	ImGui::NewFrame();
+}
+
+void ImGuiPass::endFrame()
+{
+	ImGui::Render();
 }

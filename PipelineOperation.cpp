@@ -6,9 +6,9 @@ RenderGraph::RenderPass PipelineOperation::renderScene(Pipeline::CameraInfo cami
 	{
 		builder.write(rt, RenderGraph::Builder::IT_CLEAR);
 		builder.write(ds, RenderGraph::Builder::IT_CLEAR);
-		return [rs = renderscene, r = rt, d = ds, c = caminfo](auto cmdlist)->Future<Promise>
+		return [rs = std::move(renderscene), r = rt, d = ds, c = caminfo](auto cmdlist)->Future<Promise>
 		{
-			auto renderscene = rs;
+			auto renderscene = std::move(rs);
 			auto rt = r;
 			auto ds = d;
 			auto caminfo = c;
@@ -16,18 +16,18 @@ RenderGraph::RenderPass PipelineOperation::renderScene(Pipeline::CameraInfo cami
 			co_await std::suspend_always();
 
 			cmdlist->setRenderTarget(rt->getView(), ds->getView());
-			(*renderscene)(cmdlist, caminfo, 0, 0);
+			renderscene(cmdlist, caminfo, 0, 0);
 			co_return;
 		};
 	};
 }
 
-RenderGraph::RenderPass PipelineOperation::renderUI(std::function<void(void)>&& callback, ResourceHandle::Ptr rendertarget)
+RenderGraph::RenderPass PipelineOperation::renderUI( ResourceHandle::Ptr rendertarget)
 {
-	return  [ dst = rendertarget, cb = std::move(callback)](auto& builder) {
+	return  [ dst = rendertarget](auto& builder)mutable {
 		builder.write(dst, RenderGraph::Builder::IT_NONE);
 
-		auto task = ImGuiPass::execute(gui);
+		auto task = ImGuiPass::getInstance()->execute();
 		return[d = dst, task = std::move(task)](auto cmdlist)->Future<Promise>
 		{
 			auto dst = d;
@@ -40,8 +40,7 @@ RenderGraph::RenderPass PipelineOperation::renderUI(std::function<void(void)>&& 
 				co.resume();
 			}
 			co_return;
+		};
 	};
-
-
 
 }
