@@ -148,6 +148,7 @@ RenderGraph::RenderTask ImGuiPass::execute()
 		while(!pass->mReady.load())
 			co_await std::suspend_always();
 
+		pass->mReady.store(false);
 		endFrame();
 
 		co_await std::suspend_always();

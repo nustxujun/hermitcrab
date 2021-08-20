@@ -78,6 +78,20 @@ void Pipeline::addRenderScene(RenderScene&& rs)
 	mRenderScene = decltype(mRenderScene)(new RenderScene{std::move(rs)});
 }
 
+void Pipeline::execute()
+{
+	//mDispatcher.invoke([gui = mGui, &cb = mGUICallback]() {
+	//	gui->update(cb);
+	//});
+
+
+	//Dispatcher::getSharedContext().dispatch([=](){
+	//	mGui->update(mGUICallback);
+	//});
+	mGraph.execute(Renderer::getSingleton()->getRenderQueue());
+
+}
+
 bool Pipeline::is(const std::string& n)
 {
 	return mSettings.switchers[n];
@@ -162,6 +176,12 @@ void ForwardPipleline::init()
 
 	graph.addPass("present", [src = rt](auto& builder) {
 		builder.copy(src, {});
+
+		auto bb = Renderer::getSingleton()->getBackBuffer();
+		auto& dstdesc = bb->getDesc();
+		auto& srcdesc = src->getView()->getDesc();
+		Common::Assert(dstdesc.Width == srcdesc.Width && dstdesc.Height == srcdesc.Height,"rendertarget size is invalid");
+
 		return [s = src](auto cmdlist) ->Future<Promise>
 		{
 			auto src = s;
@@ -176,7 +196,7 @@ void ForwardPipleline::init()
 	});
 }
 
-void ForwardPipleline::execute(CameraInfo caminfo)
+void ForwardPipleline::execute()
 {
 	//mDispatcher.invoke([gui = mGui, &cb = mGUICallback]() {
 	//	gui->update(cb);

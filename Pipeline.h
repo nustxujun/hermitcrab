@@ -31,7 +31,7 @@ public:
 	void addRenderScene(RenderScene&& rs);
 
 
-	virtual void execute(CameraInfo caminfo){};
+	virtual void execute();
 
 	bool is(const std::string& n);
 	void set(const std::string& n, bool v);
@@ -59,7 +59,7 @@ public:
 	using Pipeline::Pipeline;
 
 	void init();
-	void execute(CameraInfo caminfo) override;
+	void execute() override;
 	void setUICallback(std::function<void()>&& f)  { mGUICallback  = std::move(f);};
 private:
 	std::function<void()> mGUICallback;

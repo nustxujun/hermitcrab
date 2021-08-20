@@ -44,3 +44,27 @@ RenderGraph::RenderPass PipelineOperation::renderUI( ResourceHandle::Ptr rendert
 	};
 
 }
+
+RenderGraph::RenderPass PipelineOperation::present(ResourceHandle::Ptr rendertarget)
+{
+	return [src = rendertarget](auto& builder) {
+		builder.copy(src, {});
+
+		auto bb = Renderer::getSingleton()->getBackBuffer();
+		auto& dstdesc = bb->getDesc();
+		auto& srcdesc = src->getView()->getDesc();
+		Common::Assert(dstdesc.Width == srcdesc.Width && dstdesc.Height == srcdesc.Height, "rendertarget size is invalid");
+
+		return [s = src](auto cmdlist) ->Future<Promise>
+		{
+			auto src = s;
+			co_await std::suspend_always();
+			auto renderer = Renderer::getSingleton();
+			auto bb = renderer->getBackBuffer();
+			cmdlist->transitionBarrier(bb, D3D12_RESOURCE_STATE_COPY_DEST, 0, true);
+			cmdlist->copyTexture(bb, 0, { 0,0,0 }, src->getView(), 0, NULL);
+			cmdlist->transitionBarrier(bb, D3D12_RESOURCE_STATE_PRESENT, 0, true);
+			co_return;
+		};
+	};
+}

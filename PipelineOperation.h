@@ -14,4 +14,7 @@ public:
 	static RenderGraph::RenderPass renderUI( 
 		ResourceHandle::Ptr rendertarget);
 
+	static RenderGraph::RenderPass present(
+		ResourceHandle::Ptr rendertarget);
+
 };

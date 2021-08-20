@@ -92,6 +92,7 @@ void Renderer::resize(int width, int height)
 
 	if (mSwapChain)
 	{
+		notifyRenderEvent(RE_BEFORE_RESIZE);
 		mBackbuffers.fill({});
 		CHECK(mSwapChain->ResizeBuffers(NUM_BACK_BUFFERS,width, height, swapChainDesc.Format,0));
 	}
@@ -876,6 +877,17 @@ void Renderer::generateMips(Resource::Ref texture)
 
 	destroyResource(dst);
 
+}
+
+void Renderer::registerRenderEvent(RenderEvent e, std::function<void(RenderEvent)>&& f)
+{
+	mRenderEvents[e].push_back(std::move(f));
+}
+
+void Renderer::notifyRenderEvent(RenderEvent e)
+{
+	for (auto& f : mRenderEvents[e])
+		f(e);
 }
 
 

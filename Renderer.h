@@ -55,7 +55,10 @@ public:
 		VT_UNORDEREDACCESS,
 	};
 
-
+	enum RenderEvent
+	{
+		RE_BEFORE_RESIZE,
+	};
 public:
 	struct DebugInfo
 	{
@@ -783,7 +786,8 @@ public:
 	Profile::Ref createProfile();
 	void generateMips(Resource::Ref texture);
 
-
+	void registerRenderEvent(RenderEvent e, std::function<void(RenderEvent)>&& f);
+	void notifyRenderEvent(RenderEvent e);
 private:
 	MemoryData createMemoryData(size_t size = 0)
 	{
@@ -865,4 +869,5 @@ private:
 	};
 	std::list<UploadingResource> mUploadingResources;
 
+	std::unordered_map<RenderEvent, std::vector<std::function<void(RenderEvent)>>> mRenderEvents;
 };
