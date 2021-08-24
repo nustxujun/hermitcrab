@@ -27,13 +27,11 @@ Framework::Framework()
 		});
 	}
 
-	ImGuiOverlay::ImGuiObject::init();
 
 }
 
 Framework::~Framework()
 {
-	ImGuiOverlay::ImGuiObject::close();
 	Renderer::destory();
 
 	Dispatcher::stop(Dispatcher::getSharedContext());
