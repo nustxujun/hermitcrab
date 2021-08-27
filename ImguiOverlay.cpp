@@ -1,8 +1,28 @@
 #include "ImGuiOverlay.h"
 #include "Framework.h"
 #include "Profile.h"
+
+
+
+static struct ImGuiInitializer
+{
+	ImGuiInitializer()
+	{
+		IMGUI_CHECKVERSION();
+		ImGui::CreateContext();
+		ImGui::StyleColorsClassic();
+	}
+	~ImGuiInitializer()
+	{
+		ImGui::DestroyContext();
+	}
+} imgui_initializer;
+
+
 ImGuiPass::ImGuiPass()
 {
+
+
 	//initImGui();
 	initRendering();
 	initFonts();
@@ -24,6 +44,7 @@ ImGuiPass::~ImGuiPass()
 		r->destroyResource(mFonts);
 		r->destroyPipelineState(mPipelineState);
 	}
+
 }
 
 
