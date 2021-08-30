@@ -8,28 +8,19 @@ class ResourceHandle
 {
 public:
 	using Ptr = std::shared_ptr<ResourceHandle>;
-	union ClearValue
-	{
-		Color color;
-		struct {
-			float depth;
-			UINT8 stencil;
-		};
-	};
 
-	static ResourceHandle::Ptr create(Renderer::ViewType type, int w, int h, DXGI_FORMAT format);
-	static ResourceHandle::Ptr create(Renderer::ViewType type, int w, int h, int d, DXGI_FORMAT format);
+	static ResourceHandle::Ptr create(Renderer::ViewType type, int w, int h, DXGI_FORMAT format, Renderer::ClearValue cv);
+	static ResourceHandle::Ptr create(Renderer::ViewType type, int w, int h, int d, DXGI_FORMAT format, Renderer::ClearValue cv);
 
 	static ResourceHandle::Ptr clone(ResourceHandle::Ptr res);
 
-	ResourceHandle(Renderer::ViewType t, int w, int h, int d, DXGI_FORMAT format);
+	ResourceHandle(Renderer::ViewType t, int w, int h, int d, DXGI_FORMAT format, Renderer::ClearValue cv);
 	~ResourceHandle();
 
 	Renderer::ViewType getType()const;
 	const std::wstring& getName()const;
 	void setName(const std::wstring& n);
-	void setClearValue(const ClearValue& vec){mClearValue = vec;};
-	const ClearValue& getClearValue()const{return mClearValue;};
+	const Renderer::ClearValue& getClearValue()const{return mClearValue;};
 
 	void prepare();
 	const Renderer::Resource::Ref& getView() ;
@@ -41,7 +32,7 @@ private:
 	int mDepth;
 	DXGI_FORMAT mFormat;
 	Renderer::Resource::Ref mView;
-	ClearValue mClearValue = {};
+	Renderer::ClearValue mClearValue = {};
 	size_t mHashValue = 0;
 	std::mutex mViewMutex;
 };

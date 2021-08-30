@@ -52,9 +52,9 @@ Renderer::Renderer()
 		"",
 		"../",
 		"../Engine/",
-		"../Engine/Shaders/",
+		//"../Engine/Shaders/",
 		"Engine/",
-		"Engine/Shaders/"
+		//"Engine/Shaders/"
 	};
 }
 
@@ -216,7 +216,7 @@ void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* b
 
 	if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
 	{
-		src->init(desc, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
+		src->init(desc, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, {});
 		src->blit(buffer, std::min(size, desc.Width));
 	}
 	else if (desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D)
@@ -240,7 +240,7 @@ void Renderer::updateResource(Resource::Ref res, UINT subresource, const void* b
 		resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 		resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 		
-		src->init(resdesc, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
+		src->init(resdesc, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, {});
 
 
 		char* data = src->map(0);
@@ -285,7 +285,7 @@ void Renderer::updateTexture(Resource::Ref res, UINT subresource, const void* bu
 			Renderer::getSingleton()->getDevice()->GetCopyableFootprints(&texdesc, sub, 1, 0, &footprint, &numRows, &rowSize, &requiredSize);
 			
 			bufferdesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-			mid->init(bufferdesc,D3D12_HEAP_TYPE_DEFAULT,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+			mid->init(bufferdesc, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, {});
 
 			UINT stride = (UINT)D3DHelper::sizeof_DXGI_FORMAT(texdesc.Format);
 			src->createBuffer(texdesc.Format,0, (UINT)requiredSize / stride,0,0);
@@ -553,7 +553,7 @@ Renderer::Fence::Ptr Renderer::createFence()
 
 
 
-Renderer::Resource::Ref Renderer::createTexture2DBase(UINT width, UINT height, UINT depth,  DXGI_FORMAT format, UINT nummips, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags)
+Renderer::Resource::Ref Renderer::createTexture2DBase(UINT width, UINT height, UINT depth,  DXGI_FORMAT format, UINT nummips, D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags, ClearValue cv)
 {
 	if (width == 0 || height == 0)
 	{
@@ -585,7 +585,7 @@ Renderer::Resource::Ref Renderer::createTexture2DBase(UINT width, UINT height, U
 	resdesc.Flags = flags;
 
 	auto tex = Resource::create();
-	tex->init(resdesc, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON);
+	tex->init(resdesc, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COMMON, cv);
 
 	addResource(tex);
 
@@ -662,7 +662,7 @@ Renderer::Resource::Ref Renderer::createTexture3D(UINT width, UINT height, UINT 
 	resdesc.Flags = flags;
 
 	auto tex = Resource::create();
-	tex->init(resdesc, type, D3D12_RESOURCE_STATE_COMMON);
+	tex->init(resdesc, type, D3D12_RESOURCE_STATE_COMMON, {});
 
 	if ((flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE) == 0)
 		tex->createShaderResource();
@@ -710,7 +710,7 @@ Renderer::Resource::Ref Renderer::createBufferBase(size_t size, bool isShaderRes
 
 	auto b = new Buffer();
 	auto res = Resource::Ptr(b);
-	res->init(resdesc, type, D3D12_RESOURCE_STATE_COMMON);
+	res->init(resdesc, type, D3D12_RESOURCE_STATE_COMMON, {});
 	addResource(res);
 
 	return Resource::Ref(res);
@@ -1467,7 +1467,7 @@ Renderer::Resource::~Resource()
 	releaseAllHandle();
 }
 
-void Renderer::Resource::init(UINT64 size, D3D12_HEAP_TYPE heaptype, DXGI_FORMAT format)
+void Renderer::Resource::init(UINT64 size, D3D12_HEAP_TYPE heaptype, DXGI_FORMAT format, ClearValue cv)
 {
 	D3D12_RESOURCE_DESC resdesc = {};
 	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
@@ -1482,10 +1482,10 @@ void Renderer::Resource::init(UINT64 size, D3D12_HEAP_TYPE heaptype, DXGI_FORMAT
 	resdesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	resdesc.Flags = D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
 
-	init(resdesc, heaptype, D3D12_RESOURCE_STATE_COMMON);
+	init(resdesc, heaptype, D3D12_RESOURCE_STATE_COMMON,cv);
 }
 
-void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES state)
+void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYPE ht, D3D12_RESOURCE_STATES state, ClearValue clear_value)
 {
 	if (ht == D3D12_HEAP_TYPE_READBACK)
 	{
@@ -1517,6 +1517,7 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 
 	D3D12_CLEAR_VALUE* pcv = nullptr;
 	D3D12_CLEAR_VALUE cv = {resdesc.Format, {}};
+	memcpy(cv.Color, clear_value.color.data(), sizeof(cv.Color));
 
 	if (resdesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
 	{
@@ -1524,11 +1525,10 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 	}
 	else if (resdesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
 	{
-		cv.DepthStencil = {1.0f, 0};
+		//cv.DepthStencil = {1.0f, 0};
 		pcv = &cv;
 	}
 	
-	cv.DepthStencil = {1.0f, 0};
 	CHECK(device->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, state, pcv, IID_PPV_ARGS(&mResource)));
 
 	mDesc = resdesc;
@@ -1639,7 +1639,7 @@ const D3D12_GPU_DESCRIPTOR_HANDLE& Renderer::Resource::getUnorderedAccess(UINT i
 	return mHandles[HT_UnorderedAccess][i].gpu;
 }
 
-void Renderer::Resource::init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags)
+void Renderer::Resource::init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags, ClearValue cv)
 {
 	D3D12_RESOURCE_DESC resdesc = {};
 	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -1655,7 +1655,7 @@ void Renderer::Resource::init(UINT width, UINT height, D3D12_HEAP_TYPE ht, DXGI_
 	resdesc.Flags = flags;
 
 	D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
-	Resource::init(resdesc, ht, D3D12_RESOURCE_STATE_COMMON);
+	Resource::init(resdesc, ht, D3D12_RESOURCE_STATE_COMMON,cv);
 
 }
 

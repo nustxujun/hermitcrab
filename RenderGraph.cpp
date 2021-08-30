@@ -3,23 +3,23 @@
 #include "ResourceViewAllocator.h"
 
 
-ResourceHandle::Ptr ResourceHandle::create(Renderer::ViewType type, int w, int h, DXGI_FORMAT format)
+ResourceHandle::Ptr ResourceHandle::create(Renderer::ViewType type, int w, int h, DXGI_FORMAT format, Renderer::ClearValue cv)
 {
-	return create(type, w, h, 1, format);
+	return create(type, w, h, 1, format, cv);
 }
 
-ResourceHandle::Ptr ResourceHandle::create(Renderer::ViewType type, int w, int h, int d, DXGI_FORMAT format)
+ResourceHandle::Ptr ResourceHandle::create(Renderer::ViewType type, int w, int h, int d, DXGI_FORMAT format, Renderer::ClearValue cv)
 {
-	return std::make_shared<ResourceHandle>(type, w, h, d, format);
+	return std::make_shared<ResourceHandle>(type, w, h, d, format, cv);
 }
 
 ResourceHandle::Ptr ResourceHandle::clone(ResourceHandle::Ptr res)
 {
-	return create(res->getType(),res->mWidth, res->mHeight,res->mDepth, res->mFormat);
+	return create(res->getType(),res->mWidth, res->mHeight,res->mDepth, res->mFormat, res->mClearValue);
 }
 
-ResourceHandle::ResourceHandle(Renderer::ViewType t, int w, int h, int d, DXGI_FORMAT format):
-	mType(t), mWidth(w), mHeight(h), mDepth(d), mFormat(format)
+ResourceHandle::ResourceHandle(Renderer::ViewType t, int w, int h, int d, DXGI_FORMAT format, Renderer::ClearValue cv):
+	mType(t), mWidth(w), mHeight(h), mDepth(d), mFormat(format), mClearValue(cv)
 {
 }
 

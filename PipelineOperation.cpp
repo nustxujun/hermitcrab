@@ -6,7 +6,7 @@ RenderGraph::RenderPass PipelineOperation::renderScene(Pipeline::CameraInfo cami
 	{
 		builder.write(rt, RenderGraph::Builder::IT_CLEAR);
 		builder.write(ds, RenderGraph::Builder::IT_CLEAR);
-		return [rs = std::move(renderscene), r = rt, d = ds, c = caminfo](auto cmdlist)->Future<Promise>
+		return [rs = renderscene, r = rt, d = ds, c = caminfo](auto cmdlist)->Future<Promise>
 		{
 			auto renderscene = std::move(rs);
 			auto rt = r;
