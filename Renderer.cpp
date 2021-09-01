@@ -1518,6 +1518,7 @@ void Renderer::Resource::init(const D3D12_RESOURCE_DESC& resdesc, D3D12_HEAP_TYP
 	D3D12_CLEAR_VALUE* pcv = nullptr;
 	D3D12_CLEAR_VALUE cv = {resdesc.Format, {}};
 	memcpy(cv.Color, clear_value.color.data(), sizeof(cv.Color));
+	mClearValue = clear_value;
 
 	if (resdesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
 	{
@@ -2411,11 +2412,8 @@ void Renderer::Shader::createRootParameters()
 			break;
 		}
 	}
-
-
-
-
 }
+
 
 Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector<Shader::Ptr>& shaders)
 {
@@ -2631,7 +2629,7 @@ void Renderer::PipelineState::setConstant(Shader::ShaderType type, const std::st
 	if (ret == cbuffers.end())
 		return;
 	//ASSERT(ret != cbuffers.end(), "cannot find specify cbuffer at setConstant");
-
+	ASSERT(ALIGN(ret->second.size, Renderer::CONSTANT_BUFFER_ALIGN_SIZE)== c->getSize(), "constant buffer size is invalid");
 	mCBuffers[type][ret->second.slot + mSemanticsMap[type].offset] = c->getHandle();
 }
 
@@ -2683,6 +2681,19 @@ void Renderer::PipelineState::setCSVariable(const std::string& name, const void*
 	setVariable(Shader::ST_COMPUTE, name, data);
 }
 
+bool Renderer::PipelineState::hasConstantBuffer(Shader::ShaderType type, const std::string& name)
+{
+	auto renderer = Renderer::getSingleton();
+
+	auto shader = mSemanticsMap.find(type);
+	if (shader == mSemanticsMap.end())
+		return false;
+
+	auto& cbuffers = shader->second.cbuffers;
+	auto cbuffer = cbuffers.find(name);
+	return cbuffer != cbuffers.end();
+}
+
 Renderer::ConstantBuffer::Ptr Renderer::PipelineState::createConstantBuffer(Shader::ShaderType type,const std::string& name)
 {
 	auto renderer = Renderer::getSingleton();
@@ -2692,11 +2703,7 @@ Renderer::ConstantBuffer::Ptr Renderer::PipelineState::createConstantBuffer(Shad
 	
 	auto& cbuffers = shader->second.cbuffers;
 	auto cbuffer = cbuffers.find(name);
-	if (cbuffer == cbuffers.end())
-	{
-		LOG( "cannot find specify shader");
-		return {};
-	}
+	ASSERT(cbuffer != cbuffers.end(), "cannot find specify shader");
 	auto cb = renderer->createConstantBuffer(cbuffer->second.size);
 	cb->setReflection(cbuffer->second.variables);
 	return cb;
@@ -2821,8 +2828,8 @@ Renderer::ConstantBufferAllocator::ConstantBufferAllocator()
 
 UINT64 Renderer::ConstantBufferAllocator::alloc(UINT64 size)
 {
-	size = ALIGN(size, 256);
-	auto count = size / 256;
+	size = ALIGN(size, CONSTANT_BUFFER_ALIGN_SIZE);
+	auto count = size / CONSTANT_BUFFER_ALIGN_SIZE;
 
 	auto beg = count;
 	while (mFree.size() > beg)
@@ -2837,7 +2844,7 @@ UINT64 Renderer::ConstantBufferAllocator::alloc(UINT64 size)
 			auto res = beg - count;
 			if (res != 0)
 			{
-				mFree[res].push_back(free + res * 256);
+				mFree[res].push_back(free + res * CONSTANT_BUFFER_ALIGN_SIZE);
 			}
 
 			return  free;
@@ -2845,14 +2852,14 @@ UINT64 Renderer::ConstantBufferAllocator::alloc(UINT64 size)
 	}
 
 	auto free = mEnd;
-	mEnd += count * 256;
+	mEnd += count * CONSTANT_BUFFER_ALIGN_SIZE;
 	ASSERT(mEnd <= mCache.data() + mCache.size(), "not enough constant buffer space");
 	return free - mCache.data() ;
 }
 
 void Renderer::ConstantBufferAllocator::dealloc(UINT64 address, UINT64 size)
 {
-	auto count = size / 256;
+	auto count = size / CONSTANT_BUFFER_ALIGN_SIZE;
 
 	if (mFree.size() <= count)
 	{
@@ -2887,8 +2894,8 @@ void Renderer::ConstantBufferAllocator::sync()
 Renderer::ConstantBuffer::ConstantBuffer(size_t size, ConstantBufferAllocator::Ref allocator):
 	mAllocator(allocator)
 {
-	const size_t minSizeRequired = 256;
-	mSize = ALIGN(size, 256);
+	const size_t minSizeRequired = CONSTANT_BUFFER_ALIGN_SIZE;
+	mSize = ALIGN(size, CONSTANT_BUFFER_ALIGN_SIZE);
 
 	mOffset = allocator->alloc(mSize);
 

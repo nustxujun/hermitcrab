@@ -3,9 +3,9 @@
 
 ResourceViewAllocator ResourceViewAllocator::Singleton;
 
-std::pair<Renderer::Resource::Ref, size_t> ResourceViewAllocator::alloc(UINT width, UINT height, UINT depth, DXGI_FORMAT format, Renderer::ViewType type)
+std::pair<Renderer::Resource::Ref, size_t> ResourceViewAllocator::alloc(UINT width, UINT height, UINT depth, DXGI_FORMAT format, Renderer::ViewType type, Renderer::ClearValue cv)
 {
-	auto hv = hash(width, height, depth, format, type);
+	auto hv = hash(width, height, depth, format, type, cv);
 	auto& stack = mResources[hv];
 	if (stack.empty())
 	{
@@ -20,7 +20,7 @@ std::pair<Renderer::Resource::Ref, size_t> ResourceViewAllocator::alloc(UINT wid
 
 		Renderer::Resource::Ref res;
 		if (depth == 1)
-			res = Renderer::getSingleton()->createTexture2DBase(width, height, depth, format,1,D3D12_HEAP_TYPE_DEFAULT, flags);
+			res = Renderer::getSingleton()->createTexture2DBase(width, height, depth, format,1,D3D12_HEAP_TYPE_DEFAULT, flags,cv);
 		else
 			res = Renderer::getSingleton()->createTexture3D(width, height, depth, format, 1, flags, D3D12_HEAP_TYPE_DEFAULT);
 		switch (type)
@@ -73,11 +73,11 @@ std::pair<Renderer::Resource::Ref, size_t> ResourceViewAllocator::alloc(UINT wid
 void ResourceViewAllocator::recycle(Renderer::Resource::Ref res, size_t hashvalue)
 {
 	auto& desc = res->getDesc();
-	auto hv = hashvalue ? hashvalue : hash(desc.Width, desc.Height, desc.DepthOrArraySize, desc.Format, res->getViewType());
+	auto hv = hashvalue ? hashvalue : hash(desc.Width, desc.Height, desc.DepthOrArraySize, desc.Format, res->getViewType(),res->getClearValue());
 	mResources[hv].emplace_back(std::move(res));
 }
 
-size_t ResourceViewAllocator::hash(UINT width, UINT height, UINT depth, DXGI_FORMAT format, Renderer::ViewType type)
+size_t ResourceViewAllocator::hash(UINT width, UINT height, UINT depth, DXGI_FORMAT format, Renderer::ViewType type, Renderer::ClearValue cv)
 {
 	auto cal = [=](){
 		size_t value = 0;
@@ -91,6 +91,9 @@ size_t ResourceViewAllocator::hash(UINT width, UINT height, UINT depth, DXGI_FOR
 		combine(depth);
 		combine(format);
 		combine(type) ;
+		
+		for (auto c: cv.color)
+			combine(c);
 
 		return value;
 	};

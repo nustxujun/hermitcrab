@@ -57,7 +57,7 @@ const Renderer::Resource::Ref& ResourceHandle::getView()
 	std::lock_guard<std::mutex> lock(mViewMutex);
 	if (!mView)
 	{
-		auto ret = ResourceViewAllocator::Singleton.alloc(mWidth, mHeight, mDepth, mFormat,mType);
+		auto ret = ResourceViewAllocator::Singleton.alloc(mWidth, mHeight, mDepth, mFormat,mType, mClearValue);
 		mView = ret.first;
 		mHashValue = ret.second;
 	}

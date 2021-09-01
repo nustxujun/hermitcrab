@@ -32,6 +32,7 @@ public:
 	static DXGI_FORMAT const FRAME_BUFFER_FORMAT;
 	static DXGI_FORMAT const BACK_BUFFER_FORMAT;
 	static size_t const  NUM_COMMANDLISTS;
+	static auto constexpr CONSTANT_BUFFER_ALIGN_SIZE = 256;
 	enum DescriptorHeapType
 	{
 		DHT_BACKBUFFER,
@@ -263,6 +264,7 @@ public:
 		ID3D12Resource* get()const{return mResource.Get();}
 		const D3D12_RESOURCE_DESC& getDesc()const{return mDesc;}
 		UINT64 getSize()const{return mDesc.Width;}
+		const ClearValue& getClearValue()const { return mClearValue; }
 		
 		const D3D12_GPU_DESCRIPTOR_HANDLE& getShaderResource(UINT i = 0);
 		const D3D12_CPU_DESCRIPTOR_HANDLE& getRenderTarget(UINT i = 0);
@@ -292,6 +294,7 @@ public:
 		std::vector<D3D12_RESOURCE_STATES> mState;
 		std::string mName;
 		std::array<std::vector<DescriptorHandle>, HT_Num> mHandles;
+		ClearValue mClearValue;
 	};
 
 	class ConstantBufferAllocator:public Interface<ConstantBufferAllocator>
@@ -388,6 +391,7 @@ public:
 	};
 
 	class PipelineState;
+	class ConstantBuffer;
 	class Shader
 	{
 		friend class Renderer::PipelineState;
@@ -436,6 +440,8 @@ public:
 		void enable32BitsConstantsByName(const std::string& name);
 		void enableStaticSampler(bool b);
 		size_t getHash()const{return mHash;}
+
+		ShaderType getType()const { return mType; }
 	private:
 		D3D12_SHADER_VISIBILITY getShaderVisibility()const;
 		D3D12_DESCRIPTOR_RANGE_TYPE getRangeType(D3D_SHADER_INPUT_TYPE type)const;
@@ -476,6 +482,7 @@ public:
 		void setVariable(const std::string& name, const void* data, size_t size);
 		void blit(const void* buffer, UINT64 offset = 0, UINT64 size = -1);
 		D3D12_GPU_DESCRIPTOR_HANDLE getHandle()const;
+		size_t getSize()const { return mSize; }
 	private:
 		enum
 		{
@@ -563,6 +570,7 @@ public:
 		void setCSVariable(const std::string& name, const void* data);
 
 
+		bool hasConstantBuffer(Shader::ShaderType type, const std::string& name);
 		ConstantBuffer::Ptr createConstantBuffer(Shader::ShaderType type, const std::string& name);
 		const D3D12_GRAPHICS_PIPELINE_STATE_DESC& getDesc()const;
 
