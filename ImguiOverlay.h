@@ -32,7 +32,7 @@ private:
 	static void endFrame();
 
 private:
-	Renderer::PipelineState::Ref mPipelineState;
+	Renderer::PipelineStateInstance::Ptr mPipelineState;
 	Renderer::Buffer::Ref mVertexBuffer[Renderer::NUM_BACK_BUFFERS];
 	Renderer::Buffer::Ref mIndexBuffer[Renderer::NUM_BACK_BUFFERS];
 	Renderer::Resource::Ref mFonts;

@@ -1,37 +1,23 @@
 #include "Common.h"
 #include "Renderer.h"
 
-void Common::checkResult(HRESULT hr, std::string_view info)
+void Common::checkD3DResult(HRESULT hr, const std::string& info)
 {
-	if (hr == S_OK) return;
+	checkResult(Renderer::getSingleton()->getDevice()->GetDeviceRemovedReason(), info);
+}
 
-	if (hr == 0x887a0005)
-	{
-		CHECK(Renderer::getSingleton()->getDevice()->GetDeviceRemovedReason());
-		return ;
-	}
-
+void Common::checkWindowsResult(HRESULT hr, const std::string& info)
+{
 	char msg[1024] = { 0 };
 	FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, 0, hr, 0, msg, sizeof(msg), 0);
-	std::cout << Common::format(msg, info);
+	std::cout << msg << " " << info;
 	OutputDebugStringA(msg);
-	MessageBoxA(NULL, Common::format(msg, info).c_str(), NULL, MB_ICONERROR);
+	MessageBoxA(NULL, msg, NULL, MB_ICONERROR);
 	_CrtDbgBreak();
 	//abort();
 	throw std::exception("terminate client");
 }
 
-void Common::Assert(bool v, const std::string& what)
-{
-	if (v)
-		return;
-	std::cout << what;
-	OutputDebugStringA(what.c_str());
-	MessageBoxA(0, what.c_str(), 0, MB_ICONERROR);
-	_CrtDbgBreak();
-	//abort();
-	throw std::exception("terminate client");
-}
 
 std::string Common::convert(const std::wstring& str)
 {

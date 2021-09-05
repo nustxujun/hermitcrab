@@ -10,7 +10,6 @@ public:
 	void init(const std::string& psname, const Renderer::RenderState& rs = Renderer::RenderState::Default);
 	void init(Renderer::Shader::Ptr ps, const Renderer::RenderState& rs = Renderer::RenderState::Default);
 
-	Renderer::PipelineState::Ref getPipelineState()const;
 
 	void setResource(const std::string& name, D3D12_GPU_DESCRIPTOR_HANDLE handle);
 
@@ -28,7 +27,7 @@ public:
 	void draw(Renderer::CommandList *& cmdlist)const;
 private:
 	D3D12_RECT mRect;
-	Renderer::PipelineState::Ref mPipelineState;
+	Renderer::PipelineStateInstance::Ptr mPipelineState;
 	std::map<std::string, Renderer::ConstantBuffer::Ptr> mConstants;
 };
 

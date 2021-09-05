@@ -307,7 +307,8 @@ void Renderer::updateTexture(Resource::Ref res, UINT subresource, const void* bu
 			UINT width = (UINT)texdesc.Width;
 			pso->setVariable(Shader::ST_COMPUTE, "width", &width);
 
-			cmdlist->setPipelineState(pso);
+			//cmdlist->setPipelineState(pso);
+			pso->apply(cmdlist);
 			cmdlist->dispatch(width, texdesc.Height,1);
 
 			cmdlist->transitionBarrier(mid, D3D12_RESOURCE_STATE_COPY_SOURCE, 0, true);
@@ -323,7 +324,7 @@ void Renderer::executeResourceCommands(RenderTask&& dofunc)
 
 	mResourceQueue->addCommand(std::move(dofunc),true);
 
-	//mResourceQueue->execute();
+	mResourceQueue->execute();
 	//mResourceQueue->flush();
 }
 
@@ -367,7 +368,7 @@ Renderer::Shader::Ptr Renderer::compileShader(const std::string& name, const std
 	auto gethash = [this, compileFlags](const std::string& context, const std::string & entry, const std::string & target, const std::vector<D3D_SHADER_MACRO>& macros) {
 		std::hash<std::string> hash;
 		auto hashcontext = context + entry + target;
-		hashcontext = Common::format(hashcontext, compileFlags);
+		hashcontext = std::format("{}{}",hashcontext, compileFlags);
 		for (auto& m : macros)
 		{
 			if (m.Name)
@@ -763,29 +764,33 @@ Renderer::Resource::Ref Renderer::createResourceView(UINT width, UINT height, DX
 	return createTexture2DBase(width, height, 1, format,1, D3D12_HEAP_TYPE_DEFAULT, flag);
 }
 
-Renderer::PipelineState::Ref Renderer::createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs)
+Renderer::PipelineState* Renderer::createPipelineState(const std::vector<Shader::Ptr>& shaders, const RenderState& rs)
 {
-	auto pso = PipelineState::create(rs, shaders);
-	mPipelineStates.insert(pso);
+	auto hash_value = rs.hash();
+	for (auto& s: shaders)
+		Common::hash_combine(hash_value, s->getHash());
+	auto ret = mPipelineStates.find(hash_value);
+	if (ret != mPipelineStates.end())
+		return &ret->second;
+	//auto pso = PipelineState::create(rs, shaders);
+	//mPipelineStates.insert(pso);
+	auto pso = &mPipelineStates[hash_value];
+	pso->init(rs, shaders);
 	return pso;
 }
 
-Renderer::PipelineState::Ref Renderer::createComputePipelineState(const Shader::Ptr & shader)
+Renderer::PipelineState* Renderer::createComputePipelineState(const Shader::Ptr & shader)
 {
-	auto pso = PipelineState::create(shader);
-	mPipelineStates.insert(pso);
+	size_t hash_value = 0;
+	Common::hash_combine(hash_value, shader->getHash());
+	auto ret = mPipelineStates.find(hash_value);
+	if (ret != mPipelineStates.end())
+		return &ret->second;
+	auto pso = &mPipelineStates[hash_value];
+	pso->init(shader);
 	return pso;
 }
 
-void Renderer::destroyPipelineState(PipelineState::Ref pso)
-{
-	if (pso)
-	{
-		auto shared = pso.shared();
-		mPipelineStates.erase(shared);
-		recycle(shared);
-	}
-}
 
 Renderer::Profile::Ref Renderer::createProfile()
 {
@@ -837,8 +842,6 @@ void Renderer::generateMips(Resource::Ref texture)
 
 			UINT non_power_of_two = (height & 1) << 1 | (width & 1);
 			auto pso = mGenMipsPSO[non_power_of_two];
-			cmdlist->setPipelineState(pso);
-
 			pso->setVariable(Shader::ST_COMPUTE, "SrcMipLevel", &mip);
 
 			UINT32 nummips = std::min(4, desc.MipLevels - mip - 1);
@@ -857,7 +860,9 @@ void Renderer::generateMips(Resource::Ref texture)
 			pso->setResource(Shader::ST_COMPUTE, "SrcMip", dst->getShaderResource());
 
 			for (UINT i = 0; i < nummips; ++i)
-				pso->setResource(Shader::ST_COMPUTE, Common::format("OutMip", i + 1), dst->getUnorderedAccess(i + mip + 1));
+				pso->setResource(Shader::ST_COMPUTE, std::format("OutMip {}", i + 1), dst->getUnorderedAccess(i + mip + 1));
+
+			pso->apply(cmdlist);
 
 			cmdlist->dispatch(outputWidth, outputHeight, 1);
 			cmdlist->uavBarrier(dst, true);
@@ -1050,13 +1055,13 @@ void Renderer::initResources()
 			0,0,
 			D3D12_SHADER_VISIBILITY_ALL
 			});
-		mGenMipsPSO[i] = createComputePipelineState(shader);
+		mGenMipsPSO[i] = std::make_shared<PipelineStateInstance>(shader);
 	}
 
 	{
 		auto shader = compileShaderFromFile("shaders/srgb_conv.hlsl", "main", SM_CS );
 		shader->enable32BitsConstants(true);
-		mSRGBConv = createComputePipelineState(shader);
+		mSRGBConv = std::make_shared<PipelineStateInstance>(shader);
 	}
 }
 
@@ -1994,11 +1999,10 @@ void Renderer::CommandList::setRenderTargets(const std::vector<D3D12_CPU_DESCRIP
 }
 		
 
-void Renderer::CommandList::setPipelineState(PipelineState::Ref ps)
+void Renderer::CommandList::setPipelineState(PipelineState* ps)
 {
 	ASSERT(checkOpening(), "cmdlist is close");
 	auto renderer = Renderer::getSingleton();
-	mCurrentPipelineState = ps;
 	mCmdList->SetPipelineState(ps->get());
 
 	if (ps->getType() == PipelineState::PST_Graphic)
@@ -2071,7 +2075,6 @@ void Renderer::CommandList::setCompute32BitConstants(UINT slot, UINT num, const 
 void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, UINT startVertex, UINT startInstance)
 {
 	ASSERT(checkOpening(), "cmdlist is close");
-	mCurrentPipelineState->setRootDescriptorTable(this);
 
 	debugInfo.drawcallCount++;
 	debugInfo.primitiveCount+= vertexCount / 3 * instanceCount;
@@ -2081,7 +2084,6 @@ void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, 
 void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount, UINT startIndex, INT startVertex, UINT startInstance)
 {
 	ASSERT(checkOpening(), "cmdlist is close");
-	mCurrentPipelineState->setRootDescriptorTable(this);
 
 	debugInfo.drawcallCount++;
 	debugInfo.primitiveCount += indexCountPerInstance / 3 * instanceCount;
@@ -2091,7 +2093,6 @@ void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UIN
 void Renderer::CommandList::dispatch(UINT x, UINT y, UINT z)
 {
 	ASSERT(checkOpening(), "cmdlist is close");
-	mCurrentPipelineState->setRootDescriptorTable(this);
 
 	mCmdList->Dispatch(x,y,z);
 }
@@ -2124,7 +2125,7 @@ void Renderer::CommandList::reset()
 
 const Renderer::RenderState Renderer::RenderState::Default([](Renderer::RenderState& self) {
 	{
-		D3D12_BLEND_DESC desc = {};
+		D3D12_BLEND_DESC desc = {0};
 		desc.RenderTarget[0] = {
 			FALSE,FALSE,
 			D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
@@ -2207,6 +2208,89 @@ Renderer::RenderState::RenderState(DXGI_FORMAT targetfmt)
 {
 	*this = RenderState::Default;
 	mRTFormats = {targetfmt};
+}
+
+size_t Renderer::RenderState::hash()const
+{
+	size_t hash_value = 0;
+	Common::hash_combine(hash_value, 
+		mBlend.AlphaToCoverageEnable,
+		mBlend.IndependentBlendEnable
+	);
+	for (auto r: mBlend.RenderTarget)
+	{
+		Common::hash_combine(hash_value, 
+			r.BlendEnable,
+			r.LogicOpEnable,
+			r.SrcBlend,
+			r.DestBlend,
+			r.BlendOp,
+			r.SrcBlendAlpha,
+			r.DestBlendAlpha,
+			r.LogicOp,
+			r.RenderTargetWriteMask
+		);
+	}
+
+	Common::hash_combine(hash_value,
+		mRasterizer.FillMode,
+		mRasterizer.CullMode,
+		mRasterizer.FrontCounterClockwise,
+		mRasterizer.DepthBias,
+		mRasterizer.DepthBiasClamp,
+		mRasterizer.SlopeScaledDepthBias,
+		mRasterizer.DepthClipEnable,
+		mRasterizer.MultisampleEnable,
+		mRasterizer.AntialiasedLineEnable,
+		mRasterizer.ForcedSampleCount,
+		mRasterizer.ConservativeRaster
+	);
+
+	Common::hash_combine(hash_value,
+		mDepthStencil.DepthEnable,
+		mDepthStencil.DepthWriteMask,
+		mDepthStencil.DepthFunc,
+		mDepthStencil.StencilEnable,
+		mDepthStencil.StencilReadMask,
+		mDepthStencil.StencilWriteMask,
+		
+		mDepthStencil.FrontFace.StencilFailOp,
+		mDepthStencil.FrontFace.StencilDepthFailOp,
+		mDepthStencil.FrontFace.StencilPassOp,
+		mDepthStencil.FrontFace.StencilFunc,
+		
+		mDepthStencil.BackFace.StencilFailOp,
+		mDepthStencil.BackFace.StencilDepthFailOp,
+		mDepthStencil.BackFace.StencilPassOp,
+		mDepthStencil.BackFace.StencilFunc
+
+	);
+
+	Common::hash_combine(hash_value, 
+		mPrimitiveType,
+		mDSFormat
+	);
+
+	Common::hash_combine(hash_value, 
+		mSample.Count,
+		mSample.Quality
+	);
+
+	for (auto& r: mRTFormats)
+		Common::hash_combine(hash_value, r);
+	for (auto& l: mLayout)
+	{
+		Common::hash_combine(hash_value, 
+			l.SemanticName,
+			l.SemanticIndex,
+			l.Format,
+			l.InputSlot,
+			l.AlignedByteOffset,
+			l.InputSlotClass,
+			l.InstanceDataStepRate
+		);
+	}
+	return hash_value;
 }
 
 Renderer::Shader::Shader(const MemoryData& data, ShaderType type, size_t hash) :
@@ -2295,23 +2379,24 @@ D3D12_DESCRIPTOR_RANGE_TYPE Renderer::Shader::getRangeType(D3D_SHADER_INPUT_TYPE
 	}
 }
 
-void Renderer::Shader::createRootParameters()
+void Renderer::Shader::prepare()
 {
+	mReflections = std::make_shared<ShaderReflection>();
 	mRootParameters.clear();
 	mRanges.clear();
 	auto endsamplers = mSamplerMap.end();
 
-	CHECK(D3DReflect(mCodeBlob->data(), mCodeBlob->size(), IID_PPV_ARGS(&mReflection)));
+	CHECK(D3DReflect(mCodeBlob->data(), mCodeBlob->size(), IID_PPV_ARGS(&mReflections->reflections)));
 
 	ShaderDesc shaderdesc;
-	mReflection->GetDesc(&shaderdesc);
-	LOG(shaderdesc.InstructionCount);
+	mReflections->reflections->GetDesc(&shaderdesc);
+	LOG("{}", shaderdesc.InstructionCount);
 	mRanges.resize(shaderdesc.BoundResources);
 	
 	for (UINT i = 0; i < shaderdesc.BoundResources; ++i)
 	{
 		ShaderInputBindDesc desc;
-		mReflection->GetResourceBindingDesc(i,&desc);
+		mReflections->reflections->GetResourceBindingDesc(i,&desc);
 
 		auto type = getRangeType(desc.Type);
 		UINT slot = (UINT)mRootParameters.size();
@@ -2348,16 +2433,16 @@ void Renderer::Shader::createRootParameters()
 				auto& rootparam = mRootParameters.back();
 				auto& range = mRanges[i];
 
-				auto cbuffer = mReflection->GetConstantBufferByName(desc.Name);
+				auto cbuffer = mReflections->reflections->GetConstantBufferByName(desc.Name);
 				ShaderBufferDesc bd;
 				cbuffer->GetDesc(&bd);
 
-				CBuffer* cbuffers;
+				ShaderReflection::CBuffer* cbuffers;
 
 				if (mUse32BitsConstants || 
 					mUse32BitsConstantsSet.find(bd.Name) != mUse32BitsConstantsSet.end())
 				{
-					cbuffers = &mSemanticsMap.cbuffersBy32Bits[bd.Name];
+					cbuffers = &mReflections->inputs.cbuffersBy32Bits[bd.Name];
 
 					rootparam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 					rootparam.Constants.Num32BitValues = bd.Size / 4;
@@ -2366,7 +2451,7 @@ void Renderer::Shader::createRootParameters()
 
 				}
 				else
-					cbuffers = &mSemanticsMap.cbuffers[bd.Name];
+					cbuffers = &mReflections->inputs.cbuffers[bd.Name];
 
 				cbuffers->size = bd.Size;
 				cbuffers->slot = slot;
@@ -2381,14 +2466,14 @@ void Renderer::Shader::createRootParameters()
 			}
 			break;
 		case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-			mSemanticsMap.textures[desc.Name] = slot;
-			mSemanticsMap.texturesBySlot[desc.BindPoint] = slot;
+			mReflections->inputs.textures[desc.Name] = slot;
+			mReflections->inputs.texturesBySlot[desc.BindPoint] = slot;
 			break;
 		case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-			mSemanticsMap.uavs[desc.Name] = slot;
+			mReflections->inputs.uavs[desc.Name] = slot;
 			break;
 		case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
-			mSemanticsMap.samplers[desc.Name] =  slot;
+			mReflections->inputs.samplers[desc.Name] =  slot;
 			if (mUseStaticSamplers)
 			{
 				auto ret = mSamplerMap.find(desc.Name);
@@ -2415,7 +2500,7 @@ void Renderer::Shader::createRootParameters()
 }
 
 
-Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector<Shader::Ptr>& shaders)
+void Renderer::PipelineState::init(const RenderState & rs, const std::vector<Shader::Ptr>& shaders)
 {
 	mType = PST_Graphic;
 	auto device = Renderer::getSingleton()->getDevice();
@@ -2428,12 +2513,11 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	UINT offset = 0;
 	for (auto& s : shaders)
 	{
-		s->createRootParameters();
 		samplers.insert(samplers.end(), s->mStaticSamplers.begin(), s->mStaticSamplers.end());
 		params.insert(params.end(), s->mRootParameters.begin(), s->mRootParameters.end());
-		s->mSemanticsMap.offset = offset;
+		s->mReflections->inputs.offset = offset;
 		offset += (UINT)s->mRootParameters.size();
-		mSemanticsMap[s->mType] = s->mSemanticsMap;
+		//mSemanticsMap[s->mType] = s->mSemanticsMap;
 		switch (s->mType)
 		{
 		case Shader::ST_VERTEX: {
@@ -2508,7 +2592,7 @@ Renderer::PipelineState::PipelineState(const RenderState & rs, const std::vector
 	mDesc = desc;
 }
 
-Renderer::PipelineState::PipelineState(const Shader::Ptr & shader)
+void Renderer::PipelineState::init(const Shader::Ptr & shader)
 {
 	mType = PST_Compute;
 	auto device = Renderer::getSingleton()->getDevice();
@@ -2516,7 +2600,6 @@ Renderer::PipelineState::PipelineState(const Shader::Ptr & shader)
 	D3D12_COMPUTE_PIPELINE_STATE_DESC desc = {0};
 	D3D12_ROOT_SIGNATURE_DESC rsd = {};
 
-	shader->createRootParameters();
 	rsd.NumParameters = (UINT)shader->mRootParameters.size();
 	if (rsd.NumParameters > 0)
 		rsd.pParameters = shader->mRootParameters.data();
@@ -2538,150 +2621,171 @@ Renderer::PipelineState::PipelineState(const Shader::Ptr & shader)
 	
 	CHECK(device->CreateComputePipelineState(&desc, IID_PPV_ARGS(&mPipelineState)));
 
-	mSemanticsMap[shader->mType] = shader->mSemanticsMap;
-}
-
-Renderer::PipelineState::~PipelineState()
-{
-}
-
-std::vector<std::string> Renderer::PipelineState::getRequiredResources(Shader::ShaderType type)const
-{
-	auto i = mSemanticsMap.find(type);
-	if (i == mSemanticsMap.end())
-		return {};
-	std::vector<std::string> ret;
-	for (auto t: i->second.textures)
-		ret.emplace_back(t.first);
-
-	for (auto t: i->second.uavs)
-		ret.emplace_back(t.first);
-
-	return ret;
+	//mSemanticsMap[shader->mType] = shader->mSemanticsMap;
 }
 
 
-void Renderer::PipelineState::setResource(Shader::ShaderType type, const std::string & name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+//std::vector<std::string> Renderer::PipelineState::getRequiredResources(Shader::ShaderType type)const
+//{
+//	auto i = mSemanticsMap.find(type);
+//	if (i == mSemanticsMap.end())
+//		return {};
+//	std::vector<std::string> ret;
+//	for (auto t: i->second.textures)
+//		ret.emplace_back(t.first);
+//
+//	for (auto t: i->second.uavs)
+//		ret.emplace_back(t.first);
+//
+//	return ret;
+//}
+
+
+
+const D3D12_GRAPHICS_PIPELINE_STATE_DESC& Renderer::PipelineState::getDesc() const
 {
-	auto& textures = mSemanticsMap[type].textures;
+	return mDesc;
+}
+
+Renderer::PipelineStateInstance::PipelineStateInstance(const RenderState& rs, const std::vector<Shader::Ptr>& shaders)
+{
+	for (auto& s: shaders)
+	{
+		s->prepare();
+		mSemanticsMap[s->getType()] = s->getReflection();
+	}
+	mPipelineState = Renderer::getSingleton()->createPipelineState(shaders, rs);
+}
+
+Renderer::PipelineStateInstance::PipelineStateInstance(const Shader::Ptr& computeShader)
+{
+	computeShader->prepare();
+	mPipelineState = Renderer::getSingleton()->createComputePipelineState(computeShader);
+	mSemanticsMap[computeShader->getType()] = computeShader->getReflection();
+}
+
+
+void Renderer::PipelineStateInstance::setResource(Shader::ShaderType type, const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+{
+	auto& textures = mSemanticsMap[type]->inputs.textures;
 	auto ret = textures.find(name);
 	//ASSERT(ret != textures.end(), "specify texture name is not existed.");
 	if (ret == textures.end())
-	{ 
-		auto& uavs = mSemanticsMap[type].uavs;
+	{
+		auto& uavs = mSemanticsMap[type]->inputs.uavs;
 		auto uav = uavs.find(name);
 		if (uav == uavs.end())
 		{
 #ifdef _DEBUG
-			LOG(name , " is not a bound resource in shader" );
+			LOG(name, " is not a bound resource in shader");
 #endif
 			return;
 		}
-		mTextures[type][uav->second + mSemanticsMap[type].offset] = handle;
+		mTextures[type][uav->second + mSemanticsMap[type]->inputs.offset] = handle;
 	}
 	else
-		mTextures[type][ret->second + mSemanticsMap[type].offset] = handle;
+		mTextures[type][ret->second + mSemanticsMap[type]->inputs.offset] = handle;
 }
 
-void Renderer::PipelineState::setVSResource( const std::string & name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+void Renderer::PipelineStateInstance::setVSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
 {
 	setResource(Shader::ST_VERTEX, name, handle);
 }
 
-void Renderer::PipelineState::setPSResource( const std::string & name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+void Renderer::PipelineStateInstance::setPSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
 {
 	setResource(Shader::ST_PIXEL, name, handle);
 }
 
-void Renderer::PipelineState::setCSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+void Renderer::PipelineStateInstance::setCSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
 {
 	setResource(Shader::ST_COMPUTE, name, handle);
 }
 
-void Renderer::PipelineState::setResource(Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
+void Renderer::PipelineStateInstance::setResource(Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
 {
-	auto& textures = mSemanticsMap[type].texturesBySlot;
+	auto& textures = mSemanticsMap[type]->inputs.texturesBySlot;
 	auto ret = textures.find(slot);
 	if (ret == textures.end())
 		return;
-	mTextures[type][ret->second + mSemanticsMap[type].offset] = handle;
+	mTextures[type][ret->second + mSemanticsMap[type]->inputs.offset] = handle;
 }
 
-void Renderer::PipelineState::setVSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
+void Renderer::PipelineStateInstance::setVSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
 {
 	return setResource(Shader::ST_VERTEX, slot, handle);
 }
 
-void Renderer::PipelineState::setPSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
+void Renderer::PipelineStateInstance::setPSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
 {
 	return setResource(Shader::ST_PIXEL, slot, handle);
 }
 
-void Renderer::PipelineState::setCSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+void Renderer::PipelineStateInstance::setCSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
 {
 	return setResource(Shader::ST_COMPUTE, slot, handle);
 }
 
-void Renderer::PipelineState::setConstant(Shader::ShaderType type, const std::string & name, const ConstantBuffer::Ptr& c)
+void Renderer::PipelineStateInstance::setConstant(Shader::ShaderType type, const std::string& name, const ConstantBuffer::Ptr& c)
 {
-	auto& cbuffers = mSemanticsMap[type].cbuffers;
+	auto& cbuffers = mSemanticsMap[type]->inputs.cbuffers;
 	auto ret = cbuffers.find(name);
 	if (ret == cbuffers.end())
 		return;
 	//ASSERT(ret != cbuffers.end(), "cannot find specify cbuffer at setConstant");
-	ASSERT(ALIGN(ret->second.size, Renderer::CONSTANT_BUFFER_ALIGN_SIZE)== c->getSize(), "constant buffer size is invalid");
-	mCBuffers[type][ret->second.slot + mSemanticsMap[type].offset] = c->getHandle();
+	ASSERT(ALIGN(ret->second.size, Renderer::CONSTANT_BUFFER_ALIGN_SIZE) == c->getSize(), "constant buffer size is invalid");
+	mCBuffers[type][ret->second.slot + mSemanticsMap[type]->inputs.offset] = c->getHandle();
 }
 
-void Renderer::PipelineState::setVSConstant(const std::string & name, const ConstantBuffer::Ptr& c)
+void Renderer::PipelineStateInstance::setVSConstant(const std::string& name, const ConstantBuffer::Ptr& c)
 {
 	setConstant(Shader::ST_VERTEX, name, c);
 }
 
-void Renderer::PipelineState::setPSConstant(const std::string & name, const ConstantBuffer::Ptr& c)
+void Renderer::PipelineStateInstance::setPSConstant(const std::string& name, const ConstantBuffer::Ptr& c)
 {
 	setConstant(Shader::ST_PIXEL, name, c);
 }
 
-void Renderer::PipelineState::setCSConstant(const std::string& name, const ConstantBuffer::Ptr& c)
+void Renderer::PipelineStateInstance::setCSConstant(const std::string& name, const ConstantBuffer::Ptr& c)
 {
 	setConstant(Shader::ST_COMPUTE, name, c);
 }
 
-void Renderer::PipelineState::setVariable(Shader::ShaderType type, const std::string & name, const void * data)
+void Renderer::PipelineStateInstance::setVariable(Shader::ShaderType type, const std::string& name, const void* data)
 {
-	auto& cbuffers = mSemanticsMap[type].cbuffersBy32Bits;
+	auto& cbuffers = mSemanticsMap[type]->inputs.cbuffersBy32Bits;
 	for (auto& cb : cbuffers)
 	{
 		auto ret = cb.second.variables.find(name);
 		if (ret == cb.second.variables.end())
 			continue;
 
-		auto& buffer = mCBuffersBy32Bits[type][cb.second.slot + mSemanticsMap[type].offset];
+		auto& buffer = mCBuffersBy32Bits[type][cb.second.slot + mSemanticsMap[type]->inputs.offset];
 		buffer.resize(cb.second.size);
-		memcpy(buffer.data() + ret->second.offset, data, ret->second.size );
+		memcpy(buffer.data() + ret->second.offset, data, ret->second.size);
 		return;
 	}
 
-	LOG("undefined variable ",name);
+	LOG("undefined variable ", name);
 }
 
-void Renderer::PipelineState::setVSVariable(const std::string & name, const void * data)
+void Renderer::PipelineStateInstance::setVSVariable(const std::string& name, const void* data)
 {
 	setVariable(Shader::ST_VERTEX, name, data);
 }
 
-void Renderer::PipelineState::setPSVariable(const std::string & name, const void * data)
+void Renderer::PipelineStateInstance::setPSVariable(const std::string& name, const void* data)
 {
 	setVariable(Shader::ST_PIXEL, name, data);
 }
 
-void Renderer::PipelineState::setCSVariable(const std::string& name, const void* data)
+void Renderer::PipelineStateInstance::setCSVariable(const std::string& name, const void* data)
 {
 	setVariable(Shader::ST_COMPUTE, name, data);
 }
 
-bool Renderer::PipelineState::hasConstantBuffer(Shader::ShaderType type, const std::string& name)
+bool Renderer::PipelineStateInstance::hasConstantBuffer(Shader::ShaderType type, const std::string& name)
 {
 	auto renderer = Renderer::getSingleton();
 
@@ -2689,38 +2793,37 @@ bool Renderer::PipelineState::hasConstantBuffer(Shader::ShaderType type, const s
 	if (shader == mSemanticsMap.end())
 		return false;
 
-	auto& cbuffers = shader->second.cbuffers;
+	auto& cbuffers = shader->second->inputs.cbuffers;
 	auto cbuffer = cbuffers.find(name);
 	return cbuffer != cbuffers.end();
 }
 
-Renderer::ConstantBuffer::Ptr Renderer::PipelineState::createConstantBuffer(Shader::ShaderType type,const std::string& name)
+Renderer::ConstantBuffer::Ptr Renderer::PipelineStateInstance::createConstantBuffer(Shader::ShaderType type, const std::string& name)
 {
 	auto renderer = Renderer::getSingleton();
 
 	auto shader = mSemanticsMap.find(type);
 	ASSERT(shader != mSemanticsMap.end(), "cannot find specify shader");
-	
-	auto& cbuffers = shader->second.cbuffers;
+
+	auto& cbuffers = shader->second->inputs.cbuffers;
 	auto cbuffer = cbuffers.find(name);
 	ASSERT(cbuffer != cbuffers.end(), "cannot find specify shader");
 	auto cb = renderer->createConstantBuffer(cbuffer->second.size);
-	cb->setReflection(cbuffer->second.variables);
+	//cb->setReflection(cbuffer->second.variables);
 	return cb;
 }
 
-const D3D12_GRAPHICS_PIPELINE_STATE_DESC& Renderer::PipelineState::getDesc() const
-{
-	return mDesc;
-}
 
-void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
+void Renderer::PipelineStateInstance::apply(CommandList * cmdlist)
 {
+	cmdlist->setPipelineState(mPipelineState);
+	
+
 	using SetRDT = void(CommandList::*)(UINT, const D3D12_GPU_DESCRIPTOR_HANDLE&);
 	SetRDT setrdt;
 	using Set32Bits = void(CommandList::*)(UINT, UINT, const void*, UINT);
 	Set32Bits set32bits;
-	if (mType == PST_Graphic)
+	if (mPipelineState->getType() == PipelineState::PST_Graphic)
 	{
 		setrdt = &CommandList::setRootDescriptorTable;
 		set32bits = &CommandList::set32BitConstants;
@@ -2738,7 +2841,6 @@ void Renderer::PipelineState::setRootDescriptorTable(CommandList * cmdlist)
 		}
 	}
 
-	Renderer::getSingleton()->mConstantBufferAllocator->sync();
 
 	for (auto& cbs : mCBuffers)
 	{
@@ -2823,7 +2925,8 @@ void Renderer::Profile::end(Renderer::CommandList * cl)
 Renderer::ConstantBufferAllocator::ConstantBufferAllocator()
 {
 	mResource = Renderer::getSingleton()->createBufferBase(cache_size,false,D3D12_HEAP_TYPE_UPLOAD);
-	mEnd = mCache.data();
+	mBegin = mResource->map(0);
+	mEnd = mBegin;
 }
 
 UINT64 Renderer::ConstantBufferAllocator::alloc(UINT64 size)
@@ -2853,8 +2956,8 @@ UINT64 Renderer::ConstantBufferAllocator::alloc(UINT64 size)
 
 	auto free = mEnd;
 	mEnd += count * CONSTANT_BUFFER_ALIGN_SIZE;
-	ASSERT(mEnd <= mCache.data() + mCache.size(), "not enough constant buffer space");
-	return free - mCache.data() ;
+	ASSERT(mEnd <= mBegin + cache_size, "not enough constant buffer space");
+	return free - mBegin ;
 }
 
 void Renderer::ConstantBufferAllocator::dealloc(UINT64 address, UINT64 size)
@@ -2876,19 +2979,7 @@ D3D12_GPU_VIRTUAL_ADDRESS Renderer::ConstantBufferAllocator::getGPUVirtualAddres
 
 void Renderer::ConstantBufferAllocator::blit(UINT64 offset, const void * buffer, UINT64 size)
 {
-	memcpy(mCache.data() + offset, buffer, size);
-	mRefresh = true;
-}
-
-void Renderer::ConstantBufferAllocator::sync()
-{
-	if (!mRefresh)
-		return;
-	void* buff = mResource->map(0);
-
-	memcpy(buff, mCache.data(), mEnd - mCache.data());
-
-	mResource->unmap(0);
+	memcpy(mBegin + offset, buffer, size);
 }
 
 Renderer::ConstantBuffer::ConstantBuffer(size_t size, ConstantBufferAllocator::Ref allocator):
@@ -2913,21 +3004,21 @@ Renderer::ConstantBuffer::~ConstantBuffer()
 		mAllocator->dealloc(mOffset, mSize);
 }
 
-void Renderer::ConstantBuffer::setReflection(const std::map<std::string, Shader::Variable>& rft)
-{
-	mVariables = rft;
-}
-
-void Renderer::ConstantBuffer::setVariable(const std::string& name,const void* data, size_t size)
-{
-	auto ret = mVariables.find(name);
-	if (ret == mVariables.end())
-		return;
-
-
-	ASSERT(size == ret->second.size, "size is not matched");
-	blit(data, ret->second.offset, ret->second.size );
-}
+//void Renderer::ConstantBuffer::setReflection(const std::map<std::string, Shader::Variable>& rft)
+//{
+//	mVariables = rft;
+//}
+//
+//void Renderer::ConstantBuffer::setVariable(const std::string& name,const void* data, size_t size)
+//{
+//	auto ret = mVariables.find(name);
+//	if (ret == mVariables.end())
+//		return;
+//
+//
+//	ASSERT(size == ret->second.size, "size is not matched");
+//	blit(data, ret->second.offset, ret->second.size );
+//}
 
 void Renderer::ConstantBuffer::blit(const void * buffer, UINT64 offset , UINT64 size)
 {
@@ -2978,7 +3069,7 @@ Renderer::CommandQueue::CommandQueue(D3D12_COMMAND_LIST_TYPE type, size_t maxsiz
 		auto& cmdlist = mCommandLists.back();
 		cmdlist.close();
 		mOriginCommandLists.emplace_back(cmdlist.mCmdList.Get());
-		cmdlist.mCmdList->SetName(M2U(Common::format(cmdlistNames[type], "_CommandList", i)).c_str());
+		cmdlist.mCmdList->SetName(M2U(std::format("{}{}{}",cmdlistNames[type], "_CommandList", i)).c_str());
 	}
 
 	mHeap = renderer->getDescriptorHeap(DHT_CBV_SRV_UAV);

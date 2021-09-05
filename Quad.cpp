@@ -40,13 +40,10 @@ void Quad::init(Renderer::Shader::Ptr ps,const Renderer::RenderState& rs)
 			D3D12_SHADER_VISIBILITY_PIXEL
 		});
 
-	mPipelineState = renderer->createPipelineState(shaders, rs);
+	mPipelineState = std::make_shared<Renderer::PipelineStateInstance>(rs,shaders);
 }
 
-Renderer::PipelineState::Ref Quad::getPipelineState() const
-{
-	return mPipelineState;
-}
+
 
 void Quad::setResource(const std::string& name, D3D12_GPU_DESCRIPTOR_HANDLE handle)
 {
@@ -74,9 +71,8 @@ void Quad::draw(Renderer::CommandList *& cmdlist)const
 	for (auto& c: mConstants)
 		mPipelineState->setPSConstant(c.first, c.second);
 
-	cmdlist->setPipelineState(mPipelineState);
 	cmdlist->setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-	
+	mPipelineState->apply(cmdlist);
 	// draw without vertexbuffer
 	cmdlist->drawInstanced(4);
 }

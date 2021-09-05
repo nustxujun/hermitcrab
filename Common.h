@@ -20,6 +20,7 @@
 #include <iostream>
 #include <bitset>
 #include <chrono>
+#include <format>
 
 //#if defined(NO_UE4) || defined(_CONSOLE)
 #include <Windows.h>
@@ -49,26 +50,48 @@ class Common
 public :
 
 	template<class ... Args>
-	static void log(const Args& ... args)
+	static void log(std::string_view cont, Args && ... args)
 	{
-		auto context = format(args ...) + "\n";
-		OutputDebugStringA(context.c_str());
-		std::cout << context;
-		//_CrtDbgBreak();
-		//::MessageBoxA(NULL, context.c_str(), NULL, NULL);
+		auto str = std::format(cont,std::forward<Args>(args) ...);
+		OutputDebugStringA(str.c_str());
+		std::cout << str << std::endl;
 	}
 
-	static void checkResult(HRESULT hr, std::string_view info = {});
-
-	static void Assert(bool v, const std::string& what);
-
-	template<class T, class ... Args>
-	static std::string format(const T& v, Args&& ... args)
+	template<class ... Args>
+	static void error(std::string_view cont, Args && ... args)
 	{
-		std::stringstream ss;
-		ss << v << format(args...);
-		return ss.str();
+		auto str = std::format(cont,std::forward<Args>(args) ...);
+		::MessageBoxA(NULL, str.c_str(), NULL, NULL);
+		std::cout << str;
+		_CrtDbgBreak();
 	}
+
+	template<class ... Args>
+	static void checkResult(HRESULT hr, Args && ... args)
+	{
+		if (hr == S_OK) return;
+
+		auto str = std::format(std::forward<Args>(args) ...);
+		if (hr == 0x887a0005)
+		{
+			checkD3DResult(hr, str);
+		}
+		else
+		{
+			checkWindowsResult(hr, str);
+		}
+
+	}
+
+	template<class ... Args>
+	static void Assert(bool v, Args && ... args)
+	{
+		if (!v) 
+		{
+			error(std::forward<Args>(args)...);
+		}
+	}
+
 
 	static std::string convert(const std::wstring& str);
 
@@ -83,10 +106,8 @@ public :
 		hash_combine(seed, rest...);
 	}
 private:
-	static std::string format()
-	{
-		return {};
-	}
+	static void checkD3DResult(HRESULT hr, const std::string& info);
+	static void checkWindowsResult(HRESULT hr, const std::string& info);
 };
 
 
@@ -118,14 +139,15 @@ struct AABB
 #undef LOG
 #define LOG Common::log
 #if _DEBUG
-#define CHECK(x) Common::checkResult(x, Common::format(" file: ",__FILE__, " line: ", __LINE__ ))
-#define ASSERT(x,y) Common::Assert(x, Common::format(y, " file: ", __FILE__, " line: ", __LINE__ ))
+#define CHECK(x) Common::checkResult(x, " file: {}, line: {}",__FILE__, __LINE__ );
+#define ASSERT(x,y, ...) Common::Assert(x,y, __VA_ARGS__);
+#define WARN(x, ...) ASSERT(false,x, __VA_ARGS__)
 #define CHECK_RENDER_THREAD {Common::Assert(Thread::getId() == 0, "need running on main thread.");}
-#define WARN(x) ASSERT(false, x)
+
 #else
 #define CHECK(x) x;
-#define ASSERT(x,y) 
-#define CHECK_RENDER_THREAD 
+#define ASSERT(...) 
 #define WARN(x) LOG(x)
+#define CHECK_RENDER_THREAD 
 #endif
 

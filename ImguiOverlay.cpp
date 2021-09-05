@@ -42,7 +42,6 @@ ImGuiPass::~ImGuiPass()
 			r->destroyResource(b);
 
 		r->destroyResource(mFonts);
-		r->destroyPipelineState(mPipelineState);
 	}
 
 }
@@ -128,7 +127,7 @@ void ImGuiPass::initRendering()
 
 	rs.setRenderTargetFormat({Renderer::BACK_BUFFER_FORMAT});
 
-	mPipelineState = renderer->createPipelineState(shaders, rs);
+	mPipelineState = std::make_shared<Renderer::PipelineStateInstance>( rs,shaders);
 
 }
 
@@ -231,7 +230,6 @@ RenderGraph::RenderTask ImGuiPass::execute()
 		};
 
 
-		cmdlist->setPipelineState(pass->mPipelineState);
 
 		pass->mPipelineState->setVSVariable("ProjectionMatrix", mvp);
 
@@ -247,6 +245,7 @@ RenderGraph::RenderTask ImGuiPass::execute()
 		cmdlist->setVertexBuffer(VertexBuffer);
 		cmdlist->setIndexBuffer(IndexBuffer);
 		cmdlist->setPrimitiveType();
+		pass->mPipelineState->apply(cmdlist);
 
 		int global_idx_offset = 0;
 		int global_vtx_offset = 0;
