@@ -2726,6 +2726,39 @@ void Renderer::PipelineStateInstance::setCSResource(UINT slot, const D3D12_GPU_D
 	return setResource(Shader::ST_COMPUTE, slot, handle);
 }
 
+void Renderer::PipelineStateInstance::setResourceDirectly(Renderer::CommandList* cmdlist, Shader::ShaderType type, const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+{
+	auto& textures = mSemanticsMap[type]->inputs.textures;
+	auto ret = textures.find(name);
+	//ASSERT(ret != textures.end(), "specify texture name is not existed.");
+	if (ret == textures.end())
+	{
+		auto& uavs = mSemanticsMap[type]->inputs.uavs;
+		auto uav = uavs.find(name);
+		if (uav == uavs.end())
+		{
+#ifdef _DEBUG
+			LOG(name, " is not a bound resource in shader");
+#endif
+			return;
+		}
+		cmdlist->setRootDescriptorTable(uav->second + mSemanticsMap[type]->inputs.offset, handle);
+		//mTextures[type][uav->second + mSemanticsMap[type]->inputs.offset] = handle;
+	}
+	else
+		cmdlist->setRootDescriptorTable(ret->second + mSemanticsMap[type]->inputs.offset, handle);
+		//mTextures[type][ret->second + mSemanticsMap[type]->inputs.offset] = handle;
+}
+
+void Renderer::PipelineStateInstance::setResourceDirectly(Renderer::CommandList* cmdlist, Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+{
+	auto& textures = mSemanticsMap[type]->inputs.texturesBySlot;
+	auto ret = textures.find(slot);
+	if (ret == textures.end())
+		return;
+	cmdlist->setRootDescriptorTable(ret->second + mSemanticsMap[type]->inputs.offset, handle);
+}
+
 void Renderer::PipelineStateInstance::setConstant(Shader::ShaderType type, const std::string& name, const ConstantBuffer::Ptr& c)
 {
 	auto& cbuffers = mSemanticsMap[type]->inputs.cbuffers;

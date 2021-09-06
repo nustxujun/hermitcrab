@@ -622,6 +622,9 @@ public:
 		void setPSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 		void setCSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
 
+		void setResourceDirectly(Renderer::CommandList* cmdlist, Shader::ShaderType type, const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
+		void setResourceDirectly(Renderer::CommandList* cmdlist, Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
+
 		void setConstant(Shader::ShaderType type, const std::string& name,const ConstantBuffer::Ptr& c);
 		void setVSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
 		void setPSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
@@ -637,6 +640,7 @@ public:
 		ConstantBuffer::Ptr createConstantBuffer(Shader::ShaderType type, const std::string& name);
 
 		void apply(Renderer::CommandList* cmdlist);
+		PipelineState* getPipelineState()const { return mPipelineState; }
 	private:
 		PipelineState* mPipelineState;
 

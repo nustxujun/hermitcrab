@@ -59,7 +59,7 @@ void ImGuiPass::initRendering()
 	auto vs = renderer->compileShaderFromFile("shaders/imgui.hlsl", "vs", SM_VS);
 	auto ps = renderer->compileShaderFromFile("shaders/imgui.hlsl", "ps", SM_PS);
 	std::vector<Renderer::Shader::Ptr> shaders = { vs, ps };
-	vs->enable32BitsConstants(true);
+	//vs->enable32BitsConstants(true);
 	ps->registerStaticSampler({
 		D3D12_FILTER_MIN_MAG_MIP_POINT,
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
@@ -128,7 +128,8 @@ void ImGuiPass::initRendering()
 	rs.setRenderTargetFormat({Renderer::BACK_BUFFER_FORMAT});
 
 	mPipelineState = std::make_shared<Renderer::PipelineStateInstance>( rs,shaders);
-
+	mConstants = mPipelineState->createConstantBuffer(Renderer::Shader::ST_VERTEX, "vertexBuffer");
+	mPipelineState->setVSConstant("vertexBuffer", mConstants);
 }
 
 
@@ -231,7 +232,8 @@ RenderGraph::RenderTask ImGuiPass::execute()
 
 
 
-		pass->mPipelineState->setVSVariable("ProjectionMatrix", mvp);
+		//pass->mPipelineState->setVSVariable("ProjectionMatrix", mvp);
+		pass->mConstants->blit(mvp, 0, sizeof(mvp));
 
 		//cmdlist->set32BitConstants(1,16,mvp,0);
 
@@ -246,6 +248,7 @@ RenderGraph::RenderTask ImGuiPass::execute()
 		cmdlist->setIndexBuffer(IndexBuffer);
 		cmdlist->setPrimitiveType();
 		pass->mPipelineState->apply(cmdlist);
+		cmdlist->setPipelineState(pass->mPipelineState->getPipelineState());
 
 		int global_idx_offset = 0;
 		int global_vtx_offset = 0;
@@ -265,7 +268,8 @@ RenderGraph::RenderTask ImGuiPass::execute()
 					const D3D12_RECT r = { (LONG)(pcmd->ClipRect.x - clip_off.x), (LONG)(pcmd->ClipRect.y - clip_off.y), (LONG)(pcmd->ClipRect.z - clip_off.x), (LONG)(pcmd->ClipRect.w - clip_off.y) };
 					cmdlist->setScissorRect(r);
 					auto handle = (D3D12_GPU_DESCRIPTOR_HANDLE*)&pcmd->TextureId;
-					pass->mPipelineState->setPSResource("texture0", *handle);
+					//pass->mPipelineState->setPSResource("texture0", *handle);
+					pass->mPipelineState->setResourceDirectly(cmdlist, Renderer::Shader::ST_PIXEL, "texture0", *handle);
 					cmdlist->drawIndexedInstanced(pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
 				}
 			}
