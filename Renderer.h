@@ -584,11 +584,12 @@ public:
 		UINT getResourceSlot(Shader::ShaderType type, UINT slot)const;
 
 		UINT getConstantBufferSlot(Shader::ShaderType type, const std::string& name)const;
+		UINT get32bitsConstantBufferSlot(Shader::ShaderType type, const std::string& name)const;
 
-		void setVariable(CommandList* cmdlist, Shader::ShaderType type, const std::string& name, const void* data);
-		void setVSVariable(CommandList* cmdlist, const std::string& name, const void* data);
-		void setPSVariable(CommandList* cmdlist, const std::string& name, const void* data);
-		void setCSVariable(CommandList* cmdlist, const std::string& name, const void* data);
+		//void setVariable(CommandList* cmdlist, Shader::ShaderType type, const std::string& name, const void* data);
+		//void setVSVariable(CommandList* cmdlist, const std::string& name, const void* data);
+		//void setPSVariable(CommandList* cmdlist, const std::string& name, const void* data);
+		//void setCSVariable(CommandList* cmdlist, const std::string& name, const void* data);
 
 		bool hasConstantBuffer(Shader::ShaderType type, const std::string& name);
 		ConstantBuffer::Ptr createConstantBuffer(Shader::ShaderType type, const std::string& name);

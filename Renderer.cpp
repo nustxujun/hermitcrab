@@ -306,7 +306,7 @@ void Renderer::updateTexture(Resource::Ref res, UINT subresource, const void* bu
 			cmdlist->setComputeRootDescriptorTable(pso->getResourceSlot(Shader::ST_COMPUTE, "input"), src->getShaderResource());
 			cmdlist->setComputeRootDescriptorTable(pso->getResourceSlot(Shader::ST_COMPUTE, "output"), mid->getUnorderedAccess());
 			UINT width = (UINT)texdesc.Width;
-			pso->setVariable(cmdlist, Shader::ST_COMPUTE, "width", &width);
+			cmdlist->setCompute32BitConstants(pso->get32bitsConstantBufferSlot(Shader::ST_COMPUTE,"Constants"), 1, &width, 0);
 
 			//cmdlist->setPipelineState(pso);
 			cmdlist->dispatch(width, texdesc.Height,1);
@@ -842,11 +842,9 @@ void Renderer::generateMips(Resource::Ref texture)
 
 			UINT non_power_of_two = (height & 1) << 1 | (width & 1);
 			auto pso = mGenMipsPSO[non_power_of_two];
-			cmdlist->setPipelineState(pso->getPipelineState());
-			pso->setVariable(cmdlist, Shader::ST_COMPUTE, "SrcMipLevel", &mip);
+			cmdlist->setComputePipelineState(pso->getPipelineState());
 
 			UINT32 nummips = std::min(4, desc.MipLevels - mip - 1);
-			pso->setVariable(cmdlist, Shader::ST_COMPUTE, "NumMipLevels", &nummips);
 
 			UINT32 outputWidth = std::max(1U, width >> 1);
 			UINT32 outputHeight = std::max(1U, height >> 1);
@@ -856,12 +854,22 @@ void Renderer::generateMips(Resource::Ref texture)
 				1.0f / (float)outputHeight
 			};
 
-			pso->setVariable(cmdlist, Shader::ST_COMPUTE, "TexelSize", &texelSize);
+			struct
+			{
+				int src;
+				uint32_t num;
+				float2 size;
+			} cb = { mip, nummips, {texelSize[0],texelSize[1]} };
 
-			cmdlist->setRootDescriptorTable(pso->getResourceSlot(Shader::ST_COMPUTE, "SrcMip"), dst->getShaderResource());
+			cmdlist->setCompute32BitConstants(pso->get32bitsConstantBufferSlot(Shader::ST_COMPUTE, "CB0"), sizeof(cb) / 4, &cb, 0);
+			//pso->setVariable(cmdlist, Shader::ST_COMPUTE, "SrcMipLevel", &mip);
+			//pso->setVariable(cmdlist, Shader::ST_COMPUTE, "NumMipLevels", &nummips);
+			//pso->setVariable(cmdlist, Shader::ST_COMPUTE, "TexelSize", &texelSize);
+
+			cmdlist->setComputeRootDescriptorTable(pso->getResourceSlot(Shader::ST_COMPUTE, "SrcMip"), dst->getShaderResource());
 
 			for (UINT i = 0; i < nummips; ++i)
-				cmdlist->setRootDescriptorTable(pso->getResourceSlot(Shader::ST_COMPUTE, std::format("OutMip {}", i + 1)), dst->getUnorderedAccess(i + mip + 1));
+				cmdlist->setComputeRootDescriptorTable(pso->getResourceSlot(Shader::ST_COMPUTE, std::format("OutMip {}", i + 1)), dst->getUnorderedAccess(i + mip + 1));
 
 
 			cmdlist->dispatch(outputWidth, outputHeight, 1);
@@ -2790,11 +2798,31 @@ UINT Renderer::PipelineStateInstance::getConstantBufferSlot(Shader::ShaderType t
 	auto& cbuffers = sm->second->inputs.cbuffers;
 	auto ret = cbuffers.find(name);
 	if (ret == cbuffers.end())
+	{
+		WARN("constant buffer {} is invalid. ", name);
 		return  0;
-	//ASSERT(ret != cbuffers.end(), "cannot find specify cbuffer at setConstant");
+	}
 	return ret->second.slot + sm->second->inputs.offset;
 }
 
+UINT Renderer::PipelineStateInstance::get32bitsConstantBufferSlot(Shader::ShaderType type, const std::string& name)const
+{
+	auto sm = mSemanticsMap.find(type);
+	if (sm == mSemanticsMap.end())
+	{
+		WARN("shader type: {} is invalid. ", (int)type);
+		return 0;
+	}
+	auto& cbuffers = sm->second->inputs.cbuffersBy32Bits;
+	auto ret = cbuffers.find(name);
+	if (ret == cbuffers.end())
+	{
+		WARN("constant buffer {} is invalid. ", name);
+		return  0;
+	}
+	//ASSERT(ret != cbuffers.end(), "cannot find specify cbuffer at setConstant");
+	return ret->second.slot + sm->second->inputs.offset;
+}
 //void Renderer::PipelineStateInstance::setConstant(Shader::ShaderType type, const std::string& name, const ConstantBuffer::Ptr& c)
 //{
 //	auto& cbuffers = mSemanticsMap[type]->inputs.cbuffers;
@@ -2821,45 +2849,45 @@ UINT Renderer::PipelineStateInstance::getConstantBufferSlot(Shader::ShaderType t
 //	setConstant(Shader::ST_COMPUTE, name, c);
 //}
 //
-void Renderer::PipelineStateInstance::setVariable(CommandList* cmdlist, Shader::ShaderType type, const std::string& name, const void* data)
-{
-	auto& cbuffers = mSemanticsMap[type]->inputs.cbuffersBy32Bits;
-	for (auto& cb : cbuffers)
-	{
-		auto ret = cb.second.variables.find(name);
-		if (ret == cb.second.variables.end())
-			continue;
-
-
-		UINT size = (UINT)ret->second.size;
-		UINT count = size / 4;
-		if (count != 0)
-		{
-			if (type == Shader::ST_COMPUTE)
-				cmdlist->setCompute32BitConstants(cb.second.slot + mSemanticsMap[type]->inputs.offset, count, data, ret->second.offset);
-			else
-				cmdlist->set32BitConstants(cb.second.slot + mSemanticsMap[type]->inputs.offset, count, data, ret->second.offset);
-			return;
-		}
-	}
-
-	LOG("undefined variable ", name);
-}
-
-void Renderer::PipelineStateInstance::setVSVariable(CommandList* cmdlist, const std::string& name, const void* data)
-{
-	setVariable(cmdlist,Shader::ST_VERTEX, name, data);
-}
-
-void Renderer::PipelineStateInstance::setPSVariable(CommandList* cmdlist, const std::string& name, const void* data)
-{
-	setVariable(cmdlist, Shader::ST_PIXEL, name, data);
-}
-
-void Renderer::PipelineStateInstance::setCSVariable(CommandList* cmdlist, const std::string& name, const void* data)
-{
-	setVariable(cmdlist, Shader::ST_COMPUTE, name, data);
-}
+//void Renderer::PipelineStateInstance::setVariable(CommandList* cmdlist, Shader::ShaderType type, const std::string& name, const void* data)
+//{
+//	auto& cbuffers = mSemanticsMap[type]->inputs.cbuffersBy32Bits;
+//	for (auto& cb : cbuffers)
+//	{
+//		auto ret = cb.second.variables.find(name);
+//		if (ret == cb.second.variables.end())
+//			continue;
+//
+//
+//		UINT size = (UINT)ret->second.size;
+//		UINT count = size / 4;
+//		if (count != 0)
+//		{
+//			if (type == Shader::ST_COMPUTE)
+//				cmdlist->setCompute32BitConstants(cb.second.slot + mSemanticsMap[type]->inputs.offset + ret->second.offset / 4, count, data, );
+//			else
+//				cmdlist->set32BitConstants(cb.second.slot + mSemanticsMap[type]->inputs.offset, count, data, ret->second.offset);
+//			return;
+//		}
+//	}
+//
+//	LOG("undefined variable ", name);
+//}
+//
+//void Renderer::PipelineStateInstance::setVSVariable(CommandList* cmdlist, const std::string& name, const void* data)
+//{
+//	setVariable(cmdlist,Shader::ST_VERTEX, name, data);
+//}
+//
+//void Renderer::PipelineStateInstance::setPSVariable(CommandList* cmdlist, const std::string& name, const void* data)
+//{
+//	setVariable(cmdlist, Shader::ST_PIXEL, name, data);
+//}
+//
+//void Renderer::PipelineStateInstance::setCSVariable(CommandList* cmdlist, const std::string& name, const void* data)
+//{
+//	setVariable(cmdlist, Shader::ST_COMPUTE, name, data);
+//}
 
 bool Renderer::PipelineStateInstance::hasConstantBuffer(Shader::ShaderType type, const std::string& name)
 {
