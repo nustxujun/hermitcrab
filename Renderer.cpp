@@ -302,13 +302,13 @@ void Renderer::updateTexture(Resource::Ref res, UINT subresource, const void* bu
 				mid->createUnorderedAccessView(&uavdesc);
 			}
 
-			pso->setResource(Shader::ST_COMPUTE,"input", src->getShaderResource());
-			pso->setResource(Shader::ST_COMPUTE, "output", mid->getUnorderedAccess());
+			cmdlist->setComputePipelineState(pso->getPipelineState());
+			cmdlist->setComputeRootDescriptorTable(pso->getResourceSlot(Shader::ST_COMPUTE, "input"), src->getShaderResource());
+			cmdlist->setComputeRootDescriptorTable(pso->getResourceSlot(Shader::ST_COMPUTE, "output"), mid->getUnorderedAccess());
 			UINT width = (UINT)texdesc.Width;
-			pso->setVariable(Shader::ST_COMPUTE, "width", &width);
+			pso->setVariable(cmdlist, Shader::ST_COMPUTE, "width", &width);
 
 			//cmdlist->setPipelineState(pso);
-			pso->apply(cmdlist);
 			cmdlist->dispatch(width, texdesc.Height,1);
 
 			cmdlist->transitionBarrier(mid, D3D12_RESOURCE_STATE_COPY_SOURCE, 0, true);
@@ -842,10 +842,11 @@ void Renderer::generateMips(Resource::Ref texture)
 
 			UINT non_power_of_two = (height & 1) << 1 | (width & 1);
 			auto pso = mGenMipsPSO[non_power_of_two];
-			pso->setVariable(Shader::ST_COMPUTE, "SrcMipLevel", &mip);
+			cmdlist->setPipelineState(pso->getPipelineState());
+			pso->setVariable(cmdlist, Shader::ST_COMPUTE, "SrcMipLevel", &mip);
 
 			UINT32 nummips = std::min(4, desc.MipLevels - mip - 1);
-			pso->setVariable(Shader::ST_COMPUTE, "NumMipLevels", &nummips);
+			pso->setVariable(cmdlist, Shader::ST_COMPUTE, "NumMipLevels", &nummips);
 
 			UINT32 outputWidth = std::max(1U, width >> 1);
 			UINT32 outputHeight = std::max(1U, height >> 1);
@@ -855,14 +856,13 @@ void Renderer::generateMips(Resource::Ref texture)
 				1.0f / (float)outputHeight
 			};
 
-			pso->setVariable(Shader::ST_COMPUTE, "TexelSize", &texelSize);
+			pso->setVariable(cmdlist, Shader::ST_COMPUTE, "TexelSize", &texelSize);
 
-			pso->setResource(Shader::ST_COMPUTE, "SrcMip", dst->getShaderResource());
+			cmdlist->setRootDescriptorTable(pso->getResourceSlot(Shader::ST_COMPUTE, "SrcMip"), dst->getShaderResource());
 
 			for (UINT i = 0; i < nummips; ++i)
-				pso->setResource(Shader::ST_COMPUTE, std::format("OutMip {}", i + 1), dst->getUnorderedAccess(i + mip + 1));
+				cmdlist->setRootDescriptorTable(pso->getResourceSlot(Shader::ST_COMPUTE, std::format("OutMip {}", i + 1)), dst->getUnorderedAccess(i + mip + 1));
 
-			pso->apply(cmdlist);
 
 			cmdlist->dispatch(outputWidth, outputHeight, 1);
 			cmdlist->uavBarrier(dst, true);
@@ -1768,7 +1768,7 @@ Renderer::CommandList::~CommandList()
 
 void Renderer::CommandList::transitionBarrier(Resource::Ref res, D3D12_RESOURCE_STATES  state, UINT subresource ,bool autoflush)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	if (subresource == D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES || state != res->getState(subresource))
 	{
 		addResourceTransition(res, state, subresource);
@@ -1779,7 +1779,7 @@ void Renderer::CommandList::transitionBarrier(Resource::Ref res, D3D12_RESOURCE_
 
 void Renderer::CommandList::uavBarrier(Resource::Ref res, bool autoflush)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mUAVBarrier[res->get()] = res;
 
 	if (autoflush)
@@ -1788,7 +1788,7 @@ void Renderer::CommandList::uavBarrier(Resource::Ref res, bool autoflush)
 
 void Renderer::CommandList::addResourceTransition(const Resource::Ref& res, D3D12_RESOURCE_STATES state, UINT subres)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	//Common::Assert(mResourceTransitions.find(res->get()) == mResourceTransitions.end(), "unexpected.");
 	mTransitionBarrier[res->get()] = {res, state, subres};
 }
@@ -1796,7 +1796,7 @@ void Renderer::CommandList::addResourceTransition(const Resource::Ref& res, D3D1
 void Renderer::CommandList::flushResourceBarrier()
 {
 
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	std::vector<D3D12_RESOURCE_BARRIER> barriers;
 	for (auto& t : mTransitionBarrier)
 	{
@@ -1876,13 +1876,13 @@ void Renderer::CommandList::flushResourceBarrier()
 
 void Renderer::CommandList::copyBuffer(Resource::Ref dst, UINT dstStart, Resource::Ref src, UINT srcStart, UINT64 size)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->CopyBufferRegion(dst->get(), dstStart, src->get(), srcStart, size);
 }
 
 void Renderer::CommandList::copyTexture(Resource::Ref dst, UINT dstSub, const std::array<UINT, 3>& dstStart, Resource::Ref src, UINT srcSub, const D3D12_BOX* srcBox)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	bool dstIsBuffer = dst->getDesc().Dimension == D3D12_RESOURCE_DIMENSION_BUFFER;
 	bool srcIsBuffer = src->getDesc().Dimension == D3D12_RESOURCE_DIMENSION_BUFFER;
 	D3D12_TEXTURE_COPY_LOCATION dstlocal = {dst->get(),dstIsBuffer? D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT:  D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX   , dstSub};
@@ -1901,43 +1901,43 @@ void Renderer::CommandList::copyTexture(Resource::Ref dst, UINT dstSub, const st
 
 void Renderer::CommandList::copyResource(const Resource::Ref& dst, const Resource::Ref& src)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->CopyResource(dst->get(), src->get());
 }
 
 void Renderer::CommandList::discardResource(const Resource::Ref & rt)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->DiscardResource(rt->get(),nullptr);
 }
 
 void Renderer::CommandList::clearRenderTarget(const Resource::Ref & rt, const Color & color)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->ClearRenderTargetView(rt->getRenderTarget(), color.data(),0, nullptr);
 }
 
 void Renderer::CommandList::clearDepth(const Resource::Ref& rt, float depth)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->ClearDepthStencilView(rt->getDepthStencil(), D3D12_CLEAR_FLAG_DEPTH,depth, 0,0, 0);
 }
 
 void Renderer::CommandList::clearStencil(const Resource::Ref & rt, UINT8 stencil)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->ClearDepthStencilView(rt->getDepthStencil(), D3D12_CLEAR_FLAG_STENCIL, 1.0f, stencil, 0, 0);
 }
 
 void Renderer::CommandList::clearDepthStencil(const Resource::Ref & rt, float depth, UINT8 stencil)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->ClearDepthStencilView(rt->getDepthStencil(), D3D12_CLEAR_FLAG_STENCIL | D3D12_CLEAR_FLAG_DEPTH, depth, stencil, 0, 0);
 }
 
 void Renderer::CommandList::setViewport(const D3D12_VIEWPORT& vp)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->RSSetViewports(1, &vp);
 }
 
@@ -1949,7 +1949,7 @@ void Renderer::CommandList::setViewportToScreen()
 
 void Renderer::CommandList::setScissorRect(const D3D12_RECT& rect)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->RSSetScissorRects(1, &rect);
 }
 
@@ -1994,26 +1994,36 @@ void Renderer::CommandList::setRenderTargets(const std::vector<Resource::Ref>& r
 
 void Renderer::CommandList::setRenderTargets(const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& rts,const D3D12_CPU_DESCRIPTOR_HANDLE* ds)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->OMSetRenderTargets((UINT)rts.size(), rts.data(), FALSE,ds);
 }
 		
 
 void Renderer::CommandList::setPipelineState(PipelineState* ps)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	auto renderer = Renderer::getSingleton();
 	mCmdList->SetPipelineState(ps->get());
 
-	if (ps->getType() == PipelineState::PST_Graphic)
-		mCmdList->SetGraphicsRootSignature(ps->getRootSignature());
-	else
-		mCmdList->SetComputeRootSignature(ps->getRootSignature());
+	ASSERT(ps->getType() == PipelineState::PST_Graphic, "pso type is invalid");
+	mCmdList->SetGraphicsRootSignature(ps->getRootSignature());
+
 }
+
+void Renderer::CommandList::setComputePipelineState(PipelineState* ps)
+{
+	
+	auto renderer = Renderer::getSingleton();
+	mCmdList->SetPipelineState(ps->get());
+
+	ASSERT(ps->getType() == PipelineState::PST_Compute, "pso type is invalid");
+	mCmdList->SetComputeRootSignature(ps->getRootSignature());
+}
+
 
 void Renderer::CommandList::setVertexBuffer(const std::vector<Buffer::Ref>& vertices)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	std::vector<D3D12_VERTEX_BUFFER_VIEW> views;
 	for (auto& v: vertices)
 		views.push_back({v->getVirtualAddress(), v->getSize(), v->getStride()});
@@ -2023,58 +2033,58 @@ void Renderer::CommandList::setVertexBuffer(const std::vector<Buffer::Ref>& vert
 
 void Renderer::CommandList::setVertexBuffer(const Buffer::Ref& vertices)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	D3D12_VERTEX_BUFFER_VIEW view = {vertices->getVirtualAddress(), vertices->getSize(), vertices->getStride()};
 	mCmdList->IASetVertexBuffers(0, 1, &view);
 }
 
 void Renderer::CommandList::setIndexBuffer(const Buffer::Ref& indices)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	D3D12_INDEX_BUFFER_VIEW view = {indices->getVirtualAddress(), indices->getSize(), indices->getStride() == 2? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT };
 	mCmdList->IASetIndexBuffer(&view);
 }
 
 void Renderer::CommandList::setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY type)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->IASetPrimitiveTopology(type);
 }
 
 void Renderer::CommandList::setDescriptorHeap(DescriptorHeap::Ref heap)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	auto origin = heap->get();
 	mCmdList->SetDescriptorHeaps(1, &origin);
 }
 
 void Renderer::CommandList::setRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->SetGraphicsRootDescriptorTable(slot, handle);
 }
 
 void Renderer::CommandList::setComputeRootDescriptorTable(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE & handle)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->SetComputeRootDescriptorTable(slot, handle);
 }
 
 void Renderer::CommandList::set32BitConstants(UINT slot, UINT num, const void* data, UINT offset)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->SetGraphicsRoot32BitConstants(slot, num, data, offset);
 }
 
 void Renderer::CommandList::setCompute32BitConstants(UINT slot, UINT num, const void* data, UINT offset)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->SetComputeRoot32BitConstants(slot, num, data, offset);
 }
 
 void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, UINT startVertex, UINT startInstance)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 
 	debugInfo.drawcallCount++;
 	debugInfo.primitiveCount+= vertexCount / 3 * instanceCount;
@@ -2083,7 +2093,7 @@ void Renderer::CommandList::drawInstanced(UINT vertexCount, UINT instanceCount, 
 
 void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UINT instanceCount, UINT startIndex, INT startVertex, UINT startInstance)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 
 	debugInfo.drawcallCount++;
 	debugInfo.primitiveCount += indexCountPerInstance / 3 * instanceCount;
@@ -2092,14 +2102,14 @@ void Renderer::CommandList::drawIndexedInstanced(UINT indexCountPerInstance, UIN
 
 void Renderer::CommandList::dispatch(UINT x, UINT y, UINT z)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 
 	mCmdList->Dispatch(x,y,z);
 }
 
 void Renderer::CommandList::endQuery(ComPtr<ID3D12QueryHeap> queryheap, D3D12_QUERY_TYPE type, UINT queryidx)
 {
-	ASSERT(checkOpening(), "cmdlist is close");
+	
 	mCmdList->EndQuery(queryheap.Get(),type, queryidx);
 }
 
@@ -2665,127 +2675,153 @@ Renderer::PipelineStateInstance::PipelineStateInstance(const Shader::Ptr& comput
 }
 
 
-void Renderer::PipelineStateInstance::setResource(Shader::ShaderType type, const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+//void Renderer::PipelineStateInstance::setResource(Shader::ShaderType type, const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+//{
+//	auto& textures = mSemanticsMap[type]->inputs.textures;
+//	auto ret = textures.find(name);
+//	//ASSERT(ret != textures.end(), "specify texture name is not existed.");
+//	if (ret == textures.end())
+//	{
+//		auto& uavs = mSemanticsMap[type]->inputs.uavs;
+//		auto uav = uavs.find(name);
+//		if (uav == uavs.end())
+//		{
+//#ifdef _DEBUG
+//			LOG(name, " is not a bound resource in shader");
+//#endif
+//			return;
+//		}
+//		mTextures[type][uav->second + mSemanticsMap[type]->inputs.offset] = handle;
+//	}
+//	else
+//		mTextures[type][ret->second + mSemanticsMap[type]->inputs.offset] = handle;
+//}
+//
+//void Renderer::PipelineStateInstance::setVSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+//{
+//	setResource(Shader::ST_VERTEX, name, handle);
+//}
+//
+//void Renderer::PipelineStateInstance::setPSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+//{
+//	setResource(Shader::ST_PIXEL, name, handle);
+//}
+//
+//void Renderer::PipelineStateInstance::setCSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+//{
+//	setResource(Shader::ST_COMPUTE, name, handle);
+//}
+//
+//void Renderer::PipelineStateInstance::setResource(Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+//{
+//	auto& textures = mSemanticsMap[type]->inputs.texturesBySlot;
+//	auto ret = textures.find(slot);
+//	if (ret == textures.end())
+//		return;
+//	mTextures[type][ret->second + mSemanticsMap[type]->inputs.offset] = handle;
+//}
+//
+//void Renderer::PipelineStateInstance::setVSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+//{
+//	return setResource(Shader::ST_VERTEX, slot, handle);
+//}
+//
+//void Renderer::PipelineStateInstance::setPSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+//{
+//	return setResource(Shader::ST_PIXEL, slot, handle);
+//}
+//
+//void Renderer::PipelineStateInstance::setCSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+//{
+//	return setResource(Shader::ST_COMPUTE, slot, handle);
+//}
+
+UINT Renderer::PipelineStateInstance::getResourceSlot(Shader::ShaderType type, const std::string& name)const
 {
-	auto& textures = mSemanticsMap[type]->inputs.textures;
+	auto sm = mSemanticsMap.find(type);
+	if (sm == mSemanticsMap.end())
+	{
+		WARN("shader {} is invalid", (int)type);
+		return 0;
+	}
+	auto& textures = sm->second->inputs.textures;
 	auto ret = textures.find(name);
 	//ASSERT(ret != textures.end(), "specify texture name is not existed.");
 	if (ret == textures.end())
 	{
-		auto& uavs = mSemanticsMap[type]->inputs.uavs;
+		auto& uavs = sm->second->inputs.uavs;
 		auto uav = uavs.find(name);
 		if (uav == uavs.end())
 		{
 #ifdef _DEBUG
 			LOG(name, " is not a bound resource in shader");
 #endif
-			return;
+			return 0;
 		}
-		mTextures[type][uav->second + mSemanticsMap[type]->inputs.offset] = handle;
+		return uav->second + sm->second->inputs.offset;
 	}
 	else
-		mTextures[type][ret->second + mSemanticsMap[type]->inputs.offset] = handle;
+		return ret->second + sm->second->inputs.offset;
 }
 
-void Renderer::PipelineStateInstance::setVSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
+UINT Renderer::PipelineStateInstance::getResourceSlot(Shader::ShaderType type, UINT slot)const
 {
-	setResource(Shader::ST_VERTEX, name, handle);
-}
-
-void Renderer::PipelineStateInstance::setPSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
-{
-	setResource(Shader::ST_PIXEL, name, handle);
-}
-
-void Renderer::PipelineStateInstance::setCSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
-{
-	setResource(Shader::ST_COMPUTE, name, handle);
-}
-
-void Renderer::PipelineStateInstance::setResource(Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
-{
-	auto& textures = mSemanticsMap[type]->inputs.texturesBySlot;
-	auto ret = textures.find(slot);
-	if (ret == textures.end())
-		return;
-	mTextures[type][ret->second + mSemanticsMap[type]->inputs.offset] = handle;
-}
-
-void Renderer::PipelineStateInstance::setVSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
-{
-	return setResource(Shader::ST_VERTEX, slot, handle);
-}
-
-void Renderer::PipelineStateInstance::setPSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
-{
-	return setResource(Shader::ST_PIXEL, slot, handle);
-}
-
-void Renderer::PipelineStateInstance::setCSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
-{
-	return setResource(Shader::ST_COMPUTE, slot, handle);
-}
-
-void Renderer::PipelineStateInstance::setResourceDirectly(Renderer::CommandList* cmdlist, Shader::ShaderType type, const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
-{
-	auto& textures = mSemanticsMap[type]->inputs.textures;
-	auto ret = textures.find(name);
-	//ASSERT(ret != textures.end(), "specify texture name is not existed.");
-	if (ret == textures.end())
+	auto sm = mSemanticsMap.find(type);
+	if (sm == mSemanticsMap.end())
 	{
-		auto& uavs = mSemanticsMap[type]->inputs.uavs;
-		auto uav = uavs.find(name);
-		if (uav == uavs.end())
-		{
-#ifdef _DEBUG
-			LOG(name, " is not a bound resource in shader");
-#endif
-			return;
-		}
-		cmdlist->setRootDescriptorTable(uav->second + mSemanticsMap[type]->inputs.offset, handle);
-		//mTextures[type][uav->second + mSemanticsMap[type]->inputs.offset] = handle;
+		LOG("shader {} is invalid", (int)type);
+		return 0;
 	}
-	else
-		cmdlist->setRootDescriptorTable(ret->second + mSemanticsMap[type]->inputs.offset, handle);
-		//mTextures[type][ret->second + mSemanticsMap[type]->inputs.offset] = handle;
-}
-
-void Renderer::PipelineStateInstance::setResourceDirectly(Renderer::CommandList* cmdlist, Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle)
-{
-	auto& textures = mSemanticsMap[type]->inputs.texturesBySlot;
+	auto& textures = sm->second->inputs.texturesBySlot;
 	auto ret = textures.find(slot);
 	if (ret == textures.end())
-		return;
-	cmdlist->setRootDescriptorTable(ret->second + mSemanticsMap[type]->inputs.offset, handle);
+		return 0;
+	return ret->second + sm->second->inputs.offset;
 }
 
-void Renderer::PipelineStateInstance::setConstant(Shader::ShaderType type, const std::string& name, const ConstantBuffer::Ptr& c)
+UINT Renderer::PipelineStateInstance::getConstantBufferSlot(Shader::ShaderType type, const std::string& name)const
 {
-	auto& cbuffers = mSemanticsMap[type]->inputs.cbuffers;
+	auto sm = mSemanticsMap.find(type);
+	if (sm == mSemanticsMap.end())
+	{
+		WARN("shader type: {} is invalid. ", (int)type);
+		return 0;
+	}
+	auto& cbuffers = sm->second->inputs.cbuffers;
 	auto ret = cbuffers.find(name);
 	if (ret == cbuffers.end())
-		return;
+		return  0;
 	//ASSERT(ret != cbuffers.end(), "cannot find specify cbuffer at setConstant");
-	ASSERT(ALIGN(ret->second.size, Renderer::CONSTANT_BUFFER_ALIGN_SIZE) == c->getSize(), "constant buffer size is invalid");
-	mCBuffers[type][ret->second.slot + mSemanticsMap[type]->inputs.offset] = c->getHandle();
+	return ret->second.slot + sm->second->inputs.offset;
 }
 
-void Renderer::PipelineStateInstance::setVSConstant(const std::string& name, const ConstantBuffer::Ptr& c)
-{
-	setConstant(Shader::ST_VERTEX, name, c);
-}
-
-void Renderer::PipelineStateInstance::setPSConstant(const std::string& name, const ConstantBuffer::Ptr& c)
-{
-	setConstant(Shader::ST_PIXEL, name, c);
-}
-
-void Renderer::PipelineStateInstance::setCSConstant(const std::string& name, const ConstantBuffer::Ptr& c)
-{
-	setConstant(Shader::ST_COMPUTE, name, c);
-}
-
-void Renderer::PipelineStateInstance::setVariable(Shader::ShaderType type, const std::string& name, const void* data)
+//void Renderer::PipelineStateInstance::setConstant(Shader::ShaderType type, const std::string& name, const ConstantBuffer::Ptr& c)
+//{
+//	auto& cbuffers = mSemanticsMap[type]->inputs.cbuffers;
+//	auto ret = cbuffers.find(name);
+//	if (ret == cbuffers.end())
+//		return;
+//	//ASSERT(ret != cbuffers.end(), "cannot find specify cbuffer at setConstant");
+//	ASSERT(ALIGN(ret->second.size, Renderer::CONSTANT_BUFFER_ALIGN_SIZE) == c->getSize(), "constant buffer size is invalid");
+//	mCBuffers[type][ret->second.slot + mSemanticsMap[type]->inputs.offset] = c->getHandle();
+//}
+//
+//void Renderer::PipelineStateInstance::setVSConstant(const std::string& name, const ConstantBuffer::Ptr& c)
+//{
+//	setConstant(Shader::ST_VERTEX, name, c);
+//}
+//
+//void Renderer::PipelineStateInstance::setPSConstant(const std::string& name, const ConstantBuffer::Ptr& c)
+//{
+//	setConstant(Shader::ST_PIXEL, name, c);
+//}
+//
+//void Renderer::PipelineStateInstance::setCSConstant(const std::string& name, const ConstantBuffer::Ptr& c)
+//{
+//	setConstant(Shader::ST_COMPUTE, name, c);
+//}
+//
+void Renderer::PipelineStateInstance::setVariable(CommandList* cmdlist, Shader::ShaderType type, const std::string& name, const void* data)
 {
 	auto& cbuffers = mSemanticsMap[type]->inputs.cbuffersBy32Bits;
 	for (auto& cb : cbuffers)
@@ -2794,28 +2830,35 @@ void Renderer::PipelineStateInstance::setVariable(Shader::ShaderType type, const
 		if (ret == cb.second.variables.end())
 			continue;
 
-		auto& buffer = mCBuffersBy32Bits[type][cb.second.slot + mSemanticsMap[type]->inputs.offset];
-		buffer.resize(cb.second.size);
-		memcpy(buffer.data() + ret->second.offset, data, ret->second.size);
-		return;
+
+		UINT size = (UINT)ret->second.size;
+		UINT count = size / 4;
+		if (count != 0)
+		{
+			if (type == Shader::ST_COMPUTE)
+				cmdlist->setCompute32BitConstants(cb.second.slot + mSemanticsMap[type]->inputs.offset, count, data, ret->second.offset);
+			else
+				cmdlist->set32BitConstants(cb.second.slot + mSemanticsMap[type]->inputs.offset, count, data, ret->second.offset);
+			return;
+		}
 	}
 
 	LOG("undefined variable ", name);
 }
 
-void Renderer::PipelineStateInstance::setVSVariable(const std::string& name, const void* data)
+void Renderer::PipelineStateInstance::setVSVariable(CommandList* cmdlist, const std::string& name, const void* data)
 {
-	setVariable(Shader::ST_VERTEX, name, data);
+	setVariable(cmdlist,Shader::ST_VERTEX, name, data);
 }
 
-void Renderer::PipelineStateInstance::setPSVariable(const std::string& name, const void* data)
+void Renderer::PipelineStateInstance::setPSVariable(CommandList* cmdlist, const std::string& name, const void* data)
 {
-	setVariable(Shader::ST_PIXEL, name, data);
+	setVariable(cmdlist, Shader::ST_PIXEL, name, data);
 }
 
-void Renderer::PipelineStateInstance::setCSVariable(const std::string& name, const void* data)
+void Renderer::PipelineStateInstance::setCSVariable(CommandList* cmdlist, const std::string& name, const void* data)
 {
-	setVariable(Shader::ST_COMPUTE, name, data);
+	setVariable(cmdlist, Shader::ST_COMPUTE, name, data);
 }
 
 bool Renderer::PipelineStateInstance::hasConstantBuffer(Shader::ShaderType type, const std::string& name)
@@ -2842,57 +2885,8 @@ Renderer::ConstantBuffer::Ptr Renderer::PipelineStateInstance::createConstantBuf
 	auto cbuffer = cbuffers.find(name);
 	ASSERT(cbuffer != cbuffers.end(), "cannot find specify shader");
 	auto cb = renderer->createConstantBuffer(cbuffer->second.size);
-	//cb->setReflection(cbuffer->second.variables);
+	cb->setReflection(cbuffer->second.variables);
 	return cb;
-}
-
-
-void Renderer::PipelineStateInstance::apply(CommandList * cmdlist)
-{
-	cmdlist->setPipelineState(mPipelineState);
-	
-
-	using SetRDT = void(CommandList::*)(UINT, const D3D12_GPU_DESCRIPTOR_HANDLE&);
-	SetRDT setrdt;
-	using Set32Bits = void(CommandList::*)(UINT, UINT, const void*, UINT);
-	Set32Bits set32bits;
-	if (mPipelineState->getType() == PipelineState::PST_Graphic)
-	{
-		setrdt = &CommandList::setRootDescriptorTable;
-		set32bits = &CommandList::set32BitConstants;
-	}
-	else
-	{
-		setrdt = &CommandList::setComputeRootDescriptorTable;
-		set32bits = &CommandList::setCompute32BitConstants;
-	}
-	for (auto&texs : mTextures)
-	{
-		for (auto& t : texs.second)
-		{
-			(cmdlist->*setrdt)(t.first,t.second);
-		}
-	}
-
-
-	for (auto& cbs : mCBuffers)
-	{
-		for (auto& cb : cbs.second)
-		{
-			(cmdlist->*setrdt)(cb.first, cb.second);
-		}
-	}
-
-	for (auto& cbs : mCBuffersBy32Bits)
-	{
-		for (auto& cb : cbs.second)
-		{
-			UINT size = (UINT)cb.second.size();
-			UINT count = size / 4;
-			if (count != 0)
-				(cmdlist->*set32bits)(cb.first, count, cb.second.data(),0);
-		}
-	}
 }
 
 
@@ -3037,21 +3031,21 @@ Renderer::ConstantBuffer::~ConstantBuffer()
 		mAllocator->dealloc(mOffset, mSize);
 }
 
-//void Renderer::ConstantBuffer::setReflection(const std::map<std::string, Shader::Variable>& rft)
-//{
-//	mVariables = rft;
-//}
-//
-//void Renderer::ConstantBuffer::setVariable(const std::string& name,const void* data, size_t size)
-//{
-//	auto ret = mVariables.find(name);
-//	if (ret == mVariables.end())
-//		return;
-//
-//
-//	ASSERT(size == ret->second.size, "size is not matched");
-//	blit(data, ret->second.offset, ret->second.size );
-//}
+void Renderer::ConstantBuffer::setReflection(const std::map<std::string, ShaderReflection::Variable>& rft)
+{
+	mVariables = rft;
+}
+
+void Renderer::ConstantBuffer::setVariable(const std::string& name,const void* data, size_t size)
+{
+	auto ret = mVariables.find(name);
+	if (ret == mVariables.end())
+		return;
+
+
+	ASSERT(size == ret->second.size, "size is not matched");
+	blit(data, ret->second.offset, ret->second.size );
+}
 
 void Renderer::ConstantBuffer::blit(const void * buffer, UINT64 offset , UINT64 size)
 {

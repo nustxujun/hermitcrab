@@ -129,7 +129,7 @@ void ImGuiPass::initRendering()
 
 	mPipelineState = std::make_shared<Renderer::PipelineStateInstance>( rs,shaders);
 	mConstants = mPipelineState->createConstantBuffer(Renderer::Shader::ST_VERTEX, "vertexBuffer");
-	mPipelineState->setVSConstant("vertexBuffer", mConstants);
+	//mPipelineState->setVSConstant("vertexBuffer", mConstants);
 }
 
 
@@ -233,8 +233,9 @@ RenderGraph::RenderTask ImGuiPass::execute()
 
 
 		//pass->mPipelineState->setVSVariable("ProjectionMatrix", mvp);
+		cmdlist->setPipelineState(pass->mPipelineState->getPipelineState());
 		pass->mConstants->blit(mvp, 0, sizeof(mvp));
-
+		cmdlist->setRootDescriptorTable(pass->mPipelineState->getConstantBufferSlot(Renderer::Shader::ST_VERTEX,"vertexBuffer"), pass->mConstants->getHandle());
 		//cmdlist->set32BitConstants(1,16,mvp,0);
 
 		D3D12_VIEWPORT vp = { 0 };
@@ -247,8 +248,6 @@ RenderGraph::RenderTask ImGuiPass::execute()
 		cmdlist->setVertexBuffer(VertexBuffer);
 		cmdlist->setIndexBuffer(IndexBuffer);
 		cmdlist->setPrimitiveType();
-		pass->mPipelineState->apply(cmdlist);
-		cmdlist->setPipelineState(pass->mPipelineState->getPipelineState());
 
 		int global_idx_offset = 0;
 		int global_vtx_offset = 0;
@@ -259,17 +258,13 @@ RenderGraph::RenderTask ImGuiPass::execute()
 			for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
 			{
 				const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-				if (pcmd->UserCallback != NULL)
-				{
-
-				}
-				else
+				if (pcmd->UserCallback == NULL)
 				{
 					const D3D12_RECT r = { (LONG)(pcmd->ClipRect.x - clip_off.x), (LONG)(pcmd->ClipRect.y - clip_off.y), (LONG)(pcmd->ClipRect.z - clip_off.x), (LONG)(pcmd->ClipRect.w - clip_off.y) };
 					cmdlist->setScissorRect(r);
 					auto handle = (D3D12_GPU_DESCRIPTOR_HANDLE*)&pcmd->TextureId;
 					//pass->mPipelineState->setPSResource("texture0", *handle);
-					pass->mPipelineState->setResourceDirectly(cmdlist, Renderer::Shader::ST_PIXEL, "texture0", *handle);
+					cmdlist->setRootDescriptorTable(pass->mPipelineState->getResourceSlot(Renderer::Shader::ST_PIXEL, "texture0"), *handle);
 					cmdlist->drawIndexedInstanced(pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
 				}
 			}

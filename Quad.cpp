@@ -45,15 +45,15 @@ void Quad::init(Renderer::Shader::Ptr ps,const Renderer::RenderState& rs)
 
 
 
-void Quad::setResource(const std::string& name, D3D12_GPU_DESCRIPTOR_HANDLE handle)
-{
-	mPipelineState->setResource(Renderer::Shader::ST_PIXEL, name, handle);
-}	
+//void Quad::setResource(const std::string& name, D3D12_GPU_DESCRIPTOR_HANDLE handle)
+//{
+	//mPipelineState->setResource(Renderer::Shader::ST_PIXEL, name, handle);
+//}	
 
-void Quad::setConstants(const std::string& name, Renderer::ConstantBuffer::Ptr c)
-{
-	mPipelineState->setPSConstant(name, c);
-}
+//void Quad::setConstants(const std::string& name, Renderer::ConstantBuffer::Ptr c)
+//{
+//	mPipelineState->setPSConstant(name, c);
+//}
 
 void Quad::fitToScreen()
 {
@@ -68,11 +68,12 @@ void Quad::draw(Renderer::CommandList *& cmdlist)const
 	cmdlist->setScissorRect(mRect);
 	cmdlist->setViewport({ 0,0, (float)mRect.right, (float)mRect.bottom, 0.0f, 1.0f });
 	
-	for (auto& c: mConstants)
-		mPipelineState->setPSConstant(c.first, c.second);
-
+	for (auto& c : mConstants)
+	{
+		cmdlist->setRootDescriptorTable(mPipelineState->getConstantBufferSlot(Renderer::Shader::ST_PIXEL, c.first), c.second->getHandle());
+		//mPipelineState->setPSConstant(c.first, c.second);
+	}
 	cmdlist->setPrimitiveType(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-	mPipelineState->apply(cmdlist);
 	// draw without vertexbuffer
 	cmdlist->drawInstanced(4);
 }

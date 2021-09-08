@@ -482,13 +482,13 @@ public:
 		ConstantBuffer(size_t size, ConstantBufferAllocator::Ref allocator);
 		~ConstantBuffer();
 
-		//void setReflection(const std::map<std::string, Shader::Variable>& rft);
-		//template<class T>
-		//void setVariable(const std::string& name, const T& v)
-		//{
-		//	setVariable(name, &v, sizeof(v));
-		//}
-		//void setVariable(const std::string& name, const void* data, size_t size);
+		void setReflection(const std::map<std::string, ShaderReflection::Variable>& rft);
+		template<class T>
+		void setVariable(const std::string& name, const T& v)
+		{
+			setVariable(name, &v, sizeof(v));
+		}
+		void setVariable(const std::string& name, const void* data, size_t size);
 		void blit(const void* buffer, UINT64 offset = 0, UINT64 size = -1);
 		D3D12_GPU_DESCRIPTOR_HANDLE getHandle()const;
 		size_t getSize()const { return mSize; }
@@ -505,7 +505,7 @@ public:
 		UINT64 mOffset;
 		DescriptorHandle mView;
 		ConstantBufferAllocator::Ref mAllocator;
-		//std::map<std::string, Shader::Variable> mVariables;
+		std::map<std::string, ShaderReflection::Variable> mVariables;
 	};
 
 
@@ -559,34 +559,8 @@ public:
 		ID3D12RootSignature* getRootSignature(){return mRootSignature.Get();}
 		Type getType()const {return mType;}
 
-
-		//void setResource(Shader::ShaderType type,const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		//void setVSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		//void setPSResource( const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		//void setCSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-
-		//void setResource(Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		//void setVSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		//void setPSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		//void setCSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-
-		//void setConstant(Shader::ShaderType type, const std::string& name,const ConstantBuffer::Ptr& c);
-		//void setVSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
-		//void setPSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
-		//void setCSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
-
-
-		//void setVariable(Shader::ShaderType type, const std::string& name, const void* data);
-		//void setVSVariable( const std::string& name, const void* data);
-		//void setPSVariable( const std::string& name, const void* data);
-		//void setCSVariable(const std::string& name, const void* data);
-
-
-		//bool hasConstantBuffer(Shader::ShaderType type, const std::string& name);
-		//ConstantBuffer::Ptr createConstantBuffer(Shader::ShaderType type, const std::string& name);
 		const D3D12_GRAPHICS_PIPELINE_STATE_DESC& getDesc()const;
 
-		//std::vector<std::string> getRequiredResources(Shader::ShaderType type)const;
 	private:
 		void setRootDescriptorTable(CommandList* cmdlist);
 	private:
@@ -594,10 +568,6 @@ public:
 		ComPtr<ID3D12PipelineState> mPipelineState;
 		ComPtr<ID3D12RootSignature> mRootSignature;
 
-		//std::map<Shader::ShaderType, Shader::Reflection> mSemanticsMap;
-		//std::map<Shader::ShaderType, std::map<UINT, D3D12_GPU_DESCRIPTOR_HANDLE>> mTextures;
-		//std::map<Shader::ShaderType, std::map<UINT, D3D12_GPU_DESCRIPTOR_HANDLE>> mCBuffers;
-		//std::map<Shader::ShaderType, std::map<UINT, std::vector<char>>> mCBuffersBy32Bits;
 
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC mDesc;
 	};
@@ -610,45 +580,23 @@ public:
 		PipelineStateInstance(const RenderState& rs, const std::vector<Shader::Ptr>& shaders);
 		PipelineStateInstance(const Shader::Ptr& computeShader);
 
+		UINT getResourceSlot(Shader::ShaderType type, const std::string& name)const;
+		UINT getResourceSlot(Shader::ShaderType type, UINT slot)const;
 
+		UINT getConstantBufferSlot(Shader::ShaderType type, const std::string& name)const;
 
-		void setResource(Shader::ShaderType type,const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		void setVSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		void setPSResource( const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		void setCSResource(const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-
-		void setResource(Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		void setVSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		void setPSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		void setCSResource(UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-
-		void setResourceDirectly(Renderer::CommandList* cmdlist, Shader::ShaderType type, const std::string& name, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-		void setResourceDirectly(Renderer::CommandList* cmdlist, Shader::ShaderType type, UINT slot, const D3D12_GPU_DESCRIPTOR_HANDLE& handle);
-
-		void setConstant(Shader::ShaderType type, const std::string& name,const ConstantBuffer::Ptr& c);
-		void setVSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
-		void setPSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
-		void setCSConstant(const std::string& name, const ConstantBuffer::Ptr& c);
-
-
-		void setVariable(Shader::ShaderType type, const std::string& name, const void* data);
-		void setVSVariable( const std::string& name, const void* data);
-		void setPSVariable( const std::string& name, const void* data);
-		void setCSVariable(const std::string& name, const void* data);
+		void setVariable(CommandList* cmdlist, Shader::ShaderType type, const std::string& name, const void* data);
+		void setVSVariable(CommandList* cmdlist, const std::string& name, const void* data);
+		void setPSVariable(CommandList* cmdlist, const std::string& name, const void* data);
+		void setCSVariable(CommandList* cmdlist, const std::string& name, const void* data);
 
 		bool hasConstantBuffer(Shader::ShaderType type, const std::string& name);
 		ConstantBuffer::Ptr createConstantBuffer(Shader::ShaderType type, const std::string& name);
 
-		void apply(Renderer::CommandList* cmdlist);
 		PipelineState* getPipelineState()const { return mPipelineState; }
 	private:
 		PipelineState* mPipelineState;
-
 		std::map<Shader::ShaderType, ShaderReflection::Ptr> mSemanticsMap;
-		std::map<Shader::ShaderType, std::map<UINT, D3D12_GPU_DESCRIPTOR_HANDLE>> mTextures;
-		std::map<Shader::ShaderType, std::map<UINT, D3D12_GPU_DESCRIPTOR_HANDLE>> mCBuffers;
-		std::map<Shader::ShaderType, std::map<UINT, std::vector<char>>> mCBuffersBy32Bits;
-
 	};
 
 
@@ -685,6 +633,7 @@ public:
 		void setRenderTargets(const std::vector<Resource::Ref>& rts, const Resource::Ref& ds = {});
 		void setRenderTargets(const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& rts, const D3D12_CPU_DESCRIPTOR_HANDLE* ds = 0);
 		void setPipelineState(PipelineState* ps);
+		void setComputePipelineState(PipelineState* ps);
 		void setVertexBuffer(const std::vector<Buffer::Ref>& vertices);
 		void setVertexBuffer(const Buffer::Ref& vertices);
 		void setIndexBuffer(const Buffer::Ref& indices);
@@ -703,11 +652,12 @@ public:
 
 		//Fence::Ptr getFence(){return mAllocator->mFence;}
 		CommandAllocator * getAllocator(){return &mAllocators[mCurrentAllocator];}
-	private:
-		bool checkOpening() 
+	
+		bool checkOpening()const
 		{
 			return mOpening;
 		}
+
 	private:
 		static const auto NUM_ALLOCATORS = NUM_BACK_BUFFERS;
 		ID3D12CommandQueue* mQueue;
