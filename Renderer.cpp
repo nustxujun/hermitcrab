@@ -2535,7 +2535,7 @@ void Renderer::PipelineState::init(const RenderState & rs, const std::vector<Sha
 		params.insert(params.end(), s->mRootParameters.begin(), s->mRootParameters.end());
 		s->mReflections->inputs.offset = offset;
 		offset += (UINT)s->mRootParameters.size();
-		//mSemanticsMap[s->mType] = s->mSemanticsMap;
+		mReflections[s->mType] = s->mReflections;
 		switch (s->mType)
 		{
 		case Shader::ST_VERTEX: {
@@ -2625,6 +2625,9 @@ void Renderer::PipelineState::init(const Shader::Ptr & shader)
 	if (rsd.NumStaticSamplers > 0)
 		rsd.pStaticSamplers = shader->mStaticSamplers.data();
 
+	mReflections[shader->mType] = shader->mReflections;
+
+
 	ComPtr<ID3D10Blob> blob;
 	ComPtr<ID3D10Blob> err;
 	if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &err)))
@@ -2668,18 +2671,16 @@ const D3D12_GRAPHICS_PIPELINE_STATE_DESC& Renderer::PipelineState::getDesc() con
 Renderer::PipelineStateInstance::PipelineStateInstance(const RenderState& rs, const std::vector<Shader::Ptr>& shaders)
 {
 	for (auto& s: shaders)
-	{
 		s->prepare();
-		mSemanticsMap[s->getType()] = s->getReflection();
-	}
 	mPipelineState = Renderer::getSingleton()->createPipelineState(shaders, rs);
+	mSemanticsMap = mPipelineState->getReflections();
 }
 
 Renderer::PipelineStateInstance::PipelineStateInstance(const Shader::Ptr& computeShader)
 {
 	computeShader->prepare();
 	mPipelineState = Renderer::getSingleton()->createComputePipelineState(computeShader);
-	mSemanticsMap[computeShader->getType()] = computeShader->getReflection();
+	mSemanticsMap = mPipelineState->getReflections();
 }
 
 

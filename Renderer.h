@@ -451,7 +451,6 @@ public:
 		size_t getHash()const{return mHash;}
 
 		ShaderType getType()const { return mType; }
-		ShaderReflection::Ptr getReflection()const{return mReflections;}
 		void prepare();
 	private:
 		D3D12_SHADER_VISIBILITY getShaderVisibility()const;
@@ -560,7 +559,7 @@ public:
 		Type getType()const {return mType;}
 
 		const D3D12_GRAPHICS_PIPELINE_STATE_DESC& getDesc()const;
-
+		const std::unordered_map<Shader::ShaderType, ShaderReflection::Ptr>& getReflections()const { return mReflections; }
 	private:
 		void setRootDescriptorTable(CommandList* cmdlist);
 	private:
@@ -570,6 +569,7 @@ public:
 
 
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC mDesc;
+		std::unordered_map<Shader::ShaderType, ShaderReflection::Ptr> mReflections;
 	};
 
 	class PipelineStateInstance final
@@ -597,7 +597,7 @@ public:
 		PipelineState* getPipelineState()const { return mPipelineState; }
 	private:
 		PipelineState* mPipelineState;
-		std::map<Shader::ShaderType, ShaderReflection::Ptr> mSemanticsMap;
+		std::unordered_map<Shader::ShaderType, ShaderReflection::Ptr> mSemanticsMap;
 	};
 
 
